@@ -2268,7 +2268,7 @@ export default function App(){
   const sbDispatch = useCallback(async ({type,payload,id})=>{
     // Always update local state immediately (optimistic)
     dispatch({type,payload,id});
-    if(loadingRef.current) return; // Don't write during initial load
+    if(loadingRef.current && type.startsWith("RESET")) return; // Don't write bulk load actions
 
     try{
       switch(type){
