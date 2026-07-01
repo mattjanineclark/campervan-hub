@@ -2306,6 +2306,8 @@ export default function App(){
     if(loadingRef.current && type.startsWith("RESET")) return; // Don't write bulk load actions
 
     try{
+      // Never write bulk load actions to DB
+      if(type.startsWith("RESET_")) return;
       switch(type){
         // BOOKINGS
         case "ADD_BOOKING":    await supa.upsert("bookings", toDB.booking(payload)); break;
@@ -2323,13 +2325,24 @@ export default function App(){
           break;
         // EQUIPMENT (shared van kit)
         case "SET_EQUIPMENT":
+          if(!payload||payload.length===0) break; // never wipe DB with empty array
           for(const e of payload) await supa.upsert("equipment", toDB.equip(e));
+          // Delete any items removed (in DB but not in payload)
+          { const ids=payload.map(e=>e.id);
+            const existing=await supa.get("equipment","select=id");
+            for(const row of (existing||[])){
+              if(!ids.includes(row.id)) await supa.delete("equipment",{id:row.id});
+            }
+          }
           break;
         // FAMILY PACKING (per-family)
         case "SET_FAMILY_PACKING":
-          // Delete existing and re-insert
+          if(!payload||!payload.familyId) break; // guard against bad payload
+          // Only delete+reinsert if we have items OR explicitly clearing
           await supa.delete("family_packing", {family_id:payload.familyId});
-          for(const p of payload.items) await supa.upsert("family_packing", toDB.packing(payload.familyId, p));
+          if(payload.items&&payload.items.length>0){
+            for(const p of payload.items) await supa.upsert("family_packing", toDB.packing(payload.familyId, p));
+          }
           break;
         // GUIDES
         case "ADD_GUIDE":      await supa.upsert("guides", toDB.guide(payload)); break;
