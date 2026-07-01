@@ -1,4 +1,89 @@
-import { useState, useReducer, useRef, useEffect } from "react";
+import { useState, useReducer, useRef, useEffect, useCallback } from "react";
+
+// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://jlnwuzgcubfzrwxlwfkn.supabase.co";
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+
+const supa = {
+  async get(table, query=""){
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json" }
+    });
+    return res.json();
+  },
+  async insert(table, data){
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method:"POST",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"return=representation" },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  async update(table, data, match){
+    const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join("&");
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
+      method:"PATCH",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"return=representation" },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  async upsert(table, data){
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method:"POST",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  async delete(table, match){
+    const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join("&");
+    await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
+      method:"DELETE",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` }
+    });
+  },
+  subscribe(table, callback){
+    // Supabase realtime via WebSocket
+    const wsUrl = SUPABASE_URL.replace("https://","wss://") + "/realtime/v1/websocket?apikey=" + SUPABASE_KEY + "&vsn=1.0.0";
+    const ws = new WebSocket(wsUrl);
+    const topic = `realtime:public:${table}`;
+    ws.onopen = () => {
+      ws.send(JSON.stringify({topic, event:"phx_join", payload:{}, ref:"1"}));
+    };
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if(msg.topic===topic && msg.event==="INSERT" || msg.event==="UPDATE" || msg.event==="DELETE"){
+        callback(msg.event, msg.payload?.record, msg.payload?.old_record);
+      }
+    };
+    return () => ws.close();
+  }
+};
+
+// Convert DB row format to app format and back
+const fromDB = {
+  booking: b => b ? ({id:b.id, familyId:b.family_id, start:b.start_date, end:b.end_date, destination:b.destination, notes:b.notes||"", status:b.status}) : null,
+  place:   p => p ? ({id:p.id, name:p.name, familyId:p.family_id, category:p.category, lat:p.lat, lng:p.lng, overallRating:p.overall_rating||0, reviews:[]}) : null,
+  review:  r => r ? ({familyId:r.family_id, rating:r.rating, text:r.review_text, date:r.review_date}) : null,
+  itin:    i => i ? ({id:i.id, title:i.title, familyId:i.family_id, start:i.start_date||"", end:i.end_date||"", destination:i.destination||"", notes:i.notes||"", bookingId:i.booking_id||"", visibility:i.visibility||"private", days:i.days||[]}) : null,
+  family:  f => f ? ({id:f.id, name:f.name, color:f.color, emoji:f.emoji, pin:f.pin, photo:f.photo||null}) : null,
+  equip:   e => e ? ({id:e.id, category:e.category, item:e.item, status:e.status||"invan"}) : null,
+  packing: p => p ? ({id:p.id, category:p.category, item:p.item, status:p.status||"tobring"}) : null,
+  guide:   g => g ? ({id:g.id, title:g.title, icon:g.icon, content:g.content||"", links:g.links||[], attachments:g.attachments||[]}) : null,
+  rule:    r => r ? ({id:r.id, icon:r.icon, rule:r.rule, detail:r.detail||""}) : null,
+};
+const toDB = {
+  booking: b => ({id:b.id, family_id:b.familyId, start_date:b.start, end_date:b.end, destination:b.destination, notes:b.notes, status:b.status}),
+  place:   p => ({id:p.id, name:p.name, family_id:p.familyId, category:p.category, lat:p.lat, lng:p.lng, overall_rating:p.overallRating||0}),
+  review:  (placeId,r) => ({place_id:placeId, family_id:r.familyId, rating:r.rating, review_text:r.text, review_date:r.date}),
+  itin:    i => ({id:i.id, title:i.title, family_id:i.familyId, start_date:i.start||null, end_date:i.end||null, destination:i.destination||"", notes:i.notes||"", booking_id:i.bookingId||null, visibility:i.visibility||"private", days:i.days||[]}),
+  family:  f => ({id:f.id, name:f.name, color:f.color, emoji:f.emoji, pin:f.pin, photo:f.photo||null}),
+  equip:   e => ({id:e.id, category:e.category, item:e.item, status:e.status}),
+  packing: (familyId,p) => ({id:p.id, family_id:familyId, category:p.category, item:p.item, status:p.status}),
+  guide:   g => ({id:g.id, title:g.title, icon:g.icon, content:g.content||"", links:g.links||[], attachments:g.attachments||[]}),
+  rule:    r => ({id:r.id, icon:r.icon, rule:r.rule, detail:r.detail||""}),
+};
 
 // ─── NZ HOLIDAY LIGHT THEME ───────────────────────────────────────────────────
 const T = {
@@ -130,6 +215,15 @@ function reducer(state,{type,payload,id}){
     case "DEL_FAMILY":       return {...state,families:state.families.filter(f=>f.id!==id)};
     case "SET_VAN_PHOTO":    return {...state,vanPhoto:payload};
     case "SET_VAN_NAME":     return {...state,vanName:payload};
+    // Supabase bulk load actions
+    case "RESET_FAMILIES":    return {...state,families:payload};
+    case "RESET_BOOKINGS":    return {...state,bookings:payload};
+    case "RESET_PLACES":      return {...state,places:payload};
+    case "RESET_EQUIPMENT":   return {...state,equipment:payload};
+    case "RESET_PACKING":     return {...state,packingByFamily:payload};
+    case "RESET_ITINERARIES": return {...state,itineraries:payload};
+    case "RESET_GUIDES":      return {...state,guides:payload};
+    case "RESET_RULES":       return {...state,rules:payload};
     default: return state;
   }
 }
@@ -691,7 +785,7 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
     if(f.end<=f.start){setErr("End must be after start.");return;}
     const clash=bookings.filter(b=>b.status==="confirmed"&&overlap(b,f));
     if(clash.length){setErr(`Clashes with ${fName(clash[0].familyId)}'s booking (${clash[0].start} to ${clash[0].end}).`);return;}
-    dispatch({type:"ADD_BOOKING",payload:{...f,id:"b"+Date.now()}});onClose();
+    sbDispatch({type:"ADD_BOOKING",payload:{...f,id:"b"+Date.now()}});onClose();
   };
   return(
     <Modal title="New Booking" onClose={onClose}>
@@ -794,8 +888,8 @@ function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,cur
         </div>
         {b.end>=fmt(TODAY)&&b.familyId===currentFamilyId&&(
           <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
-            {b.status==="tentative"&&<button onClick={()=>dispatch({type:"CONFIRM_BOOKING",id:b.id})} style={{...btn(T.primary+"15",T.primary,{padding:"5px 12px",fontSize:12}),border:`1px solid ${T.primary}30`}}>Confirm</button>}
-            <DeleteButton label="Remove" message={`Remove your booking?`} detail={`${b.destination} (${b.start} to ${b.end})`} onConfirm={()=>dispatch({type:"DEL_BOOKING",id:b.id})} style={{padding:"5px 12px",fontSize:12}}/>
+            {b.status==="tentative"&&<button onClick={()=>sbDispatch({type:"CONFIRM_BOOKING",id:b.id})} style={{...btn(T.primary+"15",T.primary,{padding:"5px 12px",fontSize:12}),border:`1px solid ${T.primary}30`}}>Confirm</button>}
+            <DeleteButton label="Remove" message={`Remove your booking?`} detail={`${b.destination} (${b.start} to ${b.end})`} onConfirm={()=>sbDispatch({type:"DEL_BOOKING",id:b.id})} style={{padding:"5px 12px",fontSize:12}}/>
           </div>
         )}
       </div>
@@ -858,7 +952,7 @@ function AddPlaceModal({dispatch,onClose,currentFamilyId}){
   const CATS=["Campsite","Beach","Mountain","Holiday Park","Town","Nature Reserve","Other"];
   const submit=()=>{
     if(!picked.name||!form.review)return;
-    dispatch({type:"ADD_PLACE",payload:{id:"p"+Date.now(),name:picked.name,lat:parseFloat(picked.lat)||0,lng:parseFloat(picked.lng)||0,familyId:form.familyId,category:form.category,overallRating:form.rating,reviews:[{familyId:form.familyId,rating:form.rating,text:form.review,date:fmt(TODAY)}]}});
+    sbDispatch({type:"ADD_PLACE",payload:{id:"p"+Date.now(),name:picked.name,lat:parseFloat(picked.lat)||0,lng:parseFloat(picked.lng)||0,familyId:form.familyId,category:form.category,overallRating:form.rating,reviews:[{familyId:form.familyId,rating:form.rating,text:form.review,date:fmt(TODAY)}]}});
     onClose();
   };
   return(
@@ -959,7 +1053,7 @@ function PlaceCard({place,dispatch,onAddToItinerary,families}){
       <label style={lbl}>Review</label>
       <textarea style={{...inp,height:80}} placeholder="Share your experience..." value={txt} onChange={e=>setTxt(e.target.value)}/>
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{if(!txt.trim())return;dispatch({type:"ADD_REVIEW",payload:{placeId:place.id,review:{familyId:fam,rating:rat,text:txt,date:fmt(TODAY)}}});onClose();}} style={btn(T.primary,T.surface)}>Post Review</button>
+        <button onClick={()=>{if(!txt.trim())return;sbDispatch({type:"ADD_REVIEW",payload:{placeId:place.id,review:{familyId:fam,rating:rat,text:txt,date:fmt(TODAY)}}});onClose();}} style={btn(T.primary,T.surface)}>Post Review</button>
         <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
       </div>
     </Modal>);
@@ -1003,7 +1097,7 @@ function PlaceCard({place,dispatch,onAddToItinerary,families}){
           <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
             <button onClick={()=>setShowReview(true)} style={{...btn(T.primary+"15",T.primary,{fontSize:12}),border:`1px solid ${T.primary}30`}}>+ Review</button>
             <button onClick={()=>onAddToItinerary(place)} style={{...btn(T.accent+"15",T.accent,{fontSize:12}),border:`1px solid ${T.accent}30`}}>Add to Trip</button>
-            <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={()=>dispatch({type:"DEL_PLACE",id:place.id})} style={{fontSize:12}}/>
+            <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={()=>sbDispatch({type:"DEL_PLACE",id:place.id})} style={{fontSize:12}}/>
           </div>
         </div>
       )}
@@ -1026,11 +1120,11 @@ function PlacesPanel({places,dispatch,itineraries,onPickItinerary,families,curre
         </div>
         <button onClick={()=>setAdding(true)} style={btn(T.primary,T.surface)}>+ Add Place</button>
       </div>
-      {showMap&&<><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420}/></MapTouchWrapper><div style={{marginTop:14}}>{places.map(p=><PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families}/>)}</div></>}
+      {showMap&&<><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420}/></MapTouchWrapper><div style={{marginTop:14}}>{places.map(p=><PlaceCard key={p.id} place={p} dispatch={sbDispatch} onAddToItinerary={handleAdd} families={families}/>)}</div></>}
       {view==="list"&&(places.length===0?<div style={{...card({padding:24,textAlign:"center"})}}>
         <p style={{color:T.textDim,margin:0}}>No places saved yet. Add your first family favourite!</p>
-      </div>:places.map(p=><PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families}/>))}
-      {adding&&<AddPlaceModal dispatch={dispatch} onClose={()=>setAdding(false)} currentFamilyId={currentFamilyId}/>}
+      </div>:places.map(p=><PlaceCard key={p.id} place={p} dispatch={sbDispatch} onAddToItinerary={handleAdd} families={families}/>))}
+      {adding&&<AddPlaceModal dispatch={sbDispatch} onClose={()=>setAdding(false)} currentFamilyId={currentFamilyId}/>}
       {pickItin&&!pickDay&&(
         <Modal title="Add to Trip" onClose={()=>setPickItin(null)} width={360}>
           <p style={{color:T.textMuted,fontSize:13,marginBottom:12}}>Which trip to add <b>{pickItin.name}</b> to?</p>
@@ -1115,8 +1209,8 @@ function ItineraryEditor({itin,dispatch,places,bookings,families,onClose}){
   const delAct=(di,ai)=>{const days=[...(data.days||[])];days[di]={...days[di],activities:days[di].activities.filter((_,i)=>i!==ai)};h("days",days);};
   const save=()=>{
     const payload={...data};delete payload._unsaved;
-    if(data._unsaved) dispatch({type:"ADD_ITINERARY",payload});
-    else dispatch({type:"UPDATE_ITINERARY",payload});
+    if(data._unsaved) sbDispatch({type:"ADD_ITINERARY",payload});
+    else sbDispatch({type:"UPDATE_ITINERARY",payload});
     onClose();
   };
   return(
@@ -1318,7 +1412,7 @@ function ItinCard({itin,dispatch,places,families,onEdit,currentFamilyId,archived
             {archived?(
               <span style={{...pill(T.textDim+"20",T.textDim),fontSize:11}}>📦 Archived — read only</span>
             ):itin.familyId===currentFamilyId?(
-              <DeleteButton label="Delete Trip" message={`Delete "${itin.title}"?`} detail="All planned activities will be lost." onConfirm={()=>dispatch({type:"DEL_ITINERARY",id:itin.id})} style={{fontSize:12}}/>
+              <DeleteButton label="Delete Trip" message={`Delete "${itin.title}"?`} detail="All planned activities will be lost." onConfirm={()=>sbDispatch({type:"DEL_ITINERARY",id:itin.id})} style={{fontSize:12}}/>
             ):(
               <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>
                 {itin.visibility==="shared"?"Read-only — shared by "+families.find(f=>f.id===itin.familyId)?.name:"Private trip"}
@@ -1360,12 +1454,12 @@ function TripsPanel({itineraries,dispatch,places,bookings,families,autoOpenItinI
         <button onClick={()=>onGoToTab&&onGoToTab("places")} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`,fontSize:12,padding:"7px 12px"})}}>+ Add Place</button>
         <button onClick={newItin} style={btn(T.primary,T.surface)}>+ New Trip</button>
       </div>
-      {editing&&<ItineraryEditor itin={editing} dispatch={dispatch} places={places} bookings={bookings} families={families} onClose={()=>setEditing(null)}/>}
+      {editing&&<ItineraryEditor itin={editing} dispatch={sbDispatch} places={places} bookings={bookings} families={families} onClose={()=>setEditing(null)}/>}
       {upcoming.length===0&&!editing&&<div style={{...card({padding:24,textAlign:"center"})}}>
         <div style={{fontSize:36,marginBottom:8}}>🗺️</div>
         <p style={{color:T.textDim,margin:0,fontSize:14}}>No upcoming trips. Plan one!</p>
       </div>}
-      {upcoming.filter(i=>i.id!==editing?.id).map(itin=><ItinCard key={itin.id} itin={itin} dispatch={dispatch} places={places} families={families} onEdit={setEditing} currentFamilyId={currentFamilyId}/>)}
+      {upcoming.filter(i=>i.id!==editing?.id).map(itin=><ItinCard key={itin.id} itin={itin} dispatch={sbDispatch} places={places} families={families} onEdit={setEditing} currentFamilyId={currentFamilyId}/>)}
 
       {past.length>0&&(
         <div style={{marginTop:20}}>
@@ -1377,7 +1471,7 @@ function TripsPanel({itineraries,dispatch,places,bookings,families,autoOpenItinI
           {showArchive&&(
             <div style={{marginTop:8,opacity:0.85}}>
               <p style={{color:T.textDim,fontSize:12,margin:"0 0 10px"}}>Past trips are read-only in the archive.</p>
-              {past.map(itin=><ItinCard key={itin.id} itin={itin} dispatch={dispatch} places={places} families={families} onEdit={()=>{}} currentFamilyId={"_archive"} archived={true}/>)}
+              {past.map(itin=><ItinCard key={itin.id} itin={itin} dispatch={sbDispatch} places={places} families={families} onEdit={()=>{}} currentFamilyId={"_archive"} archived={true}/>)}
             </div>
           )}
         </div>
@@ -1439,7 +1533,7 @@ function GuidesPanel({guides,dispatch}){
         <button onClick={()=>setAddingNew(true)} style={btn(T.primary,T.surface)}>+ Guide</button>
       </div>
       {search&&<p style={{color:T.textDim,fontSize:12,margin:"0 0 10px"}}>{filtered.length} result{filtered.length!==1?"s":""} for "{search}"</p>}
-      {addingNew&&<GuideForm form={nf} setForm={setNf} onSave={()=>{if(!nf.title)return;dispatch({type:"ADD_GUIDE",payload:{...nf,id:"g"+Date.now()}});setAddingNew(false);setNf({title:"",icon:"📄",content:"",attachments:[],links:[]});}} onCancel={()=>setAddingNew(false)}/>}
+      {addingNew&&<GuideForm form={nf} setForm={setNf} onSave={()=>{if(!nf.title)return;sbDispatch({type:"ADD_GUIDE",payload:{...nf,id:"g"+Date.now()}});setAddingNew(false);setNf({title:"",icon:"📄",content:"",attachments:[],links:[]});}} onCancel={()=>setAddingNew(false)}/>}
       {!search&&guides.length===0&&<p style={{color:T.textDim,fontSize:13}}>No guides yet. Add your first one!</p>}
       {search&&filtered.length===0&&<div style={{...card({padding:24,textAlign:"center"})}}>
         <p style={{color:T.textDim,margin:0,fontSize:14}}>No guides match "{search}"</p>
@@ -1447,7 +1541,7 @@ function GuidesPanel({guides,dispatch}){
       {(search?filtered:guides).map(g=>(
         <div key={g.id} style={{marginBottom:8}}>
           {editing===g.id
-            ?<GuideForm form={ef} setForm={setEf} onSave={()=>{dispatch({type:"UPDATE_GUIDE",payload:ef});setEditing(null);}} onCancel={()=>setEditing(null)} onDel={()=>{dispatch({type:"DEL_GUIDE",id:g.id});setEditing(null);}}/>
+            ?<GuideForm form={ef} setForm={setEf} onSave={()=>{sbDispatch({type:"UPDATE_GUIDE",payload:ef});setEditing(null);}} onCancel={()=>setEditing(null)} onDel={()=>{sbDispatch({type:"DEL_GUIDE",id:g.id});setEditing(null);}}/>
             :(<div style={card({padding:0,overflow:"hidden"})}>
                 <button onClick={()=>setOpen(open===g.id?null:g.id)}
                   ref={el=>{
@@ -1502,7 +1596,7 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
   const [newCat,setNewCat]=useState("");
   const [showAddCat,setShowAddCat]=useState(false);
 
-  const setVanKit = p => dispatch({type:"SET_EQUIPMENT",payload:p});
+  const setVanKit = p => sbDispatch({type:"SET_EQUIPMENT",payload:p});
 
   // Per-family packing list (tobring + packed items personal to this family)
   const myPacking = packingByFamily[currentFamilyId] || [
@@ -1518,7 +1612,7 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
     {id:"bp9",category:"Safety",item:"Medications",status:"tobring"},
     {id:"bp10",category:"Safety",item:"Cash",status:"tobring"},
   ];
-  const setMyPacking = items => dispatch({type:"SET_FAMILY_PACKING",payload:{familyId:currentFamilyId,items}});
+  const setMyPacking = items => sbDispatch({type:"SET_FAMILY_PACKING",payload:{familyId:currentFamilyId,items}});
 
   // Combined view: invan items from equipment, tobring/packed from myPacking
   const invanItems = equipment.filter(e=>e.status==="invan");
@@ -1734,7 +1828,7 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
 // RULES
 function RulesPanel({rules,dispatch}){
   const [editId,setEditId]=useState(null);const [ef,setEf]=useState({});const [adding,setAdding]=useState(false);const [nf,setNf]=useState({icon:"📌",rule:"",detail:""});
-  const set=r=>dispatch({type:"SET_RULES",payload:r});
+  const set=r=>sbDispatch({type:"SET_RULES",payload:r});
   const ICONS=["📅","⏱️","🔁","🧹","⛽","🛑","🔧","🤝","✏️","📌","⚠️","💡","🔒","🏆","💬"];
   const Form=({form,setForm,onSave,onCancel,onDel})=>(
     <div style={{...card({padding:16,marginBottom:12,border:`1px solid ${T.primary}25`})}}>
@@ -1794,8 +1888,8 @@ function FamilyManager({families,dispatch,currentFamilyId}){
     const pinToSave = form.pinInput.length===4 ? form.pinInput : form.pin;
     const saved={...form, pin:pinToSave};
     delete saved.pinInput;
-    if(editing==="new") dispatch({type:"ADD_FAMILY",payload:saved});
-    else dispatch({type:"UPDATE_FAMILY",payload:saved});
+    if(editing==="new") sbDispatch({type:"ADD_FAMILY",payload:saved});
+    else sbDispatch({type:"UPDATE_FAMILY",payload:saved});
     cancel();
   };
 
@@ -1950,7 +2044,7 @@ function FamilyManager({families,dispatch,currentFamilyId}){
                 disabled={adminPin.length!==4}
                 onClick={()=>{
                   if(adminPin===ADMIN_PIN){
-                    dispatch({type:"DEL_FAMILY",id:confirmDel.id});
+                    sbDispatch({type:"DEL_FAMILY",id:confirmDel.id});
                     setConfirmDel(null);setAdminPin("");setAdminError("");
                   } else {
                     setAdminError("Incorrect passcode.");
@@ -1976,10 +2070,10 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
   const handleVanPhoto=e=>{
     const file=e.target.files[0];if(!file)return;
     const reader=new FileReader();
-    reader.onload=()=>dispatch({type:"SET_VAN_PHOTO",payload:reader.result});
+    reader.onload=()=>sbDispatch({type:"SET_VAN_PHOTO",payload:reader.result});
     reader.readAsDataURL(file);
   };
-  const saveVanName=()=>{dispatch({type:"SET_VAN_NAME",payload:newVanName});setVanNameSaved(true);setTimeout(()=>setVanNameSaved(false),2000);};
+  const saveVanName=()=>{sbDispatch({type:"SET_VAN_NAME",payload:newVanName});setVanNameSaved(true);setTimeout(()=>setVanNameSaved(false),2000);};
 
   return(
     <div>
@@ -1996,7 +2090,7 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
               }
             </div>
             <input id="van-photo-input" type="file" accept="image/*" style={{display:"none"}} onChange={handleVanPhoto}/>
-            {vanPhoto&&<button onClick={()=>dispatch({type:"SET_VAN_PHOTO",payload:null})} style={{...btn(T.red+"15",T.red,{fontSize:11,marginTop:6,padding:"4px 10px",border:`1px solid ${T.red}25`})}}>Remove photo</button>}
+            {vanPhoto&&<button onClick={()=>sbDispatch({type:"SET_VAN_PHOTO",payload:null})} style={{...btn(T.red+"15",T.red,{fontSize:11,marginTop:6,padding:"4px 10px",border:`1px solid ${T.red}25`})}}>Remove photo</button>}
           </div>
           <div style={{flex:1,minWidth:200}}>
             <label style={lbl}>Van / Hub Name</label>
@@ -2010,7 +2104,7 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
       </div>
 
       {/* All Families manager */}
-      <FamilyManager families={families} dispatch={dispatch} currentFamilyId={currentFamilyId}/>
+      <FamilyManager families={families} dispatch={sbDispatch} currentFamilyId={currentFamilyId}/>
 
       {/* How-To Guides shortcut */}
       <div style={{...card({padding:14,marginBottom:12})}}>
@@ -2050,6 +2144,63 @@ const TABS=[
 export default function App(){
   const [state,dispatch]=useReducer(reducer,INIT);
 
+  const [loading,setLoading]=useState(true);
+  const [dbError,setDbError]=useState(false);
+
+  // ── Load all data from Supabase on mount ─────────────────────────────────
+  useEffect(()=>{
+    async function loadAll(){
+      try{
+        const [families,vs,bookings,places,reviews,equipment,packing,itins,guides,rules] = await Promise.all([
+          supa.get("families","order=name"),
+          supa.get("van_settings","id=eq.1"),
+          supa.get("bookings","order=start_date"),
+          supa.get("places","order=name"),
+          supa.get("reviews","order=created_at"),
+          supa.get("equipment","order=category,item"),
+          supa.get("family_packing","order=category,item"),
+          supa.get("itineraries","order=start_date"),
+          supa.get("guides","order=title"),
+          supa.get("rules","order=id"),
+        ]);
+
+        if(families&&families.length>0) dispatch({type:"RESET_FAMILIES",payload:families.map(f=>fromDB.family(f))});
+
+        const vans=Array.isArray(vs)?vs:[vs];
+        if(vans[0]){
+          if(vans[0].van_name) sbDispatch({type:"SET_VAN_NAME",payload:vans[0].van_name});
+          if(vans[0].van_photo) sbDispatch({type:"SET_VAN_PHOTO",payload:vans[0].van_photo});
+        }
+
+        dispatch({type:"RESET_BOOKINGS",payload:(bookings||[]).map(fromDB.booking).filter(Boolean)});
+
+        const placesWithReviews=(places||[]).map(p=>{
+          const pr=(reviews||[]).filter(r=>r.place_id===p.id);
+          return {...fromDB.place(p),reviews:pr.map(fromDB.review),
+            overallRating:pr.length?Math.round(pr.reduce((a,r)=>a+r.rating,0)/pr.length):0};
+        });
+        dispatch({type:"RESET_PLACES",payload:placesWithReviews});
+
+        dispatch({type:"RESET_EQUIPMENT",payload:(equipment||[]).map(fromDB.equip).filter(Boolean)});
+
+        const pbf={};
+        (packing||[]).forEach(p=>{if(!pbf[p.family_id])pbf[p.family_id]=[];pbf[p.family_id].push(fromDB.packing(p));});
+        dispatch({type:"RESET_PACKING",payload:pbf});
+
+        dispatch({type:"RESET_ITINERARIES",payload:(itins||[]).map(fromDB.itin).filter(Boolean)});
+        if(guides&&guides.length>0) dispatch({type:"RESET_GUIDES",payload:guides.map(fromDB.guide)});
+        if(rules&&rules.length>0) dispatch({type:"RESET_RULES",payload:rules.map(fromDB.rule)});
+
+        setLoading(false);
+      } catch(e){
+        console.error("Supabase load error:",e);
+        setDbError(true);
+        setLoading(false);
+      }
+    }
+    loadAll();
+  },[]);
+
   // Prevent iOS from zooming on input focus (requires font-size >= 16px on inputs)
   // and set correct viewport — injected once on mount
   useEffect(()=>{
@@ -2087,10 +2238,68 @@ export default function App(){
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
   const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
 
+  // ── Supabase-aware dispatch: persist every action to DB ─────────────────
+  const sbDispatch = useCallback(async ({type,payload,id})=>{
+    // Always update local state immediately (optimistic)
+    dispatch({type,payload,id});
+    if(loading) return; // Don't write during initial load
+
+    try{
+      switch(type){
+        // BOOKINGS
+        case "ADD_BOOKING":    await supa.upsert("bookings", toDB.booking(payload)); break;
+        case "DEL_BOOKING":    await supa.delete("bookings", {id}); break;
+        case "CONFIRM_BOOKING": await supa.update("bookings", {status:"confirmed"}, {id}); break;
+        // PLACES
+        case "ADD_PLACE":      await supa.upsert("places", toDB.place(payload)); break;
+        case "DEL_PLACE":      await supa.delete("places", {id}); break;
+        case "ADD_REVIEW":
+          await supa.insert("reviews", toDB.review(payload.placeId, payload.review));
+          // Update overall rating
+          const allRevs = await supa.get("reviews", `place_id=eq.${payload.placeId}`);
+          const avg = allRevs.length ? Math.round(allRevs.reduce((a,r)=>a+r.rating,0)/allRevs.length) : 0;
+          await supa.update("places", {overall_rating:avg}, {id:payload.placeId});
+          break;
+        // EQUIPMENT (shared van kit)
+        case "SET_EQUIPMENT":
+          for(const e of payload) await supa.upsert("equipment", toDB.equip(e));
+          break;
+        // FAMILY PACKING (per-family)
+        case "SET_FAMILY_PACKING":
+          // Delete existing and re-insert
+          await supa.delete("family_packing", {family_id:payload.familyId});
+          for(const p of payload.items) await supa.upsert("family_packing", toDB.packing(payload.familyId, p));
+          break;
+        // GUIDES
+        case "ADD_GUIDE":      await supa.upsert("guides", toDB.guide(payload)); break;
+        case "UPDATE_GUIDE":   await supa.upsert("guides", toDB.guide(payload)); break;
+        case "DEL_GUIDE":      await supa.delete("guides", {id}); break;
+        // RULES
+        case "SET_RULES":
+          for(const r of payload) await supa.upsert("rules", toDB.rule(r));
+          break;
+        // ITINERARIES
+        case "ADD_ITINERARY":    await supa.upsert("itineraries", toDB.itin(payload)); break;
+        case "UPDATE_ITINERARY": await supa.upsert("itineraries", toDB.itin(payload)); break;
+        case "DEL_ITINERARY":    await supa.delete("itineraries", {id}); break;
+        // FAMILIES
+        case "ADD_FAMILY":    await supa.upsert("families", toDB.family(payload)); break;
+        case "UPDATE_FAMILY": await supa.upsert("families", toDB.family(payload)); break;
+        case "DEL_FAMILY":    await supa.delete("families", {id}); break;
+        // VAN SETTINGS
+        case "SET_VAN_NAME":  await supa.update("van_settings", {van_name:payload}, {id:1}); break;
+        case "SET_VAN_PHOTO": await supa.update("van_settings", {van_photo:payload}, {id:1}); break;
+        default: break;
+      }
+    } catch(e){
+      console.error("Supabase write error:", type, e);
+    }
+  },[loading]);
+
   const addPlaceToItinerary=(itinId,place,dayIndex=0)=>{
     const itin=state.itineraries.find(i=>i.id===itinId);if(!itin)return;
     const days=(itin.days||[]).map((d,i)=>i===dayIndex?{...d,activities:[...(d.activities||[]),{id:"a"+Date.now(),time:"",title:place.name,placeId:place.id,notes:"",location:""}]}:d);
-    dispatch({type:"UPDATE_ITINERARY",payload:{...itin,days}});setTab("trips");
+    sbDispatch({type:"UPDATE_ITINERARY",payload:{...itin,days}});setTab("trips");
   };
 
   // Called from calendar: open Trips tab and edit a specific itinerary (or create one linked to a booking)
@@ -2103,11 +2312,20 @@ export default function App(){
       const blank={id:newId,title:linkedBooking.destination+" Trip",familyId:linkedBooking.familyId,
         start:linkedBooking.start,end:linkedBooking.end,destination:linkedBooking.destination,
         notes:"",days:[],bookingId:linkedBooking.id};
-      dispatch({type:"ADD_ITINERARY",payload:blank});
+      sbDispatch({type:"ADD_ITINERARY",payload:blank});
       setOpenItinId(newId);
     }
     setTab("trips");
   };
+
+  if(loading) return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',system-ui,sans-serif"}}>
+      <div style={{fontSize:48,marginBottom:16}}>🚐</div>
+      <p style={{color:T.primary,fontWeight:700,fontSize:16,marginBottom:8}}>Adventure Hub</p>
+      <p style={{color:T.textDim,fontSize:13}}>{dbError?"Couldn't connect to database — check your connection":"Loading..."}</p>
+      {dbError&&<button onClick={()=>window.location.reload()} style={{...btn(T.primary,T.surface,{marginTop:16})}}>Retry</button>}
+    </div>
+  );
 
   if(!currentFamily)return <LoginScreen families={families} vanPhoto={state.vanPhoto} vanName={state.vanName} onLogin={setCurrentFamily}/>;
   const fam=families.find(f=>f.id===currentFamily);
@@ -2187,16 +2405,16 @@ export default function App(){
             </div>
           </>
         )}
-        {tab==="bookings" &&<BookingList bookings={state.bookings} dispatch={dispatch} families={families} itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily}/>}
-        {tab==="trips"    &&<TripsPanel itineraries={state.itineraries} dispatch={dispatch} places={state.places} bookings={state.bookings} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={()=>setOpenItinId(null)} currentFamilyId={currentFamily} onGoToTab={setTab}/>}
-        {tab==="places"   &&<PlacesPanel places={state.places} dispatch={dispatch} itineraries={state.itineraries} onPickItinerary={addPlaceToItinerary} families={families} currentFamilyId={currentFamily}/>}
-        {tab==="guides"   &&<GuidesPanel guides={state.guides} dispatch={dispatch}/>}
-        {tab==="kit"      &&<KitPanel equipment={state.equipment} dispatch={dispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily}/>}
-        {tab==="rules"    &&<RulesPanel rules={state.rules} dispatch={dispatch}/>}
-        {tab==="settings" &&<SettingsPanel state={state} dispatch={dispatch} currentFamilyId={currentFamily}/>}
+        {tab==="bookings" &&<BookingList bookings={state.bookings} dispatch={sbDispatch} families={families} itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily}/>}
+        {tab==="trips"    &&<TripsPanel itineraries={state.itineraries} dispatch={sbDispatch} places={state.places} bookings={state.bookings} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={()=>setOpenItinId(null)} currentFamilyId={currentFamily} onGoToTab={setTab}/>}
+        {tab==="places"   &&<PlacesPanel places={state.places} dispatch={sbDispatch} itineraries={state.itineraries} onPickItinerary={addPlaceToItinerary} families={families} currentFamilyId={currentFamily}/>}
+        {tab==="guides"   &&<GuidesPanel guides={state.guides} dispatch={sbDispatch}/>}
+        {tab==="kit"      &&<KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily}/>}
+        {tab==="rules"    &&<RulesPanel rules={state.rules} dispatch={sbDispatch}/>}
+        {tab==="settings" &&<SettingsPanel state={state} dispatch={sbDispatch} currentFamilyId={currentFamily}/>}
       </div>
 
-      {showBook&&<BookingForm bookings={state.bookings} dispatch={dispatch} onClose={()=>setShowBook(false)} currentFamilyId={currentFamily} families={families}/>}
+      {showBook&&<BookingForm bookings={state.bookings} dispatch={sbDispatch} onClose={()=>setShowBook(false)} currentFamilyId={currentFamily} families={families}/>}
     </div>
   );
 }
