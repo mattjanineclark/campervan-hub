@@ -869,9 +869,7 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
             f.familyId==="maintenance"?T.textMuted:T.textDim,
             {border:`1px solid ${T.border}`,fontSize:11,padding:"8px 10px",flexShrink:0}
           )}}>
-          🔧{f.familyId==="maintenance"?"
-Undo":"
-Maint."}
+          {f.familyId==="maintenance"?"🔧 Undo":"🔧 Maint."}
         </button>
       </div>
       <label style={lbl}>Type</label>
