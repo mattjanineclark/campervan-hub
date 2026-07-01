@@ -1,4 +1,4 @@
-import { useState, useReducer, useRef, useEffect, useCallback } from "react";
+import React, { useState, useReducer, useRef, useEffect, useCallback } from "react";
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://jlnwuzgcubfzrwxlwfkn.supabase.co";
@@ -363,7 +363,7 @@ function LoginScreen({families,vanPhoto,vanName,onLogin}){
           <div>
             <p style={{textAlign:"center",color:T.textMuted,fontWeight:600,fontSize:13,marginBottom:16,textTransform:"uppercase",letterSpacing:1}}>Who's signing in?</p>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              {families.map(f=>(
+              {(families||[]).map(f=>(
                 <button key={f.id} onClick={()=>setSel(f.id)}
                   style={{...card({padding:14,textAlign:"center",cursor:"pointer",border:`2px solid transparent`,boxShadow:T.shadow,transition:"all 0.2s"}),textAlign:"center"}}
                   onMouseEnter={e=>{e.currentTarget.style.borderColor=f.color;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=T.shadowMd;}}
@@ -1991,7 +1991,7 @@ function FamilyManager({families,dispatch,currentFamilyId}){
 
       {/* Family list */}
       <div style={{display:"grid",gap:10}}>
-        {families.map(f=>(
+        {(families||[]).map(f=>(
           <div key={f.id} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",background:T.surface,borderRadius:T.radiusSm,border:`1.5px solid ${f.id===currentFamilyId?f.color+"60":T.border}`,boxShadow:f.id===currentFamilyId?`0 0 0 1px ${f.color}20`:T.shadow}}>
             {/* Avatar */}
             {f.photo
@@ -2064,8 +2064,32 @@ function FamilyManager({families,dispatch,currentFamilyId}){
 }
 
 // SETTINGS
+// ─── ERROR BOUNDARY ───────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props){ super(props); this.state={error:null}; }
+  static getDerivedStateFromError(e){ return {error:e}; }
+  render(){
+    if(this.state.error){
+      return(
+        <div style={{padding:20,background:"#fff3f3",borderRadius:12,border:"1px solid #fca5a5",margin:8}}>
+          <p style={{fontWeight:700,color:"#c1440e",marginBottom:8}}>Something went wrong</p>
+          <pre style={{fontSize:11,color:"#666",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
+            {this.state.error.toString()}
+          </pre>
+          <button onClick={()=>this.setState({error:null})} style={{marginTop:8,padding:"6px 12px",background:"#c1440e",color:"white",border:"none",borderRadius:8,cursor:"pointer"}}>
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function SettingsPanel({state,dispatch,currentFamilyId}){
-  const {families=[],vanPhoto,vanName}=state;
+  if(!state) return null;
+  const families=state.families||[];
+  const {vanPhoto,vanName}=state;
   const [newVanName,setNewVanName]=useState(vanName);
   const [vanNameSaved,setVanNameSaved]=useState(false);
   const handleVanPhoto=e=>{
@@ -2112,9 +2136,9 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
         <p style={{...sectionHead,marginBottom:4}}>Guides & Manuals</p>
         <p style={{color:T.textMuted,fontSize:13,margin:"0 0 14px",lineHeight:1.5}}>Add, edit or remove how-to guides, user manual links and attached PDFs from the <b>How-To</b> tab.</p>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <div style={{...pill(T.primary+"15",T.primary),fontSize:12,padding:"6px 12px"}}>{state.guides.length} guides</div>
-          <div style={{...pill(T.accent+"15",T.accent),fontSize:12,padding:"6px 12px"}}>{state.guides.reduce((a,g)=>a+(g.links?.length||0),0)} links</div>
-          <div style={{...pill(T.sky+"20",T.sky),fontSize:12,padding:"6px 12px"}}>{state.guides.reduce((a,g)=>a+(g.attachments?.length||0),0)} attachments</div>
+          <div style={{...pill(T.primary+"15",T.primary),fontSize:12,padding:"6px 12px"}}>{(state.guides||[]).length} guides</div>
+          <div style={{...pill(T.accent+"15",T.accent),fontSize:12,padding:"6px 12px"}}>{(state.guides||[]).reduce((a,g)=>a+(g?.links?.length||0),0)} links</div>
+          <div style={{...pill(T.sky+"20",T.sky),fontSize:12,padding:"6px 12px"}}>{(state.guides||[]).reduce((a,g)=>a+(g?.attachments?.length||0),0)} attachments</div>
         </div>
       </div>
 
@@ -2416,7 +2440,7 @@ export default function App(){
         {tab==="guides"   &&<GuidesPanel guides={state.guides} dispatch={sbDispatch}/>}
         {tab==="kit"      &&<KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily}/>}
         {tab==="rules"    &&<RulesPanel rules={state.rules} dispatch={sbDispatch}/>}
-        {tab==="settings" &&<SettingsPanel state={state} dispatch={sbDispatch} currentFamilyId={currentFamily}/>}
+        {tab==="settings" &&<ErrorBoundary><SettingsPanel state={state} dispatch={sbDispatch} currentFamilyId={currentFamily}/></ErrorBoundary>}
       </div>
 
       {showBook&&<BookingForm bookings={state.bookings} dispatch={sbDispatch} onClose={()=>setShowBook(false)} currentFamilyId={currentFamily} families={families}/>}
