@@ -791,8 +791,6 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
     if(f.end<=f.start){setErr("End must be after start.");return;}
     const clash=bookings.filter(b=>b.status==="confirmed"&&overlap(b,f));
     if(clash.length){
-      const clashNames=clash.map(b=>`${fName(b.familyId)}: ${b.destination} (${b.start} → ${b.end})`).join("
-");
       setErr({msg:"Your dates clash with existing bookings:",clashes:clash});
       return;
     }
