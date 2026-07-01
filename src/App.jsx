@@ -129,6 +129,7 @@ const DEFAULT_FAMILIES = [
   { id:"f2", name:"Em & Dave",        color:"#e07a28", emoji:"🌊", pin:"0000" },
   { id:"f3", name:"Matt & Janine",    color:"#4a90c4", emoji:"🌿", pin:"0000" },
   { id:"f4", name:"Jonny & Steph",    color:"#c9a96e", emoji:"🦅", pin:"0000" },
+  { id:"maintenance", name:"Maintenance", color:"#888888", emoji:"🔧", pin:"9999" },
 ];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -369,7 +370,7 @@ function LoginScreen({families,vanPhoto,vanName,onLogin}){
           <div>
             <p style={{textAlign:"center",color:T.textMuted,fontWeight:600,fontSize:13,marginBottom:16,textTransform:"uppercase",letterSpacing:1}}>Who's signing in?</p>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              {(families||[]).map(f=>(
+              {(families||[]).filter(f=>f.id!=="maintenance").map(f=>(
                 <button key={f.id} onClick={()=>setSel(f.id)}
                   style={{...card({padding:14,textAlign:"center",cursor:"pointer",border:`2px solid transparent`,boxShadow:T.shadow,transition:"all 0.2s"}),textAlign:"center"}}
                   onMouseEnter={e=>{e.currentTarget.style.borderColor=f.color;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=T.shadowMd;}}
@@ -641,7 +642,7 @@ function UsageStats({bookings,families}){
 }
 
 // ─── DATE RANGE PICKER ────────────────────────────────────────────────────────
-function DateRangePicker({startDate,endDate,onChange,minDate}){
+function DateRangePicker({startDate,endDate,onChange,minDate,bookings=[],families=[]}){
   const [month,setMonth]=useState(()=>{
     const base=startDate?new Date(startDate):new Date();
     return new Date(base.getFullYear(),base.getMonth(),1);
@@ -660,6 +661,10 @@ function DateRangePicker({startDate,endDate,onChange,minDate}){
   const DAY_LABELS=["Mo","Tu","We","Th","Fr","Sa","Su"];
 
   const toStr=(yy,mm,dd)=>`${yy}-${String(mm+1).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+
+  // Find bookings that cover a given date string
+  const bkgsOnDay=ds=>(bookings||[]).filter(b=>b.start&&b.end&&ds>=b.start&&ds<=b.end);
+  const fColor=id=>(families||[]).find(f=>f.id===id)?.color||T.primary;
 
   const handleDay=d=>{
     if(!d) return;
@@ -691,6 +696,8 @@ function DateRangePicker({startDate,endDate,onChange,minDate}){
     const disabled=!!(minDate&&ds<minDate);
     const isToday=ds===fmt(new Date());
     const isPreview=selectingEnd&&hovered&&ds===hovered&&!endDate;
+    const dayBkgs=bkgsOnDay(ds);
+    const hasBooking=dayBkgs.length>0;
 
     let bg="transparent";
     let txtColor=disabled?T.textDim:isToday&&!isStart&&!isEnd?T.primary:T.text;
@@ -727,9 +734,24 @@ function DateRangePicker({startDate,endDate,onChange,minDate}){
           display:"flex",alignItems:"center",justifyContent:"center",
           margin:"0 auto",
           transition:"all 0.1s",
-          border:isToday&&!isStart&&!isEnd?`1.5px solid ${T.primary}`:"none"
+          border:isToday&&!isStart&&!isEnd?`1.5px solid ${T.primary}`:"none",
+          position:"relative"
         }}>
           {d}
+          {/* Booking shading — coloured background per family */}
+          {hasBooking&&!isStart&&!isEnd&&(
+            <div style={{
+              position:"absolute",inset:0,borderRadius:dotBr,
+              background:dayBkgs.length===1
+                ? fColor(dayBkgs[0].familyId)+"45"
+                : `linear-gradient(135deg, ${fColor(dayBkgs[0].familyId)}55 50%, ${fColor(dayBkgs[1].familyId)}55 50%)`,
+              display:"flex",alignItems:"flex-end",justifyContent:"center",
+              paddingBottom:2,opacity:disabled?0.4:1,
+              pointerEvents:"none"
+            }}>
+              {dayBkgs.length>2&&<span style={{fontSize:7,fontWeight:800,color:T.text,lineHeight:1}}>+{dayBkgs.length-1}</span>}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -748,6 +770,20 @@ function DateRangePicker({startDate,endDate,onChange,minDate}){
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"0 8px 8px",gap:1}}>
         {cells.map((d,i)=>renderDay(d,i))}
       </div>
+      {(bookings||[]).length>0&&(
+        <div style={{padding:"4px 8px 6px",display:"flex",gap:6,flexWrap:"wrap",borderTop:`1px solid ${T.border}`}}>
+          <span style={{fontSize:10,color:T.textDim,alignSelf:"center",marginRight:2}}>Booked:</span>
+          {[...new Set((bookings||[]).map(b=>b.familyId))].map(fid=>{
+            const fam=(families||[]).find(f=>f.id===fid);
+            return fam?(
+              <span key={fid} style={{display:"flex",alignItems:"center",gap:3,fontSize:10,color:T.textMuted}}>
+                <span style={{width:6,height:6,borderRadius:99,background:fam.color,display:"inline-block"}}/>
+                {fam.name.split(" ")[0]}
+              </span>
+            ):null;
+          })}
+        </div>
+      )}
       <div style={{borderTop:`1px solid ${T.border}`,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",background:T.bg,gap:8}}>
         <div style={{fontSize:12,color:T.textMuted,flex:1}}>
           {!startDate&&(<span>Tap a start date</span>)}
@@ -813,12 +849,30 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
           ))}
         </div>
       )}
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.primary+"08",borderRadius:T.radiusSm,border:`1px solid ${T.primary}20`,marginBottom:4}}>
-        <FamilyAvatar family={families.find(fam=>fam.id===currentFamilyId)} size={36} fontSize={20}/>
-        <div>
-          <div style={{fontSize:10,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.5}}>Booking as</div>
-          <div style={{fontWeight:700,color:T.primary,fontSize:14}}>{families.find(fam=>fam.id===currentFamilyId)?.name}</div>
+      <div style={{display:"flex",gap:8,marginBottom:4}}>
+        <div style={{flex:1,display:"flex",alignItems:"center",gap:10,padding:"8px 12px",
+          background:f.familyId==="maintenance"?T.textDim+"15":T.primary+"08",
+          borderRadius:T.radiusSm,
+          border:`1px solid ${f.familyId==="maintenance"?T.textDim+"40":T.primary+"20"}`}}>
+          <FamilyAvatar family={families.find(fam=>fam.id===f.familyId)} size={32} fontSize={18}/>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.5}}>Booking as</div>
+            <div style={{fontWeight:700,color:f.familyId==="maintenance"?T.textMuted:T.primary,fontSize:14}}>
+              {families.find(fam=>fam.id===f.familyId)?.name||"Unknown"}
+            </div>
+          </div>
         </div>
+        <button
+          onClick={()=>h("familyId", f.familyId==="maintenance"?currentFamilyId:"maintenance")}
+          style={{...btn(
+            f.familyId==="maintenance"?T.textDim+"20":"transparent",
+            f.familyId==="maintenance"?T.textMuted:T.textDim,
+            {border:`1px solid ${T.border}`,fontSize:11,padding:"8px 10px",flexShrink:0}
+          )}}>
+          🔧{f.familyId==="maintenance"?"
+Undo":"
+Maint."}
+        </button>
       </div>
       <label style={lbl}>Type</label>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -833,6 +887,8 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
         startDate={f.start} endDate={f.end}
         minDate={fmt(TODAY)}
         onChange={({start,end})=>setF(p=>({...p,start,end}))}
+        bookings={bookings}
+        families={families}
       />
       <label style={lbl}>Destination *</label>
       <input style={inp} placeholder="e.g. Blue Lake Campsite" value={f.destination} onChange={e=>h("destination",e.target.value)}/>
@@ -862,7 +918,10 @@ function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,cur
               <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={24} fontSize={16}/>
               {fName(b.familyId)}
             </span>
-            <span style={pill(b.status==="tentative"?T.accent+"20":T.primary+"15",b.status==="tentative"?T.accent:T.primary)}>{b.status}</span>
+            {b.familyId==="maintenance"
+              ?<span style={{...pill("#88888820","#666666"),fontSize:11}}>🔧 Van unavailable</span>
+              :<span style={pill(b.status==="tentative"?T.accent+"20":T.primary+"15",b.status==="tentative"?T.accent:T.primary)}>{b.status}</span>
+            }
           </div>
           <div style={{color:T.textMuted,fontSize:13,fontWeight:500}}>{b.destination}</div>
           <div style={{color:T.textDim,fontSize:12,marginTop:3}}>{b.start} to {b.end} &middot; {nights(b.start,b.end)} nights</div>
