@@ -1,0 +1,25 @@
+{
+  "name": "Adventure Hub",
+  "short_name": "Adventure Hub",
+  "description": "Family Campervan Adventure Planner",
+  "start_url": "/campervan-hub/",
+  "scope": "/campervan-hub/",
+  "display": "standalone",
+  "background_color": "#2d6a4f",
+  "theme_color": "#2d6a4f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/campervan-hub/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/campervan-hub/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
