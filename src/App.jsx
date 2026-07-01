@@ -821,24 +821,28 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
   const [f,setF]=useState({familyId:currentFamilyId||"f1",start:"",end:"",destination:"",notes:"",status:"confirmed"});
   const [err,setErr]=useState("");
-  const h=(k,v)=>setF(p=>({...p,[k]:v}));
+  const h=(k,v)=>{setF(p=>({...p,[k]:v}));if(k==="start"||k==="end")setErr("");};
   const submit=()=>{
     if(!f.start||!f.end||!f.destination){setErr("Fill in all required fields.");return;}
     if(f.end<=f.start){setErr("End must be after start.");return;}
     const clash=bookings.filter(b=>b.status==="confirmed"&&overlap(b,f));
+    const tentativeClash=bookings.filter(b=>b.status==="tentative"&&overlap(b,f));
     if(clash.length){
-      setErr({msg:"Your dates clash with existing bookings:",clashes:clash});
+      setErr({msg:"Your dates clash with existing confirmed bookings:",clashes:clash});
       return;
+    }
+    if(tentativeClash.length){
+      setErr({msg:"⚠️ Note: there are tentative bookings on these dates — you can still book but check with the others first:",clashes:tentativeClash,warning:true});
     }
     dispatch({type:"ADD_BOOKING",payload:{...f,id:"b"+Date.now()}});onClose();
   };
   return(
     <Modal title="New Booking" onClose={onClose}>
       {err&&(
-        <div style={{background:T.red+"12",borderRadius:T.radiusSm,marginBottom:12,border:`1px solid ${T.red}30`,overflow:"hidden"}}>
-          <div style={{padding:"10px 14px",color:T.red,fontSize:13,fontWeight:600}}>{err.msg||err}</div>
+        <div style={{background:err.warning?T.accent+"12":T.red+"12",borderRadius:T.radiusSm,marginBottom:12,border:`1px solid ${err.warning?T.accent+"40":T.red+"30"}`,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",color:err.warning?T.accent:T.red,fontSize:13,fontWeight:600}}>{err.msg||err}</div>
           {err.clashes&&err.clashes.map((b,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderTop:`1px solid ${T.red}20`,background:T.red+"08"}}>
+            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderTop:`1px solid ${err.warning?T.accent:T.red}20`,background:err.warning?T.accent+"08":T.red+"08"}}>
               <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={28} fontSize={16}/>
               <div style={{flex:1}}>
                 <div style={{fontWeight:700,color:T.text,fontSize:13}}>{fName(b.familyId)}</div>
@@ -893,7 +897,9 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
       <label style={lbl}>Notes</label>
       <textarea style={{...inp,height:60,resize:"vertical"}} value={f.notes} onChange={e=>h("notes",e.target.value)}/>
       <div style={{display:"flex",gap:8,marginTop:20}}>
-        <button onClick={submit} style={btn(T.primary,T.surface)}>Save Booking</button>
+        <button onClick={submit} style={btn(T.primary,T.surface)}>
+          {err&&err.warning?"Book Anyway":"Save Booking"}
+        </button>
         <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
       </div>
     </Modal>
