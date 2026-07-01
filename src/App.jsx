@@ -790,12 +790,31 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
     if(!f.start||!f.end||!f.destination){setErr("Fill in all required fields.");return;}
     if(f.end<=f.start){setErr("End must be after start.");return;}
     const clash=bookings.filter(b=>b.status==="confirmed"&&overlap(b,f));
-    if(clash.length){setErr(`Clashes with ${fName(clash[0].familyId)}'s booking (${clash[0].start} to ${clash[0].end}).`);return;}
+    if(clash.length){
+      const clashNames=clash.map(b=>`${fName(b.familyId)}: ${b.destination} (${b.start} → ${b.end})`).join("
+");
+      setErr({msg:"Your dates clash with existing bookings:",clashes:clash});
+      return;
+    }
     dispatch({type:"ADD_BOOKING",payload:{...f,id:"b"+Date.now()}});onClose();
   };
   return(
     <Modal title="New Booking" onClose={onClose}>
-      {err&&<div style={{background:T.red+"15",color:T.red,padding:"10px 14px",borderRadius:T.radiusSm,marginBottom:12,fontSize:13,border:`1px solid ${T.red}30`}}>{err}</div>}
+      {err&&(
+        <div style={{background:T.red+"12",borderRadius:T.radiusSm,marginBottom:12,border:`1px solid ${T.red}30`,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",color:T.red,fontSize:13,fontWeight:600}}>{err.msg||err}</div>
+          {err.clashes&&err.clashes.map((b,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderTop:`1px solid ${T.red}20`,background:T.red+"08"}}>
+              <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={28} fontSize={16}/>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,color:T.text,fontSize:13}}>{fName(b.familyId)}</div>
+                <div style={{color:T.textMuted,fontSize:12}}>{b.destination} &middot; {b.start} to {b.end} &middot; {nights(b.start,b.end)} nights</div>
+              </div>
+              <span style={{...pill(b.status==="tentative"?T.accent+"20":T.primary+"15",b.status==="tentative"?T.accent:T.primary),fontSize:10}}>{b.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.primary+"08",borderRadius:T.radiusSm,border:`1px solid ${T.primary}20`,marginBottom:4}}>
         <FamilyAvatar family={families.find(fam=>fam.id===currentFamilyId)} size={36} fontSize={20}/>
         <div>
@@ -1679,6 +1698,17 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
             <div style={{width:`${packPct}%`,background:`linear-gradient(90deg,${T.primary},${T.primaryLight})`,height:"100%",borderRadius:99,transition:"width 0.4s"}}/>
           </div>
           {packedCount===packItems.length&&packItems.length>0&&<p style={{margin:"8px 0 0",color:T.primary,fontSize:12,fontWeight:600,textAlign:"center"}}>All packed! 🎉</p>}
+          {packedCount>0&&(
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
+              <DeleteButton
+                label="Reset packed"
+                message="Reset all packed items?"
+                detail="All your packed items will go back to 'To Pack'."
+                onConfirm={()=>setMyPacking(myPacking.map(p=>p.status==="packed"?{...p,status:"tobring"}:p))}
+                style={{fontSize:12,padding:"5px 12px"}}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -1754,10 +1784,11 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
                       </>
                     ):(
                       <>
-                        <span style={{flex:1,color:e.status==="packed"?T.textDim:T.text,fontSize:13,
-                          textDecoration:e.status==="packed"?"line-through":"none"}}
-                          onClick={()=>cycleStatus(e)} style={{flex:1,color:e.status==="packed"?T.textDim:T.text,fontSize:13,
-                          textDecoration:e.status==="packed"?"line-through":"none",cursor:e.status!=="invan"?"pointer":"default"}}>
+                        <span
+                          onClick={()=>cycleStatus(e)}
+                          style={{flex:1,color:e.status==="packed"?T.textDim:T.text,fontSize:13,
+                            textDecoration:e.status==="packed"?"line-through":"none",
+                            cursor:e.status!=="invan"?"pointer":"default"}}>
                           {e.item}
                         </span>
                         <button onClick={()=>{setEditId(e.id);setEditVal({item:e.item,category:e.category,status:e.status});}}
