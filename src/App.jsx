@@ -149,16 +149,16 @@ const T = {
 const ADMIN_PIN = "9999"; // Admin passcode required to remove a family
 
 const DEFAULT_FAMILIES = [
-  { id:"f1", name:"Steve & Lyn",      color:"#2d6a4f", emoji:"🏔️", pin:"0000" },
-  { id:"f2", name:"Em & Dave",        color:"#e07a28", emoji:"🌊", pin:"0000" },
-  { id:"f3", name:"Matt & Janine",    color:"#4a90c4", emoji:"🌿", pin:"0000" },
-  { id:"f4", name:"Jonny & Steph",    color:"#c9a96e", emoji:"🦅", pin:"0000" },
+  { id:"f1", name:"Steve & Lyn",      color:"#2d6a4f", emoji:"🏔️", pin:"0000", homeTab:"calendar" },
+  { id:"f2", name:"Em & Dave",        color:"#e07a28", emoji:"🌊", pin:"0000", homeTab:"calendar" },
+  { id:"f3", name:"Matt & Janine",    color:"#4a90c4", emoji:"🌿", pin:"0000", homeTab:"calendar" },
+  { id:"f4", name:"Jonny & Steph",    color:"#c9a96e", emoji:"🦅", pin:"0000", homeTab:"calendar" },
   { id:"maintenance", name:"Maintenance", color:"#888888", emoji:"🔧", pin:"9999" },
 ];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const TODAY = new Date();
-const fmt = d => d.toISOString().split("T")[0];
+const fmt = d => { const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
 const addDays = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
 const nights = (s,e) => Math.max(0, Math.round((new Date(e)-new Date(s))/86400000));
 const overlap = (a,b) => new Date(a.start)<new Date(b.end) && new Date(a.end)>new Date(b.start);
@@ -536,10 +536,10 @@ function CalendarView({bookings,families,itineraries,onOpenItinerary,currentFami
   const y=month.getFullYear(),m=month.getMonth();
   const first=new Date(y,m,1).getDay(),dim=new Date(y,m+1,0).getDate();
   const cells=[];for(let i=0;i<first;i++)cells.push(null);for(let d=1;d<=dim;d++)cells.push(d);
-  const bkDay=d=>{if(!d)return[];const ds=fmt(new Date(y,m,d));return bookings.filter(b=>ds>=b.start&&ds<b.end);};
+  const bkDay=d=>{if(!d)return[];const ds=fmt(new Date(y,m,d));return bookings.filter(b=>ds>=b.start&&ds<=b.end);};
   const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
   const DayModal=({date,onClose})=>{
-    const ds=fmt(date);const bks=bookings.filter(b=>ds>=b.start&&ds<b.end);
+    const ds=fmt(date);const bks=bookings.filter(b=>ds>=b.start&&ds<=b.end);
     // find any linked itinerary for a booking
     const itinForBooking=b=>(itineraries||[]).find(it=>it.bookingId===b.id);
     return(<Modal title={date.toLocaleDateString("en-NZ",{weekday:"long",day:"numeric",month:"long"})} onClose={onClose} width={420}>
@@ -2058,7 +2058,7 @@ function FamilyManager({families,dispatch,currentFamilyId}){
   const save=()=>{
     if(!form.name.trim()) return;
     const pinToSave = form.pinInput.length===4 ? form.pinInput : form.pin;
-    const saved={...form, pin:pinToSave};
+    const saved={...form, pin:pinToSave, homeTab:form.homeTab||"calendar"};
     delete saved.pinInput;
     if(editing==="new") dispatch({type:"ADD_FAMILY",payload:saved});
     else dispatch({type:"UPDATE_FAMILY",payload:saved});
@@ -2114,6 +2114,14 @@ function FamilyManager({families,dispatch,currentFamilyId}){
               {/* Name */}
               <label style={lbl}>Family Name</label>
               <input style={inp} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. The Smiths"/>
+
+              {/* Home tab */}
+              <div>
+                <label style={lbl}>Home Screen</label>
+                <select style={inp} value={form.homeTab||"calendar"} onChange={e=>setForm(f=>({...f,homeTab:e.target.value}))}>
+                  {TABS.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                </select>
+              </div>
 
               {/* PIN — only editable for own family or new */}
               {(editing==="new"||isOwn(editing))&&(
@@ -2263,6 +2271,54 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+
+// ─── ACTIVITY LOG ─────────────────────────────────────────────────────────────
+function ActivityLog({families}){
+  const [logs,setLogs]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [open,setOpen]=useState(false);
+
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const data=await supa.get("activity_log","order=created_at.desc&limit=50");
+      setLogs(data||[]);
+    }catch(e){ console.error(e); }
+    setLoading(false);
+  };
+
+  const fName=id=>(families||[]).find(f=>f.id===id)?.name||"Unknown";
+  const fColor=id=>(families||[]).find(f=>f.id===id)?.color||T.textDim;
+
+  return(
+    <div style={{...card({padding:14,marginBottom:12})}}>
+      <button onClick={()=>{setOpen(!open);if(!open)load();}}
+        style={{...btn("transparent",T.textMuted,{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:0,border:"none"})}}>
+        <p style={{...sectionHead,margin:0}}>Activity Log</p>
+        <span style={{fontSize:11,transform:open?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
+      </button>
+      {open&&(
+        <div style={{marginTop:12}}>
+          {loading&&<p style={{color:T.textDim,fontSize:13}}>Loading...</p>}
+          {!loading&&logs.length===0&&<p style={{color:T.textDim,fontSize:13}}>No activity recorded yet.</p>}
+          {logs.map((log,i)=>(
+            <div key={i} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderLight}`,alignItems:"flex-start"}}>
+              <div style={{width:8,height:8,borderRadius:99,background:fColor(log.family_id),marginTop:5,flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:600,color:T.text}}>{log.action}</div>
+                {log.detail&&<div style={{fontSize:11,color:T.textMuted,marginTop:1}}>{log.detail}</div>}
+                <div style={{fontSize:10,color:T.textDim,marginTop:2}}>
+                  {fName(log.family_id)} &middot; {log.created_at?new Date(log.created_at).toLocaleString("en-NZ",{dateStyle:"short",timeStyle:"short"}):""}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsPanel({state,dispatch,currentFamilyId}){
   if(!state) return null;
   const families=state.families||[];
@@ -2313,6 +2369,9 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
 
       {/* All Families manager */}
       <FamilyManager families={families} dispatch={dispatch} currentFamilyId={currentFamilyId}/>
+
+      {/* Activity Log */}
+      <ActivityLog families={families}/>
 
       {/* Backup & Restore */}
       <div style={{...card({padding:14,marginBottom:12})}}>
@@ -2493,6 +2552,12 @@ export default function App(){
     if(!document.getElementById("no-zoom-style")) document.head.appendChild(style);
   },[]);
   const [tab,setTab]=useState("calendar");
+  // Set tab to family's homeTab when they sign in
+  const handleLogin = (familyId) => {
+    const fam = state.families.find(f=>f.id===familyId);
+    setTab(fam?.homeTab||"calendar");
+    setCurrentFamily(familyId);
+  };
   const [showBook,setShowBook]=useState(false);
   const [currentFamily,setCurrentFamily]=useState(null);
   const [menuOpen,setMenuOpen]=useState(false);
@@ -2504,6 +2569,17 @@ export default function App(){
   const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
 
   // ── Supabase-aware dispatch: persist every action to DB ─────────────────
+  const logActivity = async (action, detail) => {
+    try {
+      await supa.insert("activity_log", {
+        family_id: currentFamily,
+        action,
+        detail,
+        created_at: new Date().toISOString()
+      });
+    } catch(e) { console.warn("Log failed:", e); }
+  };
+
   const sbDispatch = useCallback(async ({type,payload,id})=>{
     // Always update local state immediately (optimistic)
     dispatch({type,payload,id});
@@ -2514,12 +2590,16 @@ export default function App(){
       if(type.startsWith("RESET_")) return;
       switch(type){
         // BOOKINGS
-        case "ADD_BOOKING":    await supa.upsert("bookings", toDB.booking(payload)); break;
-        case "DEL_BOOKING":    await supa.delete("bookings", {id}); break;
+        case "ADD_BOOKING":    await supa.upsert("bookings", toDB.booking(payload));
+          await logActivity("Added booking", `${payload.destination} (${payload.start} to ${payload.end})`); break;
+        case "DEL_BOOKING":    await supa.delete("bookings", {id});
+          await logActivity("Deleted booking", `Booking ID: ${id}`); break;
         case "CONFIRM_BOOKING": await supa.update("bookings", {status:"confirmed"}, {id}); break;
         // PLACES
         case "ADD_PLACE":      await supa.upsert("places", toDB.place(payload)); break;
-        case "DEL_PLACE":      await supa.delete("places", {id}); break;
+        case "DEL_PLACE":      await supa.delete("places", {id});
+          { const pl=state.places.find(p=>p.id===id);
+            await logActivity("Deleted place", pl?.name||id); } break;
         case "ADD_REVIEW":
           await supa.insert("reviews", toDB.review(payload.placeId, payload.review));
           // Update overall rating
@@ -2551,7 +2631,9 @@ export default function App(){
         // GUIDES
         case "ADD_GUIDE":      await supa.upsert("guides", toDB.guide(payload)); break;
         case "UPDATE_GUIDE":   await supa.upsert("guides", toDB.guide(payload)); break;
-        case "DEL_GUIDE":      await supa.delete("guides", {id}); break;
+        case "DEL_GUIDE":      await supa.delete("guides", {id});
+          { const g=state.guides.find(g=>g.id===id);
+            await logActivity("Deleted guide", g?.title||id); } break;
         // RULES
         case "SET_RULES":
           for(const r of payload) await supa.upsert("rules", toDB.rule(r));
@@ -2559,11 +2641,15 @@ export default function App(){
         // ITINERARIES
         case "ADD_ITINERARY":    await supa.upsert("itineraries", toDB.itin(payload)); break;
         case "UPDATE_ITINERARY": await supa.upsert("itineraries", toDB.itin(payload)); break;
-        case "DEL_ITINERARY":    await supa.delete("itineraries", {id}); break;
+        case "DEL_ITINERARY":    await supa.delete("itineraries", {id});
+          { const it=state.itineraries.find(i=>i.id===id);
+            await logActivity("Deleted trip", it?.title||id); } break;
         // FAMILIES
         case "ADD_FAMILY":    await supa.upsert("families", toDB.family(payload)); break;
         case "UPDATE_FAMILY": await supa.upsert("families", toDB.family(payload)); break;
-        case "DEL_FAMILY":    await supa.delete("families", {id}); break;
+        case "DEL_FAMILY":    await supa.delete("families", {id});
+          { const f=state.families.find(f=>f.id===id);
+            await logActivity("Removed family", f?.name||id); } break;
         // VAN SETTINGS
         case "SET_VAN_NAME":  await supa.update("van_settings", {van_name:payload}, {id:1}); break;
         case "SET_VAN_PHOTO": await supa.update("van_settings", {van_photo:payload}, {id:1}); break;
@@ -2606,7 +2692,7 @@ export default function App(){
     </div>
   );
 
-  if(!currentFamily)return <LoginScreen families={families} vanPhoto={state.vanPhoto} vanName={state.vanName} onLogin={setCurrentFamily}/>;
+  if(!currentFamily)return <LoginScreen families={families} vanPhoto={state.vanPhoto} vanName={state.vanName} onLogin={handleLogin}/>;
   const fam=families.find(f=>f.id===currentFamily);
   // If families reloaded from DB and signed-in family not found, sign out
   if(!fam){ setCurrentFamily(null); return null; }
@@ -2669,29 +2755,53 @@ export default function App(){
       </div>
 
       {showBook&&<BookingForm bookings={state.bookings} dispatch={sbDispatch} onClose={()=>setShowBook(false)} currentFamilyId={currentFamily} families={families}/>}
-    {/* Bottom tab bar */}
+    {/* Bottom tab bar — 2x2 | centre | 2x2 */}
     <div style={{
       position:"fixed",bottom:0,left:0,right:0,
       background:T.surface,
       borderTop:`1px solid ${T.border}`,
-      display:"flex",
       zIndex:500,
       paddingBottom:"env(safe-area-inset-bottom)",
       boxShadow:"0 -2px 12px rgba(0,0,0,0.08)"
     }}>
-      {TABS.map(t=>(
-        <button key={t.id} onClick={()=>setTab(t.id)}
-          style={{
-            flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-            padding:"6px 2px 8px",border:"none",background:"none",cursor:"pointer",
-            color:tab===t.id?T.primary:T.textDim,
-            borderTop:`2px solid ${tab===t.id?T.primary:"transparent"}`,
-            transition:"all 0.15s",minWidth:0
-          }}>
-          <span style={{fontSize:tab===t.id?22:20,lineHeight:1,marginBottom:2,transition:"font-size 0.15s"}}>{t.icon}</span>
-          <span style={{fontSize:9,fontWeight:tab===t.id?700:500,letterSpacing:0.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%",padding:"0 1px"}}>{t.label}</span>
-        </button>
-      ))}
+      <div style={{display:"flex",alignItems:"stretch",height:56}}>
+        {/* Left 2x2 grid */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1}}>
+          {TABS.slice(0,4).map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                border:"none",background:tab===t.id?T.primary+"08":"none",cursor:"pointer",
+                color:tab===t.id?T.primary:T.textDim,padding:"2px 0",
+                borderBottom:tab===t.id?`2px solid ${T.primary}`:"2px solid transparent"}}>
+              <span style={{fontSize:13,lineHeight:1}}>{t.icon}</span>
+              <span style={{fontSize:8,fontWeight:tab===t.id?700:500,marginTop:1}}>{t.label}</span>
+            </button>
+          ))}
+        </div>
+        {/* Centre button */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"6px 4px",flexShrink:0}}>
+          <button onClick={()=>setShowBook(true)}
+            style={{width:48,height:48,borderRadius:99,background:`linear-gradient(135deg,${T.primary},${T.primaryLight||"#4a9a6f"})`,
+              border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+              boxShadow:`0 4px 16px ${T.primary}50`,color:"white",fontSize:24,fontWeight:700,
+              transform:"translateY(-8px)",transition:"transform 0.15s"}}>
+            +
+          </button>
+        </div>
+        {/* Right 2x2 grid */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1}}>
+          {TABS.slice(4,8).map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                border:"none",background:tab===t.id?T.primary+"08":"none",cursor:"pointer",
+                color:tab===t.id?T.primary:T.textDim,padding:"2px 0",
+                borderBottom:tab===t.id?`2px solid ${T.primary}`:"2px solid transparent"}}>
+              <span style={{fontSize:13,lineHeight:1}}>{t.icon}</span>
+              <span style={{fontSize:8,fontWeight:tab===t.id?700:500,marginTop:1}}>{t.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
     </div>
   );
