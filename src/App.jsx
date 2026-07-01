@@ -1878,7 +1878,8 @@ function FamilyManager({families,dispatch,currentFamilyId}){
 
   const startEdit=(f)=>{ setEditing(f.id); setForm({...f,pinInput:""}); };
   const startNew=()=>{
-    const newF={id:"f"+Date.now(),name:"",color:FAMILY_COLORS[families.length%FAMILY_COLORS.length],emoji:FAMILY_EMOJIS[families.length%FAMILY_EMOJIS.length],pin:"0000",photo:null};
+    const idx=(families||[]).length;
+    const newF={id:"f"+Date.now(),name:"",color:FAMILY_COLORS[idx%FAMILY_COLORS.length],emoji:FAMILY_EMOJIS[idx%FAMILY_EMOJIS.length],pin:"0000",photo:null};
     setEditing("new"); setForm({...newF,pinInput:""});
   };
   const cancel=()=>{ setEditing(null); setForm({}); };
@@ -2064,7 +2065,7 @@ function FamilyManager({families,dispatch,currentFamilyId}){
 
 // SETTINGS
 function SettingsPanel({state,dispatch,currentFamilyId}){
-  const {families,vanPhoto,vanName}=state;
+  const {families=[],vanPhoto,vanName}=state;
   const [newVanName,setNewVanName]=useState(vanName);
   const [vanNameSaved,setVanNameSaved]=useState(false);
   const handleVanPhoto=e=>{
@@ -2146,6 +2147,7 @@ export default function App(){
 
   const [loading,setLoading]=useState(true);
   const [dbError,setDbError]=useState(false);
+  const loadingRef=useRef(true);
 
   // ── Load all data from Supabase on mount ─────────────────────────────────
   useEffect(()=>{
@@ -2191,11 +2193,11 @@ export default function App(){
         if(guides&&guides.length>0) dispatch({type:"RESET_GUIDES",payload:guides.map(fromDB.guide)});
         if(rules&&rules.length>0) dispatch({type:"RESET_RULES",payload:rules.map(fromDB.rule)});
 
-        setLoading(false);
+        setLoading(false); loadingRef.current=false;
       } catch(e){
         console.error("Supabase load error:",e);
         setDbError(true);
-        setLoading(false);
+        setLoading(false); loadingRef.current=false;
       }
     }
     loadAll();
@@ -2242,7 +2244,7 @@ export default function App(){
   const sbDispatch = useCallback(async ({type,payload,id})=>{
     // Always update local state immediately (optimistic)
     dispatch({type,payload,id});
-    if(loading) return; // Don't write during initial load
+    if(loadingRef.current) return; // Don't write during initial load
 
     try{
       switch(type){
@@ -2294,7 +2296,8 @@ export default function App(){
     } catch(e){
       console.error("Supabase write error:", type, e);
     }
-  },[loading]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
 
   const addPlaceToItinerary=(itinId,place,dayIndex=0)=>{
     const itin=state.itineraries.find(i=>i.id===itinId);if(!itin)return;
@@ -2329,6 +2332,8 @@ export default function App(){
 
   if(!currentFamily)return <LoginScreen families={families} vanPhoto={state.vanPhoto} vanName={state.vanName} onLogin={setCurrentFamily}/>;
   const fam=families.find(f=>f.id===currentFamily);
+  // If families reloaded from DB and signed-in family not found, sign out
+  if(!fam){ setCurrentFamily(null); return null; }
 
   return(
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter','Segoe UI',system-ui,sans-serif",color:T.text}}>
