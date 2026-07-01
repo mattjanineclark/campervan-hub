@@ -2188,7 +2188,7 @@ export default function App(){
           supa.get("van_settings","id=eq.1"),
           supa.get("bookings","order=start_date"),
           supa.get("places","order=name"),
-          supa.get("reviews","order=created_at"),
+          supa.get("reviews","order=place_id"),
           supa.get("equipment","order=category,item"),
           supa.get("family_packing","order=category,item"),
           supa.get("itineraries","order=start_date"),
@@ -2288,7 +2288,7 @@ export default function App(){
         case "ADD_REVIEW":
           await supa.insert("reviews", toDB.review(payload.placeId, payload.review));
           // Update overall rating
-          const allRevs = await supa.get("reviews", `place_id=eq.${payload.placeId}`);
+          const allRevs = await supa.get("reviews","place_id=eq."+payload.placeId);
           const avg = allRevs.length ? Math.round(allRevs.reduce((a,r)=>a+r.rating,0)/allRevs.length) : 0;
           await supa.update("places", {overall_rating:avg}, {id:payload.placeId});
           break;
