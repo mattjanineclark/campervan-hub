@@ -259,6 +259,7 @@ function reducer(state,{type,payload,id}){
     case "RESET_RULES":       return {...state,rules:payload};
     case "ADD_ODO":           return {...state,odoLog:[...state.odoLog,payload]};
     case "DEL_ODO":           return {...state,odoLog:state.odoLog.filter(e=>e.id!==id)};
+    case "MARK_ODO_PAID":     return {...state,odoLog:state.odoLog.map(e=>e.id===id?{...e,paid:!e.paid}:e)};
     case "RESET_ODO":         return {...state,odoLog:payload};
     case "SET_ODO_RATE":      return {...state,odoRate:payload};
     default: return state;
@@ -952,7 +953,7 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
   );
 }
 
-function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,currentFamilyId}){
+function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,currentFamilyId,odoLog,odoRate,onAddOdo}){
   const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
   const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
@@ -1013,6 +1014,95 @@ function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,cur
                   </div>
                 ):(
                   <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>No itinerary planned</span>
+                )}
+              </div>
+            );
+          })()}
+          {/* Odometer readings for this booking */}
+          {(()=>{
+            const odo=(odoLog||[]).filter(e=>e.bookingId===b.id);
+            const isOwn=b.familyId===currentFamilyId;
+            const [showOdoForm,setShowOdoForm]=React.useState(false);
+            const [odoForm,setOdoForm]=React.useState({startKm:"",endKm:"",tolls:"",notes:""});
+            return(
+              <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderLight}`}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontSize:11,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.5}}>🔢 Odometer</span>
+                  {isOwn&&!showOdoForm&&<button onClick={()=>setShowOdoForm(true)}
+                    style={{...btn(T.primary+"10",T.primary,{fontSize:10,padding:"3px 8px",border:`1px solid ${T.primary}20`})}}>+ Add Reading</button>}
+                </div>
+                {odo.map((e,i)=>{
+                  const total=(e.endKm-e.startKm)*(odoRate||0.30)+(e.tolls||0);
+                  return(
+                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:6,
+                      padding:"8px 10px",borderRadius:T.radiusSm,
+                      background:e.paid?T.green+"10":T.accent+"08",
+                      border:`1px solid ${e.paid?T.green+"30":T.accent+"20"}`}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:12,marginBottom:2}}>
+                          <span style={{fontWeight:700,color:T.primary}}>{(e.endKm-e.startKm).toLocaleString()} km</span>
+                          <span style={{color:T.textDim,marginLeft:6,fontSize:11}}>{e.startKm.toLocaleString()} → {e.endKm.toLocaleString()}</span>
+                        </div>
+                        <div style={{fontSize:12}}>
+                          <span style={{fontWeight:700,color:e.paid?T.green:T.accent}}>${total.toFixed(2)}</span>
+                          {(e.tolls||0)>0&&<span style={{color:T.textDim,fontSize:11,marginLeft:4}}>(km ${((e.endKm-e.startKm)*(odoRate||0.30)).toFixed(2)} + tolls ${e.tolls.toFixed(2)})</span>}
+                          {e.notes&&<span style={{color:T.textDim,fontSize:11,marginLeft:6,fontStyle:"italic"}}>{e.notes}</span>}
+                        </div>
+                      </div>
+                      <button onClick={()=>onAddOdo&&onAddOdo({_action:"MARK_PAID",id:e.id})}
+                        style={{...btn(e.paid?T.green+"20":T.accent+"15",e.paid?T.green:T.accent,
+                          {fontSize:10,padding:"4px 8px",border:`1px solid ${e.paid?T.green+"40":T.accent+"30"}`,
+                          flexShrink:0,whiteSpace:"nowrap"})}}>
+                        {e.paid?"✓ Paid":"To Pay"}
+                      </button>
+                    </div>
+                  );
+                })}
+                {odo.length===0&&!showOdoForm&&<span style={{fontSize:11,color:T.textDim,fontStyle:"italic"}}>No readings logged</span>}
+                {showOdoForm&&(
+                  <div style={{marginTop:8,background:T.bg,borderRadius:T.radiusSm,padding:10,border:`1px solid ${T.border}`}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
+                      <div>
+                        <label style={{...lbl,marginTop:0}}>Start km</label>
+                        <input style={inp} type="number" placeholder="45230" value={odoForm.startKm} onChange={ev=>setOdoForm(f=>({...f,startKm:ev.target.value}))}/>
+                      </div>
+                      <div>
+                        <label style={{...lbl,marginTop:0}}>End km</label>
+                        <input style={inp} type="number" placeholder="45480" value={odoForm.endKm} onChange={ev=>setOdoForm(f=>({...f,endKm:ev.target.value}))}/>
+                      </div>
+                    </div>
+                    {odoForm.startKm&&odoForm.endKm&&parseFloat(odoForm.endKm)>parseFloat(odoForm.startKm)&&(
+                      <p style={{fontSize:11,color:T.primary,fontWeight:700,margin:"0 0 6px"}}>
+                        {(parseFloat(odoForm.endKm)-parseFloat(odoForm.startKm)).toLocaleString()} km
+                        &middot; km cost: ${((parseFloat(odoForm.endKm)-parseFloat(odoForm.startKm))*(odoRate||0.30)).toFixed(2)}
+                        {parseFloat(odoForm.tolls||0)>0&&<> &middot; tolls: ${parseFloat(odoForm.tolls).toFixed(2)} &middot; total: ${((parseFloat(odoForm.endKm)-parseFloat(odoForm.startKm))*(odoRate||0.30)+parseFloat(odoForm.tolls||0)).toFixed(2)}</>}
+                      </p>
+                    )}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                      <div>
+                        <label style={{...lbl,marginTop:0}}>Tolls ($)</label>
+                        <input style={inp} type="number" step="0.10" placeholder="0.00" value={odoForm.tolls} onChange={ev=>setOdoForm(f=>({...f,tolls:ev.target.value}))}/>
+                      </div>
+                      <div>
+                        <label style={{...lbl,marginTop:0}}>Notes</label>
+                        <input style={inp} placeholder="Optional" value={odoForm.notes} onChange={ev=>setOdoForm(f=>({...f,notes:ev.target.value}))}/>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>{
+                        if(!odoForm.startKm||!odoForm.endKm)return;
+                        onAddOdo&&onAddOdo({id:"odo"+Date.now(),familyId:b.familyId,
+                          date:b.start,startKm:parseFloat(odoForm.startKm),
+                          endKm:parseFloat(odoForm.endKm),
+                          tolls:parseFloat(odoForm.tolls||0),
+                          paid:false,
+                          notes:odoForm.notes,bookingId:b.id});
+                        setOdoForm({startKm:"",endKm:"",tolls:"",notes:""});setShowOdoForm(false);
+                      }} style={{...btn(T.primary,T.surface,{fontSize:12,flex:1})}}>Save</button>
+                      <button onClick={()=>setShowOdoForm(false)}
+                        style={{...btn("transparent",T.textMuted,{fontSize:12,border:`1px solid ${T.border}`})}}>Cancel</button>
+                    </div>
+                  </div>
                 )}
               </div>
             );
@@ -2460,8 +2550,7 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
 // APP SHELL
 // ═══════════════════════════════════════════════════════════════════════════════
 const TABS=[
-  {id:"calendar",label:"Calendar",  icon:"📅"},
-  {id:"bookings",label:"Bookings",  icon:"📋"},
+  {id:"calendar",label:"Bookings",  icon:"📅"},
   {id:"trips",   label:"Trips",     icon:"🗺️"},
   {id:"places",  label:"Places",    icon:"📍"},
   {id:"guides",  label:"How-To",    icon:"📖"},
@@ -2470,6 +2559,153 @@ const TABS=[
   {id:"rules",   label:"Rules",     icon:"📜"},
   {id:"settings",label:"Settings",  icon:"⚙️"},
 ];
+
+
+// ─── ODOMETER PANEL ───────────────────────────────────────────────────────────
+function OdometerPanel({odoLog,odoRate,dispatch,families,bookings,currentFamilyId}){
+  const [rateEdit,setRateEdit]=useState(false);
+  const [newRate,setNewRate]=useState(String(odoRate||0.30));
+  const [view,setView]=useState("log"); // log | summary
+
+
+
+  // Per-family km totals
+  const fColor=id=>families.find(f=>f.id===id)?.color||T.primary;
+  const fName=id=>families.find(f=>f.id===id)?.name||"Unknown";
+
+  const thisYear=new Date().getFullYear();
+  const familyStats=families.filter(f=>f.id!=="maintenance").map(f=>{
+    const entries=odoLog.filter(e=>e.familyId===f.id);
+    const thisYearEntries=entries.filter(e=>e.date&&e.date.startsWith(String(thisYear)));
+    const totalKm=entries.reduce((s,e)=>s+(e.endKm-e.startKm),0);
+    const yearKm=thisYearEntries.reduce((s,e)=>s+(e.endKm-e.startKm),0);
+    const yearTolls=thisYearEntries.reduce((s,e)=>s+(e.tolls||0),0);
+    return{...f,totalKm,yearKm,yearTolls,trips:entries.length};
+  });
+
+  const grandTotal=odoLog.reduce((s,e)=>s+(e.endKm-e.startKm),0);
+  const yearTotal=odoLog.filter(e=>e.date?.startsWith(String(thisYear))).reduce((s,e)=>s+(e.endKm-e.startKm),0);
+
+  // Latest odometer reading
+  const latestReading=odoLog.length>0?Math.max(...odoLog.map(e=>e.endKm)):null;
+
+
+
+  return(
+    <div>
+      {/* Header stats */}
+      <div style={{...card({padding:14,marginBottom:12})}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+          <div>
+            <p style={{...sectionHead,margin:"0 0 4px"}}>{thisYear} Odometer</p>
+            {latestReading&&<p style={{color:T.textDim,fontSize:12,margin:0}}>Current: {latestReading.toLocaleString()} km</p>}
+          </div>
+          <div style={{textAlign:"right"}}>
+            {rateEdit?(
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <span style={{fontSize:12,color:T.textMuted}}>$</span>
+                <input style={{...inp,width:64,padding:"4px 8px",fontSize:13}} value={newRate}
+                  onChange={e=>setNewRate(e.target.value)} type="number" step="0.01"/>
+                <span style={{fontSize:12,color:T.textMuted}}>/km</span>
+                <button onClick={()=>{dispatch({type:"SET_ODO_RATE",payload:parseFloat(newRate)||0.30});setRateEdit(false);}}
+                  style={{...btn(T.primary,T.surface,{fontSize:11,padding:"4px 8px"})}}>Save</button>
+              </div>
+            ):(
+              <button onClick={()=>{setNewRate(String(odoRate));setRateEdit(true);}}
+                style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`,fontSize:12,padding:"4px 10px"})}}>
+                ${(odoRate||0.30).toFixed(2)}/km ✏️
+              </button>
+            )}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div style={{background:T.primary+"10",borderRadius:T.radiusSm,padding:"10px 12px",textAlign:"center"}}>
+            <div style={{fontSize:20,fontWeight:800,color:T.primary}}>{yearTotal.toLocaleString()}</div>
+            <div style={{fontSize:11,color:T.textMuted}}>{thisYear} km total</div>
+          </div>
+          <div style={{background:T.accent+"10",borderRadius:T.radiusSm,padding:"10px 12px",textAlign:"center"}}>
+            <div style={{fontSize:20,fontWeight:800,color:T.accent}}>${(yearTotal*(odoRate||0.30)+odoLog.filter(e=>e.date?.startsWith(String(thisYear))).reduce((s,e)=>s+(e.tolls||0),0)).toFixed(0)}</div>
+            <div style={{fontSize:11,color:T.textMuted}}>{thisYear} cost (km + tolls)</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Per-family breakdown */}
+      <div style={{...card({padding:14,marginBottom:12})}}>
+        <p style={{...sectionHead,marginBottom:10}}>Family Breakdown — {thisYear}</p>
+        {familyStats.map(f=>{
+          const pct=yearTotal>0?Math.round((f.yearKm/yearTotal)*100):0;
+          const cost=f.yearKm*(odoRate||0.30);
+          return(
+            <div key={f.id} style={{marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                <span style={{fontWeight:700,color:T.text,fontSize:13}}>
+                  <FamilyAvatar family={f} size={16} fontSize={12}/> {f.name}
+                </span>
+                <div style={{textAlign:"right"}}>
+                  <span style={{fontWeight:700,color:f.color,fontSize:13}}>{f.yearKm.toLocaleString()} km</span>
+                  <span style={{color:T.textDim,fontSize:11,marginLeft:8}}>${(f.yearKm*(odoRate||0.30)+f.yearTolls).toFixed(0)}{f.yearTolls>0&&<span style={{color:T.accent}}> (+${f.yearTolls.toFixed(0)} tolls)</span>}</span>
+                </div>
+              </div>
+              <div style={{background:T.bg,borderRadius:99,height:8,overflow:"hidden",border:`1px solid ${T.border}`}}>
+                <div style={{width:`${pct}%`,background:f.color,height:"100%",borderRadius:99,transition:"width 0.4s"}}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
+                <span style={{fontSize:10,color:T.textDim}}>{pct}% of total km</span>
+                <span style={{fontSize:10,color:T.textDim}}>{f.trips} trip{f.trips!==1?"s":""} all time ({f.totalKm.toLocaleString()} km)</span>
+              </div>
+            </div>
+          );
+        })}
+        {odoLog.length===0&&<p style={{color:T.textDim,fontSize:13}}>No entries yet.</p>}
+      </div>
+
+      <div style={{...card({padding:14,marginBottom:12}),background:T.primary+"08",border:`1px solid ${T.primary}20`}}>
+        <p style={{fontSize:13,color:T.textMuted,margin:0,lineHeight:1.5}}>
+          📋 Odometer readings are logged on individual bookings in the <b>Bookings</b> tab. This page shows a summary of all recorded trips and costs.
+        </p>
+      </div>
+
+      {/* Log entries */}
+      <div style={{...card({padding:14})}}>
+        <p style={{...sectionHead,marginBottom:10}}>Trip Log</p>
+        {odoLog.length===0&&<p style={{color:T.textDim,fontSize:13}}>No entries logged yet.</p>}
+        {odoLog.map(e=>{
+          const km=e.endKm-e.startKm;
+          const cost=km*(odoRate||0.30);
+          const fam=families.find(f=>f.id===e.familyId);
+          return(
+            <div key={e.id} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderLight}`,alignItems:"flex-start"}}>
+              <div style={{width:4,borderRadius:2,background:fam?.color||T.primary,alignSelf:"stretch",flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div>
+                    <span style={{fontWeight:700,color:T.text,fontSize:13}}>{km.toLocaleString()} km</span>
+                    <span style={{color:isPaid?T.green:T.accent,fontSize:11,marginLeft:8,fontWeight:700}}>${cost.toFixed(2)}</span>
+                    <span style={{...pill(isPaid?T.green+"15":T.accent+"15",isPaid?T.green:T.accent),fontSize:9,marginLeft:4}}>{isPaid?"✓ Paid":"To Pay"}</span>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:12,color:fam?.color||T.primary,fontWeight:600}}>{fam?.name||"?"}</div>
+                    <div style={{fontSize:11,color:T.textDim}}>{e.date}</div>
+                  </div>
+                </div>
+                <div style={{fontSize:11,color:T.textMuted,marginTop:2}}>
+                  {e.startKm.toLocaleString()} → {e.endKm.toLocaleString()} km
+                  {(e.tolls||0)>0&&<span style={{color:T.accent}}> &middot; tolls ${e.tolls?.toFixed(2)}</span>}
+                  {e.notes&&<span style={{fontStyle:"italic"}}> &middot; {e.notes}</span>}
+                </div>
+              </div>
+              {e.familyId===currentFamilyId&&(
+                <DeleteButton label="Delete" message="Delete this odometer entry?" detail={`${km} km on ${e.date}`}
+                  onConfirm={()=>dispatch({type:"DEL_ODO",id:e.id})} style={{fontSize:11,padding:"3px 8px"}}/>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function App(){
   const [state,dispatch]=useReducer(reducer,INIT);
@@ -2530,6 +2766,7 @@ export default function App(){
         if(odoLog&&odoLog.length>0) dispatch({type:"RESET_ODO",payload:odoLog.map(e=>({
           id:e.id, familyId:e.family_id, date:e.date,
           startKm:e.start_km, endKm:e.end_km,
+          tolls:e.tolls||0, paid:e.paid||false,
           notes:e.notes||"", bookingId:e.booking_id||""
         }))});
         if(odoSettings?.[0]?.odo_rate) dispatch({type:"SET_ODO_RATE",payload:odoSettings[0].odo_rate});
@@ -2661,6 +2898,7 @@ export default function App(){
           await supa.upsert("odometer_log", {
             id:payload.id, family_id:payload.familyId, date:payload.date,
             start_km:payload.startKm, end_km:payload.endKm,
+            tolls:payload.tolls||0, paid:payload.paid||false,
             notes:payload.notes||"", booking_id:payload.bookingId||null
           });
           await logActivity("Logged odometer", `${payload.startKm} → ${payload.endKm} km (${payload.endKm-payload.startKm} km)`);
@@ -2669,6 +2907,10 @@ export default function App(){
           await supa.delete("odometer_log", {id});
           await logActivity("Deleted odometer entry", `ID: ${id}`);
           break;
+        case "MARK_ODO_PAID":
+          { const entry=state.odoLog.find(e=>e.id===id);
+            await supa.update("odometer_log",{paid:!entry?.paid},{id});
+          } break;
         case "SET_ODO_RATE":
           await supa.update("van_settings", {odo_rate:payload}, {id:1});
           break;
@@ -2764,18 +3006,28 @@ export default function App(){
       </div>
 
       {/* CONTENT */}
-      <div style={{maxWidth:860,margin:"0 auto",padding:"14px 12px 96px"}}>
+      <div style={{maxWidth:860,margin:"0 auto",padding:"14px 12px 88px"}}>
         {tab==="calendar"&&(
           <>
-            <div style={card({padding:14,marginBottom:16})}>
+            <div style={card({padding:14,marginBottom:12})}>
               <CalendarView bookings={state.bookings} families={families} itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily}/>
             </div>
-            <div style={card({padding:14})}>
-              <CollapsibleStats bookings={state.bookings} families={families}/>
-            </div>
+            {(()=>{
+              const [showBookings,setShowBookings]=React.useState(false);
+              const upcoming=state.bookings.filter(b=>b.end>=fmt(new Date())).length;
+              return(<>
+                <button onClick={()=>setShowBookings(!showBookings)}
+                  style={{...btn("transparent",T.textMuted,{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",border:`1px solid ${T.border}`,borderRadius:showBookings?`${T.radius} ${T.radius} 0 0`:T.radius,marginTop:12})}}>
+                  <span style={{fontWeight:700,fontSize:13}}>📋 Bookings {upcoming>0&&<span style={{...pill(T.primary+"15",T.primary),fontSize:10,marginLeft:6}}>{upcoming} upcoming</span>}</span>
+                  <span style={{fontSize:11,transform:showBookings?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
+                </button>
+                {showBookings&&<div style={{border:`1px solid ${T.border}`,borderTop:"none",borderRadius:`0 0 ${T.radius} ${T.radius}`,padding:12}}>
+                  <BookingList bookings={state.bookings} dispatch={sbDispatch} families={families} itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e=>e._action==="MARK_PAID"?sbDispatch({type:"MARK_ODO_PAID",id:e.id}):sbDispatch({type:"ADD_ODO",payload:e})}/>
+                </div>}
+              </>);
+            })()}
           </>
         )}
-        {tab==="bookings" &&<BookingList bookings={state.bookings} dispatch={sbDispatch} families={families} itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily}/>}
         {tab==="trips"    &&<TripsPanel itineraries={state.itineraries} dispatch={sbDispatch} places={state.places} bookings={state.bookings} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={()=>setOpenItinId(null)} currentFamilyId={currentFamily} onGoToTab={setTab}/>}
         {tab==="places"   &&<PlacesPanel places={state.places} dispatch={sbDispatch} itineraries={state.itineraries} onPickItinerary={addPlaceToItinerary} families={families} currentFamilyId={currentFamily}/>}
         {tab==="guides"   &&<GuidesPanel guides={state.guides} dispatch={sbDispatch}/>}
@@ -2787,270 +3039,77 @@ export default function App(){
 
       {showBook&&<BookingForm bookings={state.bookings} dispatch={sbDispatch} onClose={()=>setShowBook(false)} currentFamilyId={currentFamily} families={families}/>}
 
-// ─── ODOMETER PANEL ───────────────────────────────────────────────────────────
-function OdometerPanel({odoLog,odoRate,dispatch,families,bookings,currentFamilyId}){
-  const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({date:fmt(new Date()),startKm:"",endKm:"",notes:"",bookingId:""});
-  const [rateEdit,setRateEdit]=useState(false);
-  const [newRate,setNewRate]=useState(String(odoRate||0.30));
-  const [view,setView]=useState("log"); // log | summary
-
-  const h=(k,v)=>setForm(f=>({...f,[k]:v}));
-
-  const submit=()=>{
-    if(!form.startKm||!form.endKm) return;
-    const startKm=parseFloat(form.startKm);
-    const endKm=parseFloat(form.endKm);
-    if(endKm<=startKm){alert("End km must be greater than start km.");return;}
-    dispatch({type:"ADD_ODO",payload:{
-      id:"odo"+Date.now(), familyId:currentFamilyId,
-      date:form.date, startKm, endKm,
-      notes:form.notes, bookingId:form.bookingId
-    }});
-    setForm({date:fmt(new Date()),startKm:"",endKm:"",notes:"",bookingId:""});
-    setShowForm(false);
-  };
-
-  // Per-family km totals
-  const fColor=id=>families.find(f=>f.id===id)?.color||T.primary;
-  const fName=id=>families.find(f=>f.id===id)?.name||"Unknown";
-
-  const thisYear=new Date().getFullYear();
-  const familyStats=families.filter(f=>f.id!=="maintenance").map(f=>{
-    const entries=odoLog.filter(e=>e.familyId===f.id);
-    const thisYearEntries=entries.filter(e=>e.date&&e.date.startsWith(String(thisYear)));
-    const totalKm=entries.reduce((s,e)=>s+(e.endKm-e.startKm),0);
-    const yearKm=thisYearEntries.reduce((s,e)=>s+(e.endKm-e.startKm),0);
-    return{...f,totalKm,yearKm,trips:entries.length};
-  });
-
-  const grandTotal=odoLog.reduce((s,e)=>s+(e.endKm-e.startKm),0);
-  const yearTotal=odoLog.filter(e=>e.date?.startsWith(String(thisYear))).reduce((s,e)=>s+(e.endKm-e.startKm),0);
-
-  // Latest odometer reading
-  const latestReading=odoLog.length>0?Math.max(...odoLog.map(e=>e.endKm)):null;
-
-  const myBookings=bookings.filter(b=>b.familyId===currentFamilyId&&b.end>=fmt(new Date()));
-
-  return(
-    <div>
-      {/* Header stats */}
-      <div style={{...card({padding:14,marginBottom:12})}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-          <div>
-            <p style={{...sectionHead,margin:"0 0 4px"}}>{thisYear} Odometer</p>
-            {latestReading&&<p style={{color:T.textDim,fontSize:12,margin:0}}>Current: {latestReading.toLocaleString()} km</p>}
-          </div>
-          <div style={{textAlign:"right"}}>
-            {rateEdit?(
-              <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <span style={{fontSize:12,color:T.textMuted}}>$</span>
-                <input style={{...inp,width:64,padding:"4px 8px",fontSize:13}} value={newRate}
-                  onChange={e=>setNewRate(e.target.value)} type="number" step="0.01"/>
-                <span style={{fontSize:12,color:T.textMuted}}>/km</span>
-                <button onClick={()=>{dispatch({type:"SET_ODO_RATE",payload:parseFloat(newRate)||0.30});setRateEdit(false);}}
-                  style={{...btn(T.primary,T.surface,{fontSize:11,padding:"4px 8px"})}}>Save</button>
-              </div>
-            ):(
-              <button onClick={()=>{setNewRate(String(odoRate));setRateEdit(true);}}
-                style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`,fontSize:12,padding:"4px 10px"})}}>
-                ${(odoRate||0.30).toFixed(2)}/km ✏️
-              </button>
-            )}
-          </div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          <div style={{background:T.primary+"10",borderRadius:T.radiusSm,padding:"10px 12px",textAlign:"center"}}>
-            <div style={{fontSize:20,fontWeight:800,color:T.primary}}>{yearTotal.toLocaleString()}</div>
-            <div style={{fontSize:11,color:T.textMuted}}>{thisYear} km total</div>
-          </div>
-          <div style={{background:T.accent+"10",borderRadius:T.radiusSm,padding:"10px 12px",textAlign:"center"}}>
-            <div style={{fontSize:20,fontWeight:800,color:T.accent}}>${(yearTotal*(odoRate||0.30)).toFixed(0)}</div>
-            <div style={{fontSize:11,color:T.textMuted}}>{thisYear} cost total</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Per-family breakdown */}
-      <div style={{...card({padding:14,marginBottom:12})}}>
-        <p style={{...sectionHead,marginBottom:10}}>Family Breakdown — {thisYear}</p>
-        {familyStats.map(f=>{
-          const pct=yearTotal>0?Math.round((f.yearKm/yearTotal)*100):0;
-          const cost=f.yearKm*(odoRate||0.30);
-          return(
-            <div key={f.id} style={{marginBottom:12}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                <span style={{fontWeight:700,color:T.text,fontSize:13}}>
-                  <FamilyAvatar family={f} size={16} fontSize={12}/> {f.name}
-                </span>
-                <div style={{textAlign:"right"}}>
-                  <span style={{fontWeight:700,color:f.color,fontSize:13}}>{f.yearKm.toLocaleString()} km</span>
-                  <span style={{color:T.textDim,fontSize:11,marginLeft:8}}>${cost.toFixed(0)}</span>
-                </div>
-              </div>
-              <div style={{background:T.bg,borderRadius:99,height:8,overflow:"hidden",border:`1px solid ${T.border}`}}>
-                <div style={{width:`${pct}%`,background:f.color,height:"100%",borderRadius:99,transition:"width 0.4s"}}/>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
-                <span style={{fontSize:10,color:T.textDim}}>{pct}% of total km</span>
-                <span style={{fontSize:10,color:T.textDim}}>{f.trips} trip{f.trips!==1?"s":""} all time ({f.totalKm.toLocaleString()} km)</span>
-              </div>
-            </div>
-          );
-        })}
-        {odoLog.length===0&&<p style={{color:T.textDim,fontSize:13}}>No entries yet.</p>}
-      </div>
-
-      {/* Add entry button */}
-      {!showForm&&(
-        <button onClick={()=>setShowForm(true)}
-          style={{...btn(T.primary,T.surface,{width:"100%",marginBottom:12})}}>
-          + Log Trip Odometer
-        </button>
-      )}
-
-      {/* Entry form */}
-      {showForm&&(
-        <div style={{...card({padding:14,marginBottom:12}),border:`2px solid ${T.primary}30`}}>
-          <p style={{...sectionHead,marginBottom:10}}>New Entry — {families.find(f=>f.id===currentFamilyId)?.name}</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
-            <div>
-              <label style={lbl}>Date</label>
-              <input style={inp} type="date" value={form.date} onChange={e=>h("date",e.target.value)}/>
-            </div>
-            <div>
-              <label style={lbl}>Link to Booking</label>
-              <select style={inp} value={form.bookingId} onChange={e=>h("bookingId",e.target.value)}>
-                <option value="">None</option>
-                {myBookings.map(b=><option key={b.id} value={b.id}>{b.destination} ({b.start})</option>)}
-              </select>
-            </div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
-            <div>
-              <label style={lbl}>Start Km ⚡</label>
-              <input style={inp} type="number" placeholder="e.g. 45230" value={form.startKm} onChange={e=>h("startKm",e.target.value)}/>
-              {latestReading&&!form.startKm&&(
-                <button onClick={()=>h("startKm",String(latestReading))}
-                  style={{...btn(T.primary+"10",T.primary,{fontSize:10,padding:"3px 8px",marginTop:4,border:`1px solid ${T.primary}30`})}}>
-                  Use last: {latestReading.toLocaleString()}
-                </button>
-              )}
-            </div>
-            <div>
-              <label style={lbl}>End Km 🏁</label>
-              <input style={inp} type="number" placeholder="e.g. 45480" value={form.endKm} onChange={e=>h("endKm",e.target.value)}/>
-              {form.startKm&&form.endKm&&parseFloat(form.endKm)>parseFloat(form.startKm)&&(
-                <p style={{fontSize:11,color:T.primary,margin:"4px 0 0",fontWeight:700}}>
-                  {(parseFloat(form.endKm)-parseFloat(form.startKm)).toLocaleString()} km &middot; ${((parseFloat(form.endKm)-parseFloat(form.startKm))*(odoRate||0.30)).toFixed(2)}
-                </p>
-              )}
-            </div>
-          </div>
-          <label style={lbl}>Notes</label>
-          <input style={{...inp,marginBottom:12}} placeholder="e.g. Whanganui trip" value={form.notes} onChange={e=>h("notes",e.target.value)}/>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={submit} disabled={!form.startKm||!form.endKm}
-              style={{...btn(T.primary,T.surface,{flex:1}),opacity:(!form.startKm||!form.endKm)?0.5:1}}>
-              Save Entry
-            </button>
-            <button onClick={()=>setShowForm(false)}
-              style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Log entries */}
-      <div style={{...card({padding:14})}}>
-        <p style={{...sectionHead,marginBottom:10}}>Trip Log</p>
-        {odoLog.length===0&&<p style={{color:T.textDim,fontSize:13}}>No entries logged yet.</p>}
-        {odoLog.map(e=>{
-          const km=e.endKm-e.startKm;
-          const cost=km*(odoRate||0.30);
-          const fam=families.find(f=>f.id===e.familyId);
-          return(
-            <div key={e.id} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderLight}`,alignItems:"flex-start"}}>
-              <div style={{width:4,borderRadius:2,background:fam?.color||T.primary,alignSelf:"stretch",flexShrink:0}}/>
-              <div style={{flex:1}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div>
-                    <span style={{fontWeight:700,color:T.text,fontSize:13}}>{km.toLocaleString()} km</span>
-                    <span style={{color:T.textDim,fontSize:11,marginLeft:8}}>${cost.toFixed(2)}</span>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:12,color:fam?.color||T.primary,fontWeight:600}}>{fam?.name||"?"}</div>
-                    <div style={{fontSize:11,color:T.textDim}}>{e.date}</div>
-                  </div>
-                </div>
-                <div style={{fontSize:11,color:T.textMuted,marginTop:2}}>
-                  {e.startKm.toLocaleString()} → {e.endKm.toLocaleString()} km
-                  {e.notes&&<span style={{fontStyle:"italic"}}> &middot; {e.notes}</span>}
-                </div>
-              </div>
-              {e.familyId===currentFamilyId&&(
-                <DeleteButton label="Delete" message="Delete this odometer entry?" detail={`${km} km on ${e.date}`}
-                  onConfirm={()=>dispatch({type:"DEL_ODO",id:e.id})} style={{fontSize:11,padding:"3px 8px"}}/>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
     {/* Bottom tab bar — 2x2 | centre | 2x2 */}
     <div style={{
       position:"fixed",bottom:0,left:0,right:0,
-      background:T.surface,
-      borderTop:`1px solid ${T.border}`,
       zIndex:500,
-      paddingBottom:"max(env(safe-area-inset-bottom),8px)",
-      boxShadow:"0 -2px 12px rgba(0,0,0,0.08)"
     }}>
-      <div style={{display:"flex",alignItems:"stretch",height:68,paddingLeft:8,paddingRight:8}}>
-        {/* Left 2x2 grid */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1,gap:2,paddingTop:4}}>
-          {TABS.slice(0,4).map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)}
-              style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                border:"none",borderRadius:T.radiusSm,
-                background:tab===t.id?T.primary+"12":"none",cursor:"pointer",
-                color:tab===t.id?T.primary:T.textDim,padding:"3px 2px",
-                outline:tab===t.id?`2px solid ${T.primary}30`:"none"}}>
-              <span style={{fontSize:17,lineHeight:1}}>{t.icon}</span>
-              <span style={{fontSize:8,fontWeight:tab===t.id?700:500,marginTop:2,letterSpacing:0.1}}>{t.label}</span>
+      {/* Safe area fill — same colour as bar */}
+      <div style={{
+        position:"absolute",bottom:0,left:0,right:0,
+        height:"env(safe-area-inset-bottom)",
+        background:T.surface,
+        zIndex:0
+      }}/>
+      {/* Main bar */}
+      <div style={{
+        position:"relative",zIndex:1,
+        background:T.surface,
+        borderTop:`1px solid ${T.border}`,
+        paddingTop:6,
+        paddingBottom:"env(safe-area-inset-bottom)",
+        boxShadow:"0 -4px 16px rgba(0,0,0,0.10)"
+      }}>
+        <div style={{display:"flex",alignItems:"stretch",height:72}}>
+          {/* Left 2x2 grid */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1}}>
+            {TABS.slice(0,4).map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)}
+                style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",
+                  justifyContent:"center",border:"none",borderRadius:0,
+                  background:tab===t.id?T.primary+"10":"transparent",cursor:"pointer",
+                  color:tab===t.id?T.primary:T.textDim,padding:0,margin:0,overflow:"hidden"}}>
+                {tab===t.id&&<div style={{position:"absolute",top:0,left:4,right:4,height:2,borderRadius:"0 0 2px 2px",background:T.primary}}/>}
+                <span style={{fontSize:26,lineHeight:1,display:"block"}}>{t.icon}</span>
+                <span style={{fontSize:8,fontWeight:tab===t.id?700:400,marginTop:-2,color:tab===t.id?T.primary:T.textDim,letterSpacing:0.2,display:"block"}}>{t.label}</span>
+              </button>
+            ))}
+          </div>
+          {/* Centre + button — rises above bar, extends through safe zone */}
+          <div style={{position:"relative",display:"flex",alignItems:"flex-start",justifyContent:"center",flexShrink:0,width:76}}>
+            <button onClick={()=>setShowBook(true)}
+              style={{
+                position:"absolute",
+                bottom:`calc(-1 * env(safe-area-inset-bottom))`,
+                width:64,
+                top:-18,
+                borderRadius:"18px 18px 0 0",
+                background:`linear-gradient(160deg,${T.primary},#3a8a5f)`,
+                border:"none",
+                borderLeft:`1px solid ${T.primary}80`,
+                borderRight:`1px solid ${T.primary}80`,
+                borderTop:`1px solid ${T.primary}80`,
+                cursor:"pointer",display:"flex",flexDirection:"column",
+                alignItems:"center",justifyContent:"center",gap:2,
+                boxShadow:`-2px -4px 20px ${T.primary}40`,color:"white"}}>
+              <span style={{fontSize:30,lineHeight:1,fontWeight:300}}>+</span>
+              <span style={{fontSize:9,fontWeight:600,letterSpacing:0.5,opacity:0.9}}>BOOK</span>
             </button>
-          ))}
-        </div>
-        {/* Centre + button */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"0 8px",flexShrink:0}}>
-          <button onClick={()=>setShowBook(true)}
-            style={{width:54,height:54,borderRadius:99,
-              background:`linear-gradient(135deg,${T.primary},#4a9a6f)`,
-              border:"3px solid white",cursor:"pointer",
-              display:"flex",alignItems:"center",justifyContent:"center",
-              boxShadow:`0 6px 20px ${T.primary}55`,color:"white",
-              fontSize:28,fontWeight:300,lineHeight:1,
-              transform:"translateY(-10px)"}}>
-            +
-          </button>
-        </div>
-        {/* Right 2x2 grid */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1,gap:2,paddingTop:4}}>
-          {TABS.slice(4,8).map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)}
-              style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                border:"none",borderRadius:T.radiusSm,
-                background:tab===t.id?T.primary+"12":"none",cursor:"pointer",
-                color:tab===t.id?T.primary:T.textDim,padding:"3px 2px",
-                outline:tab===t.id?`2px solid ${T.primary}30`:"none"}}>
-              <span style={{fontSize:17,lineHeight:1}}>{t.icon}</span>
-              <span style={{fontSize:8,fontWeight:tab===t.id?700:500,marginTop:2,letterSpacing:0.1}}>{t.label}</span>
-            </button>
-          ))}
+          </div>
+          {/* Right 2x2 grid */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1}}>
+            {TABS.slice(4,8).map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)}
+                style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",
+                  justifyContent:"center",border:"none",borderRadius:0,
+                  background:tab===t.id?T.primary+"10":"transparent",cursor:"pointer",
+                  color:tab===t.id?T.primary:T.textDim,padding:0,margin:0,overflow:"hidden"}}>
+                {tab===t.id&&<div style={{position:"absolute",top:0,left:4,right:4,height:2,borderRadius:"0 0 2px 2px",background:T.primary}}/>}
+                <span style={{fontSize:26,lineHeight:1,display:"block"}}>{t.icon}</span>
+                <span style={{fontSize:8,fontWeight:tab===t.id?700:400,marginTop:-2,color:tab===t.id?T.primary:T.textDim,letterSpacing:0.2,display:"block"}}>{t.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
