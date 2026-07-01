@@ -10,14 +10,14 @@ if(!SUPABASE_KEY) console.error("⚠️ SUPABASE_KEY is empty — check GitHub s
 else console.log("✓ Supabase configured:", SUPABASE_URL);
 
 const supa = {
-  async get(table, query=""){
+  get: async (table, query="") => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
       headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json" }
     });
-    if(!res.ok){ console.error(`Supabase GET ${table} failed:`, res.status); return []; }
+    if(!res.ok){ console.error("Supabase GET "+table+" failed:", res.status); return []; }
     return res.json();
   },
-  async insert(table, data){
+  insert: async (table, data) => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method:"POST",
       headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"return=representation" },
@@ -25,8 +25,8 @@ const supa = {
     });
     return res.json();
   },
-  async update(table, data, match){
-    const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join("&");
+  update: async (table, data, match) => {
+    const q = Object.entries(match).map(([k,v])=>k+"=eq."+v).join("&");
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
       method:"PATCH",
       headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"return=representation" },
@@ -34,7 +34,7 @@ const supa = {
     });
     return res.json();
   },
-  async upsert(table, data){
+  upsert: async (table, data) => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method:"POST",
       headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=representation" },
@@ -42,40 +42,38 @@ const supa = {
     });
     return res.json();
   },
-  async delete(table, match){
-    const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join("&");
+  delete: async (table, match) => {
+    const q = Object.entries(match).map(([k,v])=>k+"=eq."+v).join("&");
     await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
       method:"DELETE",
       headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` }
     });
   },
-  async uploadImage(file, path){
-    // Upload a file to Supabase Storage, return the public URL
+  uploadImage: async (file, path) => {
     const formData = new FormData();
-    formData.append('', file);
+    formData.append("", file);
     const res = await fetch(`${SUPABASE_URL}/storage/v1/object/app-images/${path}`, {
-      method: 'POST',
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      method:"POST",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` },
       body: formData
     });
     if(!res.ok){
-      // Try upsert if already exists
       const res2 = await fetch(`${SUPABASE_URL}/storage/v1/object/app-images/${path}`, {
-        method: 'PUT',
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        method:"PUT",
+        headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` },
         body: formData
       });
-      if(!res2.ok) throw new Error('Upload failed');
+      if(!res2.ok) throw new Error("Upload failed");
     }
     return `${SUPABASE_URL}/storage/v1/object/public/app-images/${path}`;
   },
-  async deleteImage(path){
+  deleteImage: async (path) => {
     await fetch(`${SUPABASE_URL}/storage/v1/object/app-images/${path}`, {
-      method: 'DELETE',
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+      method:"DELETE",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` }
     });
   },
-  subscribe(table, callback){
+  subscribe: (table, callback) => {
     // Supabase realtime via WebSocket
     const wsUrl = SUPABASE_URL.replace("https://","wss://") + "/realtime/v1/websocket?apikey=" + SUPABASE_KEY + "&vsn=1.0.0";
     const ws = new WebSocket(wsUrl);
@@ -2652,89 +2650,7 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 if(!SUPABASE_KEY) console.error("⚠️ SUPABASE_KEY is empty — check GitHub secrets are named VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY");
 else console.log("✓ Supabase configured:", SUPABASE_URL);
 
-const supa = {
-  async get(table, query=""){
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
-      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json" }
-    });
-    if(!res.ok){ console.error(`Supabase GET ${table} failed:`, res.status); return []; }
-    return res.json();
-  },
-  async insert(table, data){
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method:"POST",
-      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"return=representation" },
-      body: JSON.stringify(data)
-    });
-    return res.json();
-  },
-  async update(table, data, match){
-    const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join("&");
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
-      method:"PATCH",
-      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"return=representation" },
-      body: JSON.stringify(data)
-    });
-    return res.json();
-  },
-  async upsert(table, data){
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method:"POST",
-      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify(data)
-    });
-    return res.json();
-  },
-  async delete(table, match){
-    const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join("&");
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
-      method:"DELETE",
-      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` }
-    });
-  },
-  async uploadImage(file, path){
-    // Upload a file to Supabase Storage, return the public URL
-    const formData = new FormData();
-    formData.append('', file);
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/app-images/${path}`, {
-      method: 'POST',
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      body: formData
-    });
-    if(!res.ok){
-      // Try upsert if already exists
-      const res2 = await fetch(`${SUPABASE_URL}/storage/v1/object/app-images/${path}`, {
-        method: 'PUT',
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-        body: formData
-      });
-      if(!res2.ok) throw new Error('Upload failed');
-    }
-    return `${SUPABASE_URL}/storage/v1/object/public/app-images/${path}`;
-  },
-  async deleteImage(path){
-    await fetch(`${SUPABASE_URL}/storage/v1/object/app-images/${path}`, {
-      method: 'DELETE',
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
-    });
-  },
-  subscribe(table, callback){
-    // Supabase realtime via WebSocket
-    const wsUrl = SUPABASE_URL.replace("https://","wss://") + "/realtime/v1/websocket?apikey=" + SUPABASE_KEY + "&vsn=1.0.0";
-    const ws = new WebSocket(wsUrl);
-    const topic = `realtime:public:${table}`;
-    ws.onopen = () => {
-      ws.send(JSON.stringify({topic, event:"phx_join", payload:{}, ref:"1"}));
-    };
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if(msg.topic===topic && msg.event==="INSERT" || msg.event==="UPDATE" || msg.event==="DELETE"){
-        callback(msg.event, msg.payload?.record, msg.payload?.old_record);
-      }
-    };
-    return () => ws.close();
-  }
-};
+
 
 // Convert DB row format to app format and back
 const fromDB = {
