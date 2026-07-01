@@ -953,14 +953,21 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
   );
 }
 
-function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,currentFamilyId,odoLog,odoRate,onAddOdo}){
+function BookingCard({b,families,itineraries,onOpenItinerary,currentFamilyId,dispatch,odoLog,odoRate,onAddOdo}){
   const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
-  const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
-  const sorted=[...bookings].sort((a,b)=>a.start.localeCompare(b.start));
-  const upcoming=sorted.filter(b=>b.end>=fmt(TODAY));
-  const past=sorted.filter(b=>b.end<fmt(TODAY));
-  const Card=({b})=>(
+
+  // Itinerary link state
+  const itin=(itineraries||[]).find(i=>i.bookingId===b.id);
+  const totalActs=itin?(itin.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0):0;
+  const isOwn=b.familyId===currentFamilyId;
+
+  // Odo state
+  const odo=(odoLog||[]).filter(e=>e.bookingId===b.id);
+  const [showOdoForm,setShowOdoForm]=useState(false);
+  const [odoForm,setOdoForm]=useState({startKm:"",endKm:"",tolls:"",notes:""});
+
+  return(
     <div style={{...card({padding:12,marginBottom:8}),borderLeft:`4px solid ${fColor(b.familyId)}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
         <div style={{flex:1}}>
@@ -978,11 +985,6 @@ function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,cur
           <div style={{color:T.textDim,fontSize:12,marginTop:3}}>{b.start} to {b.end} &middot; {nights(b.start,b.end)} nights</div>
           {b.notes&&<div style={{color:T.textDim,fontSize:12,marginTop:4,fontStyle:"italic"}}>"{b.notes}"</div>}
           {/* Itinerary link — own bookings only */}
-          {(()=>{
-            const itin=(itineraries||[]).find(i=>i.bookingId===b.id);
-            const totalActs=itin?(itin.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0):0;
-            const isOwn=b.familyId===currentFamilyId;
-            return(
               <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderLight}`}}>
                 {itin?(
                   <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"space-between",flexWrap:"wrap"}}>
@@ -1019,12 +1021,6 @@ function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,cur
             );
           })()}
           {/* Odometer readings for this booking */}
-          {(()=>{
-            const odo=(odoLog||[]).filter(e=>e.bookingId===b.id);
-            const isOwn=b.familyId===currentFamilyId;
-            const [showOdoForm,setShowOdoForm]=React.useState(false);
-            const [odoForm,setOdoForm]=React.useState({startKm:"",endKm:"",tolls:"",notes:""});
-            return(
               <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderLight}`}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                   <span style={{fontSize:11,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.5}}>🔢 Odometer</span>
@@ -1117,18 +1113,27 @@ function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,cur
       </div>
     </div>
   );
+}
+
+function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,currentFamilyId,odoLog,odoRate,onAddOdo}){
+  const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
+  const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
+  const sorted=[...bookings].sort((a,b)=>a.start.localeCompare(b.start));
+  const upcoming=sorted.filter(b=>b.end>=fmt(TODAY));
+  const past=sorted.filter(b=>b.end<fmt(TODAY));
+  const cardProps={families,itineraries,onOpenItinerary,currentFamilyId,dispatch,odoLog,odoRate,onAddOdo};
   return(
     <div>
       <p style={sectionHead}>Upcoming ({upcoming.length})</p>
       {upcoming.length===0?<div style={{...card({padding:24,textAlign:"center"})}}>
         <p style={{color:T.textDim,fontSize:14,margin:0}}>No upcoming bookings yet.</p>
-      </div>:upcoming.map(b=><Card key={b.id} b={b}/>)}
-      {past.length>0&&<><p style={{...sectionHead,marginTop:24}}>Past ({past.length})</p>{past.map(b=><Card key={b.id} b={b}/>)}</>}
+      </div>:upcoming.map(b=><BookingCard key={b.id} b={b} {...cardProps}/>)}
+      {past.length>0&&<><p style={{...sectionHead,marginTop:24}}>Past ({past.length})</p>{past.map(b=><BookingCard key={b.id} b={b} {...cardProps}/>)}</>
+}
     </div>
   );
 }
 
-// ─── MY LOCATION BUTTON ───────────────────────────────────────────────────────
 function MyLocationButton({onLocate}){
   const [status,setStatus]=useState("idle"); // idle | locating | error
 
@@ -2707,6 +2712,30 @@ function OdometerPanel({odoLog,odoRate,dispatch,families,bookings,currentFamilyI
   );
 }
 
+// ─── COLLAPSIBLE BOOKINGS ─────────────────────────────────────────────────────
+function CollapsibleBookings(props){
+  const [showBookings,setShowBookings]=useState(false);
+  const upcoming=(props.bookings||[]).filter(b=>b.end>=fmt(new Date())).length;
+  return(
+    <>
+      <button onClick={()=>setShowBookings(!showBookings)}
+        style={{...btn("transparent",T.textMuted,{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",border:`1px solid ${T.border}`,borderRadius:showBookings?`${T.radius} ${T.radius} 0 0`:T.radius,marginTop:12})}}>
+        <span style={{fontWeight:700,fontSize:13}}>
+          📋 Bookings
+          {upcoming>0&&<span style={{...pill(T.primary+"15",T.primary),fontSize:10,marginLeft:6}}>{upcoming} upcoming</span>}
+        </span>
+        <span style={{fontSize:11,transform:showBookings?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
+      </button>
+      {showBookings&&(
+        <div style={{border:`1px solid ${T.border}`,borderTop:"none",borderRadius:`0 0 ${T.radius} ${T.radius}`,padding:12}}>
+          <BookingList {...props}/>
+        </div>
+      )}
+    </>
+  );
+}
+
+
 export default function App(){
   const [state,dispatch]=useReducer(reducer,INIT);
 
@@ -3012,20 +3041,12 @@ export default function App(){
             <div style={card({padding:14,marginBottom:12})}>
               <CalendarView bookings={state.bookings} families={families} itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily}/>
             </div>
-            {(()=>{
-              const [showBookings,setShowBookings]=React.useState(false);
-              const upcoming=state.bookings.filter(b=>b.end>=fmt(new Date())).length;
-              return(<>
-                <button onClick={()=>setShowBookings(!showBookings)}
-                  style={{...btn("transparent",T.textMuted,{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",border:`1px solid ${T.border}`,borderRadius:showBookings?`${T.radius} ${T.radius} 0 0`:T.radius,marginTop:12})}}>
-                  <span style={{fontWeight:700,fontSize:13}}>📋 Bookings {upcoming>0&&<span style={{...pill(T.primary+"15",T.primary),fontSize:10,marginLeft:6}}>{upcoming} upcoming</span>}</span>
-                  <span style={{fontSize:11,transform:showBookings?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
-                </button>
-                {showBookings&&<div style={{border:`1px solid ${T.border}`,borderTop:"none",borderRadius:`0 0 ${T.radius} ${T.radius}`,padding:12}}>
-                  <BookingList bookings={state.bookings} dispatch={sbDispatch} families={families} itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e=>e._action==="MARK_PAID"?sbDispatch({type:"MARK_ODO_PAID",id:e.id}):sbDispatch({type:"ADD_ODO",payload:e})}/>
-                </div>}
-              </>);
-            })()}
+            <CollapsibleBookings
+              bookings={state.bookings} dispatch={sbDispatch} families={families}
+              itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary}
+              currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate}
+              onAddOdo={e=>e._action==="MARK_PAID"?sbDispatch({type:"MARK_ODO_PAID",id:e.id}):sbDispatch({type:"ADD_ODO",payload:e})}
+            />
           </>
         )}
         {tab==="trips"    &&<TripsPanel itineraries={state.itineraries} dispatch={sbDispatch} places={state.places} bookings={state.bookings} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={()=>setOpenItinId(null)} currentFamilyId={currentFamily} onGoToTab={setTab}/>}
