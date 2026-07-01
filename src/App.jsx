@@ -785,7 +785,7 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
     if(f.end<=f.start){setErr("End must be after start.");return;}
     const clash=bookings.filter(b=>b.status==="confirmed"&&overlap(b,f));
     if(clash.length){setErr(`Clashes with ${fName(clash[0].familyId)}'s booking (${clash[0].start} to ${clash[0].end}).`);return;}
-    sbDispatch({type:"ADD_BOOKING",payload:{...f,id:"b"+Date.now()}});onClose();
+    dispatch({type:"ADD_BOOKING",payload:{...f,id:"b"+Date.now()}});onClose();
   };
   return(
     <Modal title="New Booking" onClose={onClose}>
@@ -888,8 +888,8 @@ function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,cur
         </div>
         {b.end>=fmt(TODAY)&&b.familyId===currentFamilyId&&(
           <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
-            {b.status==="tentative"&&<button onClick={()=>sbDispatch({type:"CONFIRM_BOOKING",id:b.id})} style={{...btn(T.primary+"15",T.primary,{padding:"5px 12px",fontSize:12}),border:`1px solid ${T.primary}30`}}>Confirm</button>}
-            <DeleteButton label="Remove" message={`Remove your booking?`} detail={`${b.destination} (${b.start} to ${b.end})`} onConfirm={()=>sbDispatch({type:"DEL_BOOKING",id:b.id})} style={{padding:"5px 12px",fontSize:12}}/>
+            {b.status==="tentative"&&<button onClick={()=>dispatch({type:"CONFIRM_BOOKING",id:b.id})} style={{...btn(T.primary+"15",T.primary,{padding:"5px 12px",fontSize:12}),border:`1px solid ${T.primary}30`}}>Confirm</button>}
+            <DeleteButton label="Remove" message={`Remove your booking?`} detail={`${b.destination} (${b.start} to ${b.end})`} onConfirm={()=>dispatch({type:"DEL_BOOKING",id:b.id})} style={{padding:"5px 12px",fontSize:12}}/>
           </div>
         )}
       </div>
@@ -952,7 +952,7 @@ function AddPlaceModal({dispatch,onClose,currentFamilyId}){
   const CATS=["Campsite","Beach","Mountain","Holiday Park","Town","Nature Reserve","Other"];
   const submit=()=>{
     if(!picked.name||!form.review)return;
-    sbDispatch({type:"ADD_PLACE",payload:{id:"p"+Date.now(),name:picked.name,lat:parseFloat(picked.lat)||0,lng:parseFloat(picked.lng)||0,familyId:form.familyId,category:form.category,overallRating:form.rating,reviews:[{familyId:form.familyId,rating:form.rating,text:form.review,date:fmt(TODAY)}]}});
+    dispatch({type:"ADD_PLACE",payload:{id:"p"+Date.now(),name:picked.name,lat:parseFloat(picked.lat)||0,lng:parseFloat(picked.lng)||0,familyId:form.familyId,category:form.category,overallRating:form.rating,reviews:[{familyId:form.familyId,rating:form.rating,text:form.review,date:fmt(TODAY)}]}});
     onClose();
   };
   return(
@@ -1053,7 +1053,7 @@ function PlaceCard({place,dispatch,onAddToItinerary,families}){
       <label style={lbl}>Review</label>
       <textarea style={{...inp,height:80}} placeholder="Share your experience..." value={txt} onChange={e=>setTxt(e.target.value)}/>
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{if(!txt.trim())return;sbDispatch({type:"ADD_REVIEW",payload:{placeId:place.id,review:{familyId:fam,rating:rat,text:txt,date:fmt(TODAY)}}});onClose();}} style={btn(T.primary,T.surface)}>Post Review</button>
+        <button onClick={()=>{if(!txt.trim())return;dispatch({type:"ADD_REVIEW",payload:{placeId:place.id,review:{familyId:fam,rating:rat,text:txt,date:fmt(TODAY)}}});onClose();}} style={btn(T.primary,T.surface)}>Post Review</button>
         <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
       </div>
     </Modal>);
@@ -1097,7 +1097,7 @@ function PlaceCard({place,dispatch,onAddToItinerary,families}){
           <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
             <button onClick={()=>setShowReview(true)} style={{...btn(T.primary+"15",T.primary,{fontSize:12}),border:`1px solid ${T.primary}30`}}>+ Review</button>
             <button onClick={()=>onAddToItinerary(place)} style={{...btn(T.accent+"15",T.accent,{fontSize:12}),border:`1px solid ${T.accent}30`}}>Add to Trip</button>
-            <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={()=>sbDispatch({type:"DEL_PLACE",id:place.id})} style={{fontSize:12}}/>
+            <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={()=>dispatch({type:"DEL_PLACE",id:place.id})} style={{fontSize:12}}/>
           </div>
         </div>
       )}
@@ -1120,11 +1120,11 @@ function PlacesPanel({places,dispatch,itineraries,onPickItinerary,families,curre
         </div>
         <button onClick={()=>setAdding(true)} style={btn(T.primary,T.surface)}>+ Add Place</button>
       </div>
-      {showMap&&<><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420}/></MapTouchWrapper><div style={{marginTop:14}}>{places.map(p=><PlaceCard key={p.id} place={p} dispatch={sbDispatch} onAddToItinerary={handleAdd} families={families}/>)}</div></>}
+      {showMap&&<><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420}/></MapTouchWrapper><div style={{marginTop:14}}>{places.map(p=><PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families}/>)}</div></>}
       {view==="list"&&(places.length===0?<div style={{...card({padding:24,textAlign:"center"})}}>
         <p style={{color:T.textDim,margin:0}}>No places saved yet. Add your first family favourite!</p>
-      </div>:places.map(p=><PlaceCard key={p.id} place={p} dispatch={sbDispatch} onAddToItinerary={handleAdd} families={families}/>))}
-      {adding&&<AddPlaceModal dispatch={sbDispatch} onClose={()=>setAdding(false)} currentFamilyId={currentFamilyId}/>}
+      </div>:places.map(p=><PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families}/>))}
+      {adding&&<AddPlaceModal dispatch={dispatch} onClose={()=>setAdding(false)} currentFamilyId={currentFamilyId}/>}
       {pickItin&&!pickDay&&(
         <Modal title="Add to Trip" onClose={()=>setPickItin(null)} width={360}>
           <p style={{color:T.textMuted,fontSize:13,marginBottom:12}}>Which trip to add <b>{pickItin.name}</b> to?</p>
@@ -1209,8 +1209,8 @@ function ItineraryEditor({itin,dispatch,places,bookings,families,onClose}){
   const delAct=(di,ai)=>{const days=[...(data.days||[])];days[di]={...days[di],activities:days[di].activities.filter((_,i)=>i!==ai)};h("days",days);};
   const save=()=>{
     const payload={...data};delete payload._unsaved;
-    if(data._unsaved) sbDispatch({type:"ADD_ITINERARY",payload});
-    else sbDispatch({type:"UPDATE_ITINERARY",payload});
+    if(data._unsaved) dispatch({type:"ADD_ITINERARY",payload});
+    else dispatch({type:"UPDATE_ITINERARY",payload});
     onClose();
   };
   return(
@@ -1412,7 +1412,7 @@ function ItinCard({itin,dispatch,places,families,onEdit,currentFamilyId,archived
             {archived?(
               <span style={{...pill(T.textDim+"20",T.textDim),fontSize:11}}>📦 Archived — read only</span>
             ):itin.familyId===currentFamilyId?(
-              <DeleteButton label="Delete Trip" message={`Delete "${itin.title}"?`} detail="All planned activities will be lost." onConfirm={()=>sbDispatch({type:"DEL_ITINERARY",id:itin.id})} style={{fontSize:12}}/>
+              <DeleteButton label="Delete Trip" message={`Delete "${itin.title}"?`} detail="All planned activities will be lost." onConfirm={()=>dispatch({type:"DEL_ITINERARY",id:itin.id})} style={{fontSize:12}}/>
             ):(
               <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>
                 {itin.visibility==="shared"?"Read-only — shared by "+families.find(f=>f.id===itin.familyId)?.name:"Private trip"}
@@ -1454,12 +1454,12 @@ function TripsPanel({itineraries,dispatch,places,bookings,families,autoOpenItinI
         <button onClick={()=>onGoToTab&&onGoToTab("places")} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`,fontSize:12,padding:"7px 12px"})}}>+ Add Place</button>
         <button onClick={newItin} style={btn(T.primary,T.surface)}>+ New Trip</button>
       </div>
-      {editing&&<ItineraryEditor itin={editing} dispatch={sbDispatch} places={places} bookings={bookings} families={families} onClose={()=>setEditing(null)}/>}
+      {editing&&<ItineraryEditor itin={editing} dispatch={dispatch} places={places} bookings={bookings} families={families} onClose={()=>setEditing(null)}/>}
       {upcoming.length===0&&!editing&&<div style={{...card({padding:24,textAlign:"center"})}}>
         <div style={{fontSize:36,marginBottom:8}}>🗺️</div>
         <p style={{color:T.textDim,margin:0,fontSize:14}}>No upcoming trips. Plan one!</p>
       </div>}
-      {upcoming.filter(i=>i.id!==editing?.id).map(itin=><ItinCard key={itin.id} itin={itin} dispatch={sbDispatch} places={places} families={families} onEdit={setEditing} currentFamilyId={currentFamilyId}/>)}
+      {upcoming.filter(i=>i.id!==editing?.id).map(itin=><ItinCard key={itin.id} itin={itin} dispatch={dispatch} places={places} families={families} onEdit={setEditing} currentFamilyId={currentFamilyId}/>)}
 
       {past.length>0&&(
         <div style={{marginTop:20}}>
@@ -1471,7 +1471,7 @@ function TripsPanel({itineraries,dispatch,places,bookings,families,autoOpenItinI
           {showArchive&&(
             <div style={{marginTop:8,opacity:0.85}}>
               <p style={{color:T.textDim,fontSize:12,margin:"0 0 10px"}}>Past trips are read-only in the archive.</p>
-              {past.map(itin=><ItinCard key={itin.id} itin={itin} dispatch={sbDispatch} places={places} families={families} onEdit={()=>{}} currentFamilyId={"_archive"} archived={true}/>)}
+              {past.map(itin=><ItinCard key={itin.id} itin={itin} dispatch={dispatch} places={places} families={families} onEdit={()=>{}} currentFamilyId={"_archive"} archived={true}/>)}
             </div>
           )}
         </div>
@@ -1533,7 +1533,7 @@ function GuidesPanel({guides,dispatch}){
         <button onClick={()=>setAddingNew(true)} style={btn(T.primary,T.surface)}>+ Guide</button>
       </div>
       {search&&<p style={{color:T.textDim,fontSize:12,margin:"0 0 10px"}}>{filtered.length} result{filtered.length!==1?"s":""} for "{search}"</p>}
-      {addingNew&&<GuideForm form={nf} setForm={setNf} onSave={()=>{if(!nf.title)return;sbDispatch({type:"ADD_GUIDE",payload:{...nf,id:"g"+Date.now()}});setAddingNew(false);setNf({title:"",icon:"📄",content:"",attachments:[],links:[]});}} onCancel={()=>setAddingNew(false)}/>}
+      {addingNew&&<GuideForm form={nf} setForm={setNf} onSave={()=>{if(!nf.title)return;dispatch({type:"ADD_GUIDE",payload:{...nf,id:"g"+Date.now()}});setAddingNew(false);setNf({title:"",icon:"📄",content:"",attachments:[],links:[]});}} onCancel={()=>setAddingNew(false)}/>}
       {!search&&guides.length===0&&<p style={{color:T.textDim,fontSize:13}}>No guides yet. Add your first one!</p>}
       {search&&filtered.length===0&&<div style={{...card({padding:24,textAlign:"center"})}}>
         <p style={{color:T.textDim,margin:0,fontSize:14}}>No guides match "{search}"</p>
@@ -1541,7 +1541,7 @@ function GuidesPanel({guides,dispatch}){
       {(search?filtered:guides).map(g=>(
         <div key={g.id} style={{marginBottom:8}}>
           {editing===g.id
-            ?<GuideForm form={ef} setForm={setEf} onSave={()=>{sbDispatch({type:"UPDATE_GUIDE",payload:ef});setEditing(null);}} onCancel={()=>setEditing(null)} onDel={()=>{sbDispatch({type:"DEL_GUIDE",id:g.id});setEditing(null);}}/>
+            ?<GuideForm form={ef} setForm={setEf} onSave={()=>{dispatch({type:"UPDATE_GUIDE",payload:ef});setEditing(null);}} onCancel={()=>setEditing(null)} onDel={()=>{dispatch({type:"DEL_GUIDE",id:g.id});setEditing(null);}}/>
             :(<div style={card({padding:0,overflow:"hidden"})}>
                 <button onClick={()=>setOpen(open===g.id?null:g.id)}
                   ref={el=>{
@@ -1596,7 +1596,7 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
   const [newCat,setNewCat]=useState("");
   const [showAddCat,setShowAddCat]=useState(false);
 
-  const setVanKit = p => sbDispatch({type:"SET_EQUIPMENT",payload:p});
+  const setVanKit = p => dispatch({type:"SET_EQUIPMENT",payload:p});
 
   // Per-family packing list (tobring + packed items personal to this family)
   const myPacking = packingByFamily[currentFamilyId] || [
@@ -1612,7 +1612,7 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
     {id:"bp9",category:"Safety",item:"Medications",status:"tobring"},
     {id:"bp10",category:"Safety",item:"Cash",status:"tobring"},
   ];
-  const setMyPacking = items => sbDispatch({type:"SET_FAMILY_PACKING",payload:{familyId:currentFamilyId,items}});
+  const setMyPacking = items => dispatch({type:"SET_FAMILY_PACKING",payload:{familyId:currentFamilyId,items}});
 
   // Combined view: invan items from equipment, tobring/packed from myPacking
   const invanItems = equipment.filter(e=>e.status==="invan");
@@ -1828,7 +1828,7 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
 // RULES
 function RulesPanel({rules,dispatch}){
   const [editId,setEditId]=useState(null);const [ef,setEf]=useState({});const [adding,setAdding]=useState(false);const [nf,setNf]=useState({icon:"📌",rule:"",detail:""});
-  const set=r=>sbDispatch({type:"SET_RULES",payload:r});
+  const set=r=>dispatch({type:"SET_RULES",payload:r});
   const ICONS=["📅","⏱️","🔁","🧹","⛽","🛑","🔧","🤝","✏️","📌","⚠️","💡","🔒","🏆","💬"];
   const Form=({form,setForm,onSave,onCancel,onDel})=>(
     <div style={{...card({padding:16,marginBottom:12,border:`1px solid ${T.primary}25`})}}>
@@ -1889,8 +1889,8 @@ function FamilyManager({families,dispatch,currentFamilyId}){
     const pinToSave = form.pinInput.length===4 ? form.pinInput : form.pin;
     const saved={...form, pin:pinToSave};
     delete saved.pinInput;
-    if(editing==="new") sbDispatch({type:"ADD_FAMILY",payload:saved});
-    else sbDispatch({type:"UPDATE_FAMILY",payload:saved});
+    if(editing==="new") dispatch({type:"ADD_FAMILY",payload:saved});
+    else dispatch({type:"UPDATE_FAMILY",payload:saved});
     cancel();
   };
 
@@ -2045,7 +2045,7 @@ function FamilyManager({families,dispatch,currentFamilyId}){
                 disabled={adminPin.length!==4}
                 onClick={()=>{
                   if(adminPin===ADMIN_PIN){
-                    sbDispatch({type:"DEL_FAMILY",id:confirmDel.id});
+                    dispatch({type:"DEL_FAMILY",id:confirmDel.id});
                     setConfirmDel(null);setAdminPin("");setAdminError("");
                   } else {
                     setAdminError("Incorrect passcode.");
@@ -2095,10 +2095,10 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
   const handleVanPhoto=e=>{
     const file=e.target.files[0];if(!file)return;
     const reader=new FileReader();
-    reader.onload=()=>sbDispatch({type:"SET_VAN_PHOTO",payload:reader.result});
+    reader.onload=()=>dispatch({type:"SET_VAN_PHOTO",payload:reader.result});
     reader.readAsDataURL(file);
   };
-  const saveVanName=()=>{sbDispatch({type:"SET_VAN_NAME",payload:newVanName});setVanNameSaved(true);setTimeout(()=>setVanNameSaved(false),2000);};
+  const saveVanName=()=>{dispatch({type:"SET_VAN_NAME",payload:newVanName});setVanNameSaved(true);setTimeout(()=>setVanNameSaved(false),2000);};
 
   return(
     <div>
@@ -2115,7 +2115,7 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
               }
             </div>
             <input id="van-photo-input" type="file" accept="image/*" style={{display:"none"}} onChange={handleVanPhoto}/>
-            {vanPhoto&&<button onClick={()=>sbDispatch({type:"SET_VAN_PHOTO",payload:null})} style={{...btn(T.red+"15",T.red,{fontSize:11,marginTop:6,padding:"4px 10px",border:`1px solid ${T.red}25`})}}>Remove photo</button>}
+            {vanPhoto&&<button onClick={()=>dispatch({type:"SET_VAN_PHOTO",payload:null})} style={{...btn(T.red+"15",T.red,{fontSize:11,marginTop:6,padding:"4px 10px",border:`1px solid ${T.red}25`})}}>Remove photo</button>}
           </div>
           <div style={{flex:1,minWidth:200}}>
             <label style={lbl}>Van / Hub Name</label>
@@ -2129,7 +2129,7 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
       </div>
 
       {/* All Families manager */}
-      <FamilyManager families={families} dispatch={sbDispatch} currentFamilyId={currentFamilyId}/>
+      <FamilyManager families={families} dispatch={dispatch} currentFamilyId={currentFamilyId}/>
 
       {/* How-To Guides shortcut */}
       <div style={{...card({padding:14,marginBottom:12})}}>
