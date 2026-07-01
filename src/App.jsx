@@ -1,14 +1,20 @@
 import React, { useState, useReducer, useRef, useEffect, useCallback } from "react";
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://jlnwuzgcubfzrwxlwfkn.supabase.co";
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+// Supabase config — works both in Vite (import.meta.env) and plain browser
+const SUPABASE_URL = "https://jlnwuzgcubfzrwxlwfkn.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impsbnd1emdjdWJmenJ3eGx3ZmtuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4OTQ1MzUsImV4cCI6MjA5ODQ3MDUzNX0.Ord113mzsfyYQw2RTKMBnw80wWO9I_jkwwJFAqxXnEs";
+
+// Log config on load to help debug
+if(!SUPABASE_KEY) console.error("⚠️ SUPABASE_KEY is empty — check GitHub secrets are named VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY");
+else console.log("✓ Supabase configured:", SUPABASE_URL);
 
 const supa = {
   async get(table, query=""){
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
       headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json" }
     });
+    if(!res.ok){ console.error(`Supabase GET ${table} failed:`, res.status); return []; }
     return res.json();
   },
   async insert(table, data){
