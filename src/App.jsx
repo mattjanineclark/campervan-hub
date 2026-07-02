@@ -1016,6 +1016,524 @@ function BookingCard({b,families,itineraries,onOpenItinerary,currentFamilyId,dis
 // ─── FAMILY AVATAR ─────────────────────────────────────────────────────────────
 // Shows family photo if available, otherwise emoji. Used everywhere a family
 // is identified so the photo choice flows through the whole app automatically.
+function MyLocationButton({onLocate}){
+  const [status,setStatus]=useState("idle"); // idle | locating | error
+
+  const locate=()=>{
+    if(!navigator.geolocation){setStatus("error");return;}
+    setStatus("locating");
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        setStatus("idle");
+        onLocate({
+          lat:pos.coords.latitude.toFixed(5),
+          lng:pos.coords.longitude.toFixed(5)
+        });
+      },
+      err=>{
+        setStatus("error");
+        setTimeout(()=>setStatus("idle"),3000);
+      },
+      {enableHighAccuracy:true,timeout:10000}
+    );
+  };
+
+  return(
+    <button onClick={locate} disabled={status==="locating"}
+      style={{...btn(
+        status==="error"?T.red+"15":status==="locating"?T.primary+"10":T.primary+"15",
+        status==="error"?T.red:T.primary,
+        {fontSize:12,padding:"6px 12px",border:`1px solid ${status==="error"?T.red:T.primary}30`,
+         flexShrink:0,display:"flex",alignItems:"center",gap:6,opacity:status==="locating"?0.7:1}
+      )}}>
+      {status==="locating"?"⏳ Locating...":status==="error"?"❌ Unavailable":"📍 My Location"}
+    </button>
+  );
+}
+
+// PLACES
+function AddPlaceModal({dispatch,onClose,currentFamilyId}){
+  const [step,setStep]=useState("search");
+  const [picked,setPicked]=useState({name:"",lat:"",lng:""});
+  const [pinCoords,setPinCoords]=useState(null);
+  const [mapCenter,setMapCenter]=useState(null); // set when user locates themselves
+  const [form,setForm]=useState({familyId:currentFamilyId||"f1",category:"Campsite",rating:5,review:""});
+  const CATS=["Campsite","Beach","Mountain","Holiday Park","Town","Nature Reserve","Other"];
+  const submit=()=>{
+    if(!picked.name||!form.review)return;
+    sbDispatch({type:"ADD_PLACE",payload:{id:"p"+Date.now(),name:picked.name,lat:parseFloat(picked.lat)||0,lng:parseFloat(picked.lng)||0,familyId:form.familyId,category:form.category,overallRating:form.rating,reviews:[{familyId:form.familyId,rating:form.rating,text:form.review,date:fmt(TODAY)}]}});
+    onClose();
+  };
+  return(
+    <Modal title="Add a Place" onClose={onClose} width={460}>
+      <div style={{display:"flex",gap:4,marginBottom:14,background:T.bg,padding:4,borderRadius:T.radiusSm,border:`1px solid ${T.border}`,flexShrink:0}}>
+        {[["search","Search"],["pin","Drop Pin"],["form","Details"]].map(([s,l])=>(
+          <button key={s} onClick={()=>setStep(s)} style={{flex:1,padding:"8px",border:"none",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:step===s?700:500,background:step===s?T.surface:T.bg,color:step===s?T.primary:T.textMuted,boxShadow:step===s?T.shadow:"none"}}>{l}</button>
+        ))}
+      </div>
+      {step==="search"&&(
+        <div>
+          <PlaceSearch onSelect={sel=>{setPicked(sel);setStep("form");}}/>
+          <p style={{color:T.textDim,fontSize:11,marginTop:10,textAlign:"center",lineHeight:1.5}}>
+            Search uses OpenStreetMap — requires an internet connection.<br/>
+            No results? Try "Drop Pin" to place a pin manually instead.
+          </p>
+        </div>
+      )}
+      {step==="pin"&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <p style={{color:T.textMuted,fontSize:13,margin:0}}>Tap anywhere on the map to drop a pin.</p>
+            <MyLocationButton onLocate={coords=>{
+              setPinCoords(coords);
+              setPicked(p=>({...p,...coords}));
+              setMapCenter([parseFloat(coords.lat),parseFloat(coords.lng)]);
+            }}/>
+          </div>
+          <MapTouchWrapper height={380}>
+            <LeafletMap
+              places={pinCoords?[{id:"_pin",name:picked.name||"New place",lat:parseFloat(pinCoords.lat),lng:parseFloat(pinCoords.lng),familyColor:T.accent,reviews:[]}]:[]}
+              onPinDrop={coords=>{setPinCoords(coords);setPicked(p=>({...p,...coords}));}}
+              pickMode={true}
+              center={mapCenter||( pinCoords?[parseFloat(pinCoords.lat),parseFloat(pinCoords.lng)]:null)}
+              height={380}
+            />
+          </MapTouchWrapper>
+          <div style={{marginTop:10}}>
+            {pinCoords?(
+              <div style={{background:T.bg,borderRadius:T.radiusSm,padding:12,border:`1px solid ${T.border}`}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:16}}>📌</span>
+                  <span style={{color:T.textMuted,fontSize:12,fontWeight:600}}>{pinCoords.lat}, {pinCoords.lng}</span>
+                  <span style={{fontSize:11,color:T.textDim}}>(tap map to reposition)</span>
+                </div>
+                <input style={inp} placeholder="Place name *" value={picked.name} onChange={e=>setPicked(p=>({...p,name:e.target.value}))}/>
+                <button onClick={()=>setStep("form")} disabled={!picked.name.trim()}
+                  style={{...btn(T.primary,T.surface,{marginTop:10,width:"100%"}),opacity:picked.name.trim()?1:0.5}}>
+                  Continue →
+                </button>
+              </div>
+            ):(
+              <div style={{textAlign:"center",padding:"10px 0",color:T.textDim,fontSize:13}}>
+                👆 Tap anywhere on the map above
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {step==="form"&&(
+        <div>
+          {picked.name&&<div style={{...pill(T.primary+"15",T.primary),marginBottom:12}}>Pinned: {picked.name}</div>}
+          <label style={lbl}>Place Name</label>
+          <input style={inp} value={picked.name} onChange={e=>setPicked(p=>({...p,name:e.target.value}))} placeholder="Place name *"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div>
+              <label style={lbl}>Adding as</label>
+              <div style={{...inp,background:"transparent",border:`1px solid ${T.border}`,color:T.textMuted,cursor:"default",fontSize:12}}>
+                {DEFAULT_FAMILIES.find(f=>f.id===currentFamilyId)?.emoji} {DEFAULT_FAMILIES.find(f=>f.id===currentFamilyId)?.name}
+              </div>
+            </div>
+            <div><label style={lbl}>Category</label><select style={inp} value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>{CATS.map(cat=><option key={cat}>{cat}</option>)}</select></div>
+          </div>
+          <label style={lbl}>Your Rating</label><StarRating value={form.rating} onChange={r=>setForm(f=>({...f,rating:r}))} size={28}/>
+          <label style={lbl}>Your Review *</label>
+          <textarea style={{...inp,height:80}} placeholder="What was it like? Tips for the family?" value={form.review} onChange={e=>setForm(f=>({...f,review:e.target.value}))}/>
+          <div style={{display:"flex",gap:8,marginTop:18}}>
+            <button onClick={submit} style={btn(T.primary,T.surface)}>Add Place</button>
+            <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function PlaceCard({place,dispatch,onAddToItinerary,families}){
+  const [expanded,setExpanded]=useState(false);const [showReview,setShowReview]=useState(false);
+  const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
+  const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
+  const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
+  const AddReview=({onClose})=>{
+    const [fam,setFam]=useState("f1");const [rat,setRat]=useState(4);const [txt,setTxt]=useState("");
+    return(<Modal title={`Review: ${place.name}`} onClose={onClose} width={400}>
+      <label style={lbl}>Family</label>
+      <select style={inp} value={fam} onChange={e=>setFam(e.target.value)}>{families.map(f=><option key={f.id} value={f.id}>{f.emoji} {f.name}</option>)}</select>
+      <label style={lbl}>Rating</label><StarRating value={rat} onChange={setRat} size={26}/>
+      <label style={lbl}>Review</label>
+      <textarea style={{...inp,height:80}} placeholder="Share your experience..." value={txt} onChange={e=>setTxt(e.target.value)}/>
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        <button onClick={()=>{if(!txt.trim())return;sbDispatch({type:"ADD_REVIEW",payload:{placeId:place.id,review:{familyId:fam,rating:rat,text:txt,date:fmt(TODAY)}}});onClose();}} style={btn(T.primary,T.surface)}>Post Review</button>
+        <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
+      </div>
+    </Modal>);
+  };
+  return(
+    <div style={{...card({padding:0,overflow:"hidden",marginBottom:10})}}>
+      <div onClick={()=>setExpanded(!expanded)} style={{padding:"11px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}
+        onMouseEnter={e=>e.currentTarget.style.background=T.cardHover} onMouseLeave={e=>e.currentTarget.style.background=T.surface}>
+        <div style={{flex:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontWeight:700,color:T.text,fontSize:13}}>{place.name}</span>
+            {place.category&&<span style={{...pill(T.accent+"15",T.accent),fontSize:11}}>{place.category}</span>}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+            <StarRating value={place.overallRating} size={13}/>
+            <span style={{color:T.textDim,fontSize:12}}>{place.reviews?.length||0} review{place.reviews?.length!==1?"s":""}</span>
+          </div>
+        </div>
+        <div style={{color:T.textDim,fontSize:20,transform:expanded?"rotate(90deg)":"none",transition:"transform 0.2s"}}>&#8250;</div>
+      </div>
+      {expanded&&(
+        <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
+          {place.lat&&place.lng&&<div style={{marginTop:14,marginBottom:14}}>
+            <MapTouchWrapper height={220} radius={T.radiusSm}>
+              <LeafletMap places={[{...place,familyColor:fColor(place.familyId)}]} center={[place.lat,place.lng]} height={220}/>
+            </MapTouchWrapper>
+            <a href={`https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d`} target="_blank" rel="noreferrer"
+              style={{...btn(T.bg,T.textMuted,{display:"inline-flex",gap:6,marginTop:10,fontSize:12,textDecoration:"none",border:`1px solid ${T.border}`})}}>
+              Get Directions
+            </a>
+          </div>}
+          {(place.reviews||[]).map((r,i)=>(
+            <div key={i} style={{background:T.bg,borderRadius:T.radiusSm,padding:"10px 12px",marginBottom:8,borderLeft:`3px solid ${fColor(r.familyId)}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontWeight:600,color:T.text,fontSize:13}}>{fEmoji(r.familyId)} {fName(r.familyId)}</span>
+                <div style={{display:"flex",alignItems:"center",gap:8}}><StarRating value={r.rating} size={13}/><span style={{color:T.textDim,fontSize:11}}>{r.date}</span></div>
+              </div>
+              <p style={{margin:"6px 0 0",fontSize:13,color:T.textMuted}}>&ldquo;{r.text}&rdquo;</p>
+            </div>
+          ))}
+          <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
+            <button onClick={()=>setShowReview(true)} style={{...btn(T.primary+"15",T.primary,{fontSize:12}),border:`1px solid ${T.primary}30`}}>+ Review</button>
+            <button onClick={()=>onAddToItinerary(place)} style={{...btn(T.accent+"15",T.accent,{fontSize:12}),border:`1px solid ${T.accent}30`}}>Add to Trip</button>
+            <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={()=>sbDispatch({type:"DEL_PLACE",id:place.id})} style={{fontSize:12}}/>
+          </div>
+        </div>
+      )}
+      {showReview&&<AddReview onClose={()=>setShowReview(false)}/>}
+    </div>
+  );
+}
+
+function PlacesPanel({places,dispatch,itineraries,onPickItinerary,families,currentFamilyId}){
+  const [view,setView]=useState("list");const [adding,setAdding]=useState(false);const [pickItin,setPickItin]=useState(null);
+  const [pickDay,setPickDay]=useState(null); // {itin, place} — day selection step
+  // Hide background map while modal is open so it doesn't bleed through
+  const showMap = view==="map" && !adding && !pickItin && !pickDay;
+  const handleAdd=place=>{if(itineraries.length===0){alert("Create a trip first in the Trips tab.");return;}setPickItin(place);};
+  return(
+    <div>
+      <div style={{display:"flex",gap:8,marginBottom:16,justifyContent:"space-between",flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:4,background:T.bg,padding:4,borderRadius:T.radiusSm,border:`1px solid ${T.border}`}}>
+          {[["list","List"],["map","Map"]].map(([v,l])=><button key={v} onClick={()=>setView(v)} style={{padding:"7px 16px",border:"none",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:500,background:view===v?T.surface:T.bg,color:view===v?T.primary:T.textMuted,boxShadow:view===v?T.shadow:"none"}}>{l}</button>)}
+        </div>
+        <button onClick={()=>setAdding(true)} style={btn(T.primary,T.surface)}>+ Add Place</button>
+      </div>
+      {showMap&&<><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420}/></MapTouchWrapper><div style={{marginTop:14}}>{places.map(p=><PlaceCard key={p.id} place={p} dispatch={sbDispatch} onAddToItinerary={handleAdd} families={families}/>)}</div></>}
+      {view==="list"&&(places.length===0?<div style={{...card({padding:24,textAlign:"center"})}}>
+        <p style={{color:T.textDim,margin:0}}>No places saved yet. Add your first family favourite!</p>
+      </div>:places.map(p=><PlaceCard key={p.id} place={p} dispatch={sbDispatch} onAddToItinerary={handleAdd} families={families}/>))}
+      {adding&&<AddPlaceModal dispatch={sbDispatch} onClose={()=>setAdding(false)} currentFamilyId={currentFamilyId}/>}
+      {pickItin&&!pickDay&&(
+        <Modal title="Add to Trip" onClose={()=>setPickItin(null)} width={360}>
+          <p style={{color:T.textMuted,fontSize:13,marginBottom:12}}>Which trip to add <b>{pickItin.name}</b> to?</p>
+          {itineraries.length===0&&<p style={{color:T.textDim,fontSize:13}}>No trips yet — create one in the Trips tab first.</p>}
+          {itineraries.map(it=>(
+            <button key={it.id} onClick={()=>{setPickDay({itin:it,place:pickItin});setPickItin(null);}}
+              style={{...btn(T.bg,T.text,{width:"100%",marginBottom:8,textAlign:"left",padding:"12px 14px",border:`1px solid ${T.border}`,borderRadius:T.radiusSm})}}>
+              <div style={{fontWeight:700,color:T.text}}>{it.title}</div>
+              <div style={{fontSize:12,color:T.textMuted,marginTop:3}}>{it.start} to {it.end} &middot; {(it.days||[]).length} days</div>
+            </button>
+          ))}
+        </Modal>
+      )}
+      {pickDay&&(
+        <Modal title={`Add to "${pickDay.itin.title}"`} onClose={()=>setPickDay(null)} width={360}>
+          <p style={{color:T.textMuted,fontSize:13,marginBottom:12}}>Which day to add <b>{pickDay.place.name}</b> to?</p>
+          {(pickDay.itin.days||[]).length===0&&<p style={{color:T.textDim,fontSize:13}}>This trip has no days — set start/end dates in the Trips tab first.</p>}
+          {(pickDay.itin.days||[]).map((day,di)=>{
+            const d=new Date(day.date);
+            const DAY_NAMES=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+            return(
+              <button key={day.date} onClick={()=>{onPickItinerary(pickDay.itin.id,pickDay.place,di);setPickDay(null);}}
+                style={{...btn(T.bg,T.text,{width:"100%",marginBottom:8,textAlign:"left",padding:"12px 14px",border:`1px solid ${T.border}`,borderRadius:T.radiusSm})}}>
+                <div style={{fontWeight:700,color:T.primary}}>{DAY_NAMES[d.getDay()]} <span style={{color:T.text}}>{day.date}</span></div>
+                <div style={{fontSize:11,color:T.textDim,marginTop:3}}>{(day.activities||[]).length} activit{(day.activities||[]).length===1?"y":"ies"} already planned</div>
+              </button>
+            );
+          })}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// TRIPS
+// ─── PLACE PICKER MODAL ───────────────────────────────────────────────────────
+function PlacePickerModal({places,onSelect,onClose}){
+  const [search,setSearch]=useState("");
+  const filtered=places.filter(p=>!search||p.name.toLowerCase().includes(search.toLowerCase())||p.category?.toLowerCase().includes(search.toLowerCase()));
+  return(
+    <Modal title="Select a Place" onClose={onClose} width={440}>
+      <input style={{...inp,marginBottom:12}} placeholder="Search places..." value={search} autoFocus
+        onChange={e=>setSearch(e.target.value)}/>
+      {filtered.length===0&&<p style={{color:T.textDim,fontSize:13,textAlign:"center",padding:"12px 0"}}>No places match "{search}"</p>}
+      <div style={{display:"grid",gap:8,maxHeight:360,overflowY:"auto"}}>
+        {filtered.map(p=>(
+          <button key={p.id} onClick={()=>onSelect(p)}
+            style={{...card({padding:"12px 14px"}),border:`1px solid ${T.border}`,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:12,width:"100%"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=T.primary}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,color:T.text,fontSize:14}}>{p.name}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+                {p.category&&<span style={{...pill(T.accent+"15",T.accent),fontSize:10}}>{p.category}</span>}
+                <span style={{color:T.textDim,fontSize:12}}>{"★".repeat(p.overallRating||0)} {p.reviews?.length||0} review{p.reviews?.length!==1?"s":""}</span>
+              </div>
+            </div>
+            <span style={{color:T.primary,fontSize:20}}>›</span>
+          </button>
+        ))}
+      </div>
+      {places.length===0&&<p style={{color:T.textDim,fontSize:13,margin:"12px 0 0",textAlign:"center"}}>No saved places yet — add some in the Places tab.</p>}
+    </Modal>
+  );
+}
+
+function ItineraryEditor({itin,dispatch,places,bookings,families,onClose}){
+  const [data,setData]=useState({...itin});
+  const h=(k,v)=>setData(d=>({...d,[k]:v}));
+  const DAY_NAMES=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const [pickingPlaceFor,setPickingPlaceFor]=useState(null); // {di, ai} when picker open
+  const linkable=bookings.filter(b=>b.familyId===data.familyId&&b.end>=fmt(TODAY));
+  useEffect(()=>{
+    if(!data.start||!data.end)return;
+    const n=nights(data.start,data.end);if(n<0)return;
+    const existing=data.days||[];
+    const days=Array.from({length:n+1},(_,i)=>{const d=fmt(addDays(new Date(data.start),i));return existing.find(e=>e.date===d)||{date:d,activities:[]};});
+    h("days",days);
+  },[data.start,data.end]);
+  const addAct=di=>{const days=[...(data.days||[])];days[di]={...days[di],activities:[...(days[di].activities||[]),{id:"a"+Date.now(),time:"",title:"",placeId:"",location:"",notes:""}]};h("days",days);};
+  const updAct=(di,ai,field,val)=>{const days=[...(data.days||[])];days[di]={...days[di],activities:days[di].activities.map((a,i)=>i===ai?{...a,[field]:val}:a)};h("days",days);};
+  const delAct=(di,ai)=>{const days=[...(data.days||[])];days[di]={...days[di],activities:days[di].activities.filter((_,i)=>i!==ai)};h("days",days);};
+  const save=()=>{
+    const payload={...data};delete payload._unsaved;
+    if(data._unsaved) sbDispatch({type:"ADD_ITINERARY",payload});
+    else sbDispatch({type:"UPDATE_ITINERARY",payload});
+    onClose();
+  };
+  return(
+    <div style={{...card(),marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <h3 style={{margin:0,color:T.primary,fontSize:16,fontWeight:700}}>{data.title||"New Trip"}</h3>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={save} style={btn(T.primary,T.surface)}>Save Trip</button>
+          <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
+        </div>
+      </div>
+      {linkable.length>0&&(
+        <div style={{background:T.bg,borderRadius:T.radiusSm,padding:14,marginBottom:16,border:`1px solid ${T.border}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <p style={{fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:0.5,margin:0}}>Link to a booking (auto-fills dates)</p>
+            {data.bookingId&&(
+              <button onClick={()=>setData(d=>({...d,bookingId:""}))}
+                style={{...btn("transparent",T.red,{fontSize:11,padding:"3px 8px",border:`1px solid ${T.red}30`})}}>
+                &times; Remove link
+              </button>
+            )}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {linkable.map(b=>(
+              <button key={b.id} onClick={()=>setData(d=>({...d,start:b.start,end:b.end,destination:b.destination,bookingId:b.id}))}
+                style={{...btn(data.bookingId===b.id?T.primary:T.surface,data.bookingId===b.id?T.surface:T.textMuted,{fontSize:12,padding:"6px 14px",border:`1px solid ${data.bookingId===b.id?T.primary:T.border}`})}}>
+                {b.status==="tentative"?"Tentative":"Confirmed"}: {b.destination}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:4}}>
+        <div style={{gridColumn:"1/-1"}}><label style={lbl}>Trip Title</label><input style={inp} value={data.title} onChange={e=>h("title",e.target.value)} placeholder="e.g. Summer Lake Adventure"/></div>
+        <div>
+          <label style={lbl}>Trip for</label>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 11px",background:T.primary+"08",borderRadius:T.radiusSm,border:`1px solid ${T.primary}20`}}>
+            <FamilyAvatar family={families.find(f=>f.id===data.familyId)} size={30} fontSize={18}/>
+            <span style={{fontWeight:700,color:T.primary,fontSize:13}}>{families.find(f=>f.id===data.familyId)?.name}</span>
+          </div>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Dates</label>
+          <DateRangePicker
+            startDate={data.start} endDate={data.end}
+            onChange={({start,end})=>setData(d=>({...d,start,end}))}
+          />
+        </div>
+        <div style={{gridColumn:"1/-1"}}><label style={lbl}>Notes</label><textarea style={{...inp,height:52}} value={data.notes||""} onChange={e=>h("notes",e.target.value)} placeholder="Overview, goals, reminders..."/></div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Visibility</label>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <button onClick={()=>h("visibility","private")}
+              style={{padding:"10px 12px",border:`2px solid ${(data.visibility||"private")==="private"?T.primary:T.border}`,borderRadius:T.radiusSm,cursor:"pointer",fontWeight:600,fontSize:12,background:(data.visibility||"private")==="private"?T.primary+"12":T.surface,color:(data.visibility||"private")==="private"?T.primary:T.textMuted,textAlign:"left",transition:"all 0.15s"}}>
+              <div style={{fontSize:16,marginBottom:2}}>🔒 Private</div>
+              <div style={{fontSize:11,fontWeight:400,opacity:0.8}}>Only visible to {families.find(f=>f.id===data.familyId)?.name||"this family"}</div>
+            </button>
+            <button onClick={()=>h("visibility","shared")}
+              style={{padding:"10px 12px",border:`2px solid ${data.visibility==="shared"?T.green:T.border}`,borderRadius:T.radiusSm,cursor:"pointer",fontWeight:600,fontSize:12,background:data.visibility==="shared"?T.green+"12":T.surface,color:data.visibility==="shared"?T.green:T.textMuted,textAlign:"left",transition:"all 0.15s"}}>
+              <div style={{fontSize:16,marginBottom:2}}>👨‍👩‍👧 Shared</div>
+              <div style={{fontSize:11,fontWeight:400,opacity:0.8}}>All families can view (read-only)</div>
+            </button>
+          </div>
+        </div>
+      </div>
+      {(data.days||[]).map((day,di)=>{
+        const d=new Date(day.date);
+        return(
+          <div key={day.date} style={{background:T.bg,borderRadius:T.radiusSm,padding:14,marginTop:10,border:`1px solid ${T.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <span style={{fontWeight:700,color:T.primary,fontSize:13}}>{DAY_NAMES[d.getDay()]} <span style={{color:T.textMuted,fontWeight:500}}>{day.date}</span></span>
+              <button onClick={()=>addAct(di)} style={{...btn(T.primary+"15",T.primary,{fontSize:11,padding:"4px 12px"}),border:`1px solid ${T.primary}30`}}>+ Activity</button>
+            </div>
+            {(day.activities||[]).map((act,ai)=>(
+              <div key={act.id} style={{...card({padding:10,marginBottom:8}),border:`1px solid ${T.border}`}}>
+                <div style={{display:"grid",gridTemplateColumns:"76px 1fr auto",gap:8,alignItems:"center",marginBottom:6}}>
+                  <input style={{...inp,padding:"6px 8px",fontSize:12}} placeholder="Time" value={act.time} onChange={e=>updAct(di,ai,"time",e.target.value)}/>
+                  <input style={{...inp,padding:"6px 8px",fontSize:12}} placeholder="Activity title" value={act.title} onChange={e=>updAct(di,ai,"title",e.target.value)}/>
+                  <button onClick={()=>delAct(di,ai)} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:18,padding:"0 4px",flexShrink:0}}>&times;</button>
+                </div>
+                <div style={{marginBottom:6}}>
+                  {act.placeId?(
+                    <div style={{display:"flex",alignItems:"center",gap:8,background:T.primary+"10",borderRadius:T.radiusSm,padding:"6px 10px",border:`1px solid ${T.primary}30`}}>
+                      <span style={{fontSize:13,color:T.primary,flex:1,fontWeight:600}}>📍 {places.find(p=>p.id===act.placeId)?.name||"Place"}</span>
+                      <button onClick={()=>{setPickingPlaceFor({di,ai});}} style={{...btn(T.primary+"15",T.primary,{fontSize:11,padding:"3px 8px"})}} >Change</button>
+                      <button onClick={()=>updAct(di,ai,"placeId","")} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:16}}>&times;</button>
+                    </div>
+                  ):(
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                      <button onClick={()=>setPickingPlaceFor({di,ai})}
+                        style={{...btn(T.bg,T.textMuted,{border:`1px solid ${T.border}`,fontSize:12,padding:"7px 10px",textAlign:"left"})}}>
+                        📍 Pick a saved place...
+                      </button>
+                      <input style={{...inp,padding:"6px 8px",fontSize:12}} placeholder="📌 Or type location..." value={act.location||""} onChange={e=>updAct(di,ai,"location",e.target.value)}/>
+                    </div>
+                  )}
+                </div>
+                <textarea style={{...inp,padding:"6px 8px",fontSize:12,height:48,resize:"none"}} placeholder="Notes (optional)..." value={act.notes||""} onChange={e=>updAct(di,ai,"notes",e.target.value)}/>
+              </div>
+            ))}
+            {!(day.activities||[]).length&&<p style={{color:T.textDim,fontSize:12,margin:"4px 0"}}>No activities planned.</p>}
+          </div>
+        );
+      })}
+      {!data.start&&<p style={{color:T.textDim,fontSize:13,marginTop:12}}>Set dates above to build the day-by-day plan.</p>}
+      {pickingPlaceFor&&(
+        <PlacePickerModal
+          places={places}
+          onClose={()=>setPickingPlaceFor(null)}
+          onSelect={p=>{
+            updAct(pickingPlaceFor.di,pickingPlaceFor.ai,"placeId",p.id);
+            updAct(pickingPlaceFor.di,pickingPlaceFor.ai,"location","");
+            setPickingPlaceFor(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ItinCard({itin,dispatch,places,families,onEdit,currentFamilyId,archived=false}){
+  const [expanded,setExpanded]=useState(false);
+  const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
+  const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
+  const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
+  const DAY_NAMES=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const total=(itin.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0);
+  const buildDirUrl=day=>{
+    const coords=(day.activities||[]).filter(a=>a.placeId).map(a=>{const p=places.find(pl=>pl.id===a.placeId);return p?`${p.lat},${p.lng}`:null;}).filter(Boolean);
+    if(!coords.length)return null;
+    if(coords.length===1)return `https://maps.apple.com/?daddr=${coords[0]}&dirflg=d`;
+    return `https://maps.apple.com/?daddr=${coords[coords.length-1]}&dirflg=d&via=${coords.slice(0,-1).join("/")}`;
+  };
+  return(
+    <div style={{...card({padding:0,overflow:"hidden",marginBottom:10})}}>
+      <div style={{padding:"11px 14px",display:"flex",gap:10,alignItems:"center"}}>
+        <div style={{width:5,borderRadius:99,background:fColor(itin.familyId),alignSelf:"stretch",flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>setExpanded(!expanded)}>
+          <div style={{fontWeight:700,color:T.text,fontSize:13}}>{itin.title}</div>
+          <div style={{display:"flex",gap:8,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{color:T.textMuted,fontSize:12,display:"flex",alignItems:"center",gap:4}}>
+              <FamilyAvatar family={families.find(f=>f.id===itin.familyId)} size={16} fontSize={13}/>
+              {fName(itin.familyId)}
+            </span>
+            {itin.start&&<span style={{color:T.textDim,fontSize:12}}>{itin.start} to {itin.end}</span>}
+            {itin.bookingId&&<span style={{...pill(T.primary+"15",T.primary),fontSize:10}}>Linked</span>}
+            <span style={{...pill(T.sky+"20",T.sky),fontSize:10}}>{total} act.</span>
+            {itin.visibility==="shared"
+              ?<span style={{...pill(T.green+"15",T.green),fontSize:10}}>Shared</span>
+              :<span style={{...pill(T.textDim+"15",T.textDim),fontSize:10}}>Private</span>}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+          {!archived&&itin.familyId===currentFamilyId&&(
+            <button onClick={e=>{e.stopPropagation();onEdit(itin);}}
+              style={{...btn(T.primary+"15",T.primary,{fontSize:11,padding:"5px 10px",border:`1px solid ${T.primary}25`})}}>
+              ✏️ Edit
+            </button>
+          )}
+          <div onClick={()=>setExpanded(!expanded)} style={{color:T.textDim,fontSize:20,cursor:"pointer",padding:"0 2px",transform:expanded?"rotate(90deg)":"none",transition:"transform 0.2s"}}>&#8250;</div>
+        </div>
+      </div>
+      {expanded&&(
+        <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
+          {itin.notes&&<p style={{color:T.textMuted,fontSize:13,margin:"12px 0"}}>{itin.notes}</p>}
+          {(itin.days||[]).map(day=>{
+            const d=new Date(day.date),dn=DAY_NAMES[d.getDay()],dirUrl=buildDirUrl(day);
+            return(
+              <div key={day.date} style={{background:T.bg,borderRadius:T.radiusSm,padding:"12px 14px",marginTop:10,border:`1px solid ${T.border}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <span style={{fontWeight:700,fontSize:13,color:T.primary}}>{dn} <span style={{color:T.textMuted,fontWeight:500}}>{day.date}</span></span>
+                  {dirUrl&&<a href={dirUrl} target="_blank" rel="noreferrer" style={{...btn(T.accent+"15",T.accent,{fontSize:11,padding:"4px 12px",textDecoration:"none",border:`1px solid ${T.accent}30`})}}>Directions</a>}
+                </div>
+                {!(day.activities||[]).length?<p style={{color:T.textDim,fontSize:12,margin:0}}>Free day</p>:(day.activities||[]).map(act=>{
+                  const lp=places.find(p=>p.id===act.placeId);
+                  return(
+                    <div key={act.id} style={{padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+                      <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                        {act.time&&<span style={{color:T.primary,fontSize:12,fontWeight:700,minWidth:42,flexShrink:0}}>{act.time}</span>}
+                        <div style={{flex:1}}>
+                          <div style={{color:T.text,fontSize:13,fontWeight:600}}>{act.title||"Activity"}</div>
+                          {lp&&<div style={{color:T.textMuted,fontSize:11,marginTop:2}}>
+                            📍 {lp.name} &middot; <a href={`https://maps.apple.com/?daddr=${lp.lat},${lp.lng}&dirflg=d`} target="_blank" rel="noreferrer" style={{color:T.sky,textDecoration:"none"}}>Navigate</a>
+                          </div>}
+                          {!lp&&act.location&&<div style={{color:T.textMuted,fontSize:11,marginTop:2}}>
+                            📌 {act.location}
+                            &nbsp;&middot;&nbsp;<a href={`https://maps.apple.com/?q=${encodeURIComponent(act.location)}&dirflg=d`} target="_blank" rel="noreferrer" style={{color:T.sky,textDecoration:"none"}}>Navigate</a>
+                          </div>}
+                          {act.notes&&<div style={{color:T.textDim,fontSize:11,marginTop:3,fontStyle:"italic"}}>{act.notes}</div>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          <div style={{display:"flex",gap:8,marginTop:14,flexWrap:"wrap",alignItems:"center"}}>
+            {archived?(
+              <span style={{...pill(T.textDim+"20",T.textDim),fontSize:11}}>📦 Archived — read only</span>
+            ):itin.familyId===currentFamilyId?(
+              <DeleteButton label="Delete Trip" message={`Delete "${itin.title}"?`} detail="All planned activities will be lost." onConfirm={()=>sbDispatch({type:"DEL_ITINERARY",id:itin.id})} style={{fontSize:12}}/>
+            ):(
+              <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>
+                {itin.visibility==="shared"?"Read-only — shared by "+families.find(f=>f.id===itin.familyId)?.name:"Private trip"}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TripsPanel({itineraries,dispatch,places,bookings,families,autoOpenItinId,onAutoOpenHandled,currentFamilyId,onGoToTab}){
   const [editing,setEditing]=useState(null);
   const [showPast,setShowPast]=useState(false);
@@ -2265,6 +2783,21 @@ export default function App(){
         }))});
         if(odoSettings?.[0]?.odo_rate) dispatch({type:"SET_ODO_RATE",payload:odoSettings[0].odo_rate});
 
+        // Auto-create missing trip itineraries for existing bookings
+        { const linkedIds=new Set((await supa.get("itineraries","select=booking_id")||[]).map(i=>i.booking_id).filter(Boolean));
+          const allBkgs=await supa.get("bookings","select=id,family_id,start_date,end_date,destination");
+          for(const b of (allBkgs||[])){
+            if(b.id&&!linkedIds.has(b.id)){
+              const itinId="it"+Date.now()+Math.random().toString(36).slice(2,6);
+              const days=generateDays(b.start_date,b.end_date);
+              const itin={id:itinId,title:b.destination||"Trip",familyId:b.family_id,
+                start:b.start_date,end:b.end_date,destination:b.destination||"",
+                notes:"",bookingId:b.id,visibility:"private",days};
+              dispatch({type:"ADD_ITINERARY",payload:itin});
+              await supa.upsert("itineraries",toDB.itin(itin));
+            }
+          }
+        }
         setLoading(false); loadingRef.current=false;
       } catch(e){
         console.error("Supabase load error:",e);
