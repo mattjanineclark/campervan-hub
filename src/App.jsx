@@ -1836,12 +1836,65 @@ function TripsPanel({bookings,dispatch,places,families,currentFamilyId,odoLog,od
 }
 
 
+function GuideLinksEditor({links,setLinks}){
+  return(
+    <div>{(links||[]).map((l,i)=>(
+      <div key={i} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+        <input style={{...inp,flex:1,padding:"6px 10px",fontSize:12}} placeholder="Label" value={l.label} onChange={e=>{const nl=[...links];nl[i]={...nl[i],label:e.target.value};setLinks(nl);}}/>
+        <input style={{...inp,flex:2,padding:"6px 10px",fontSize:12}} placeholder="https://..." value={l.url} onChange={e=>{const nl=[...links];nl[i]={...nl[i],url:e.target.value};setLinks(nl);}}/>
+        <button onClick={()=>setLinks(links.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:18}}>&times;</button>
+      </div>
+    ))}<button onClick={()=>setLinks([...(links||[]),{label:"",url:""}])} style={{...btn(T.bg,T.textMuted,{fontSize:11,padding:"5px 10px",border:`1px solid ${T.border}`})}}>+ Link</button></div>
+  );
+}
+function GuideAttList({atts,onRemove}){
+  if(!atts?.length) return null;
+  return(
+    <div style={{marginTop:8}}>{atts.map((a,i)=>(
+      <div key={i} style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:T.radiusSm,padding:"6px 10px",marginBottom:4,border:`1px solid ${T.border}`}}>
+        <span style={{fontSize:12,flex:1,color:T.textMuted}}>{a.name}</span>
+        <button onClick={()=>{
+          if(a.data.startsWith("http")){window.open(a.data,"_blank");}
+          else{try{const byteStr=atob(a.data.split(",")[1]);const ab=new ArrayBuffer(byteStr.length);const ia=new Uint8Array(ab);for(let i=0;i<byteStr.length;i++)ia[i]=byteStr.charCodeAt(i);const blob=new Blob([ab],{type:a.type||"application/octet-stream"});const url=URL.createObjectURL(blob);window.open(url,"_blank");setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(e){window.open(a.data,"_blank");}}
+        }} style={{fontSize:12,color:T.primary,fontWeight:600,background:"none",border:"none",cursor:"pointer",padding:0}}>
+          {a.type==="application/pdf"?"Open PDF":"View"}
+        </button>
+        {onRemove&&<button onClick={()=>onRemove(i)} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:14}}>&times;</button>}
+      </div>
+    ))}</div>
+  );
+}
+const GUIDE_ICONS=["📖","🔑","🔌","💧","🔥","🚽","☀️","🛠️","⚠️","📄","🗺️","🔋","🧰","📷"];
+function GuideForm({form,setForm,onSave,onCancel,onDel,onFileUpload}){
+  return(
+    <div style={{...card({padding:18,marginBottom:8}),border:`1px solid ${T.primary}30`}}>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14,padding:8,background:T.bg,borderRadius:T.radiusSm,border:`1px solid ${T.border}`}}>
+        {GUIDE_ICONS.map(ic=><button key={ic} onClick={()=>setForm(f=>({...f,icon:ic}))} style={{fontSize:22,background:form.icon===ic?T.surface:"transparent",border:`1px solid ${form.icon===ic?T.border:"transparent"}`,borderRadius:8,cursor:"pointer",padding:"6px 8px",boxShadow:form.icon===ic?T.shadow:"none"}}>{ic}</button>)}
+      </div>
+      <input style={inp} placeholder="Guide title *" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/>
+      <label style={lbl}>Instructions</label>
+      <textarea style={{...inp,height:100,resize:"vertical"}} value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))}/>
+      <label style={lbl}>External Links</label>
+      <GuideLinksEditor links={form.links||[]} setLinks={ls=>setForm(f=>({...f,links:ls}))}/>
+      <label style={lbl}>Attachments</label>
+      <GuideAttList atts={form.attachments} onRemove={i=>setForm(f=>({...f,attachments:f.attachments.filter((_,j)=>j!==i)}))}/>
+      <label style={{...btn(T.bg,T.textMuted,{display:"inline-block",marginTop:10,cursor:"pointer",fontSize:12,border:`1px solid ${T.border}`})}}>
+        Attach File<input type="file" accept=".pdf,image/*" style={{display:"none"}} onChange={onFileUpload}/>
+      </label>
+      <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+        <button onClick={onSave} style={btn(T.primary,T.surface)}>Save</button>
+        <button onClick={onCancel} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
+        {onDel&&<DeleteButton label="Delete" message={`Delete "${form.title}"?`} onConfirm={onDel} style={{fontSize:12}}/>}
+      </div>
+    </div>
+  );
+}
+
 function GuidesPanel({guides,dispatch}){
   const [open,setOpen]=useState(null);const [editing,setEditing]=useState(null);const [addingNew,setAddingNew]=useState(false);
   const [ef,setEf]=useState({});const [nf,setNf]=useState({title:"",icon:"📄",content:"",attachments:[],links:[]});
   const [search,setSearch]=useState("");
   const filtered=guides.filter(g=>!search||g.title.toLowerCase().includes(search.toLowerCase())||g.content.toLowerCase().includes(search.toLowerCase())||g.links?.some(l=>l.label?.toLowerCase().includes(search.toLowerCase())));
-  const ICONS=["📖","🔑","🔌","💧","🔥","🚽","☀️","🛠️","⚠️","📄","🗺️","🔋","🧰","📷"];
   const handleFile=async(e,isNew)=>{
   const file=e.target.files[0];if(!file)return;
   const addAtt=(data)=>{
@@ -1859,59 +1912,6 @@ function GuidesPanel({guides,dispatch}){
     r.readAsDataURL(file);
   }
 };
-  const LinksList=({links,setLinks})=>(
-    <div>{(links||[]).map((l,i)=>(
-      <div key={i} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
-        <input style={{...inp,flex:1,padding:"6px 10px",fontSize:12}} placeholder="Label" value={l.label} onChange={e=>{const nl=[...links];nl[i]={...nl[i],label:e.target.value};setLinks(nl);}}/>
-        <input style={{...inp,flex:2,padding:"6px 10px",fontSize:12}} placeholder="https://..." value={l.url} onChange={e=>{const nl=[...links];nl[i]={...nl[i],url:e.target.value};setLinks(nl);}}/>
-        <button onClick={()=>setLinks(links.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:18}}>&times;</button>
-      </div>
-    ))}<button onClick={()=>setLinks([...(links||[]),{label:"",url:""}])} style={{...btn(T.bg,T.textMuted,{fontSize:11,padding:"5px 10px",border:`1px solid ${T.border}`})}}>+ Link</button></div>
-  );
-  const AttList=({atts,onRemove})=>atts?.length>0?(<div style={{marginTop:8}}>{atts.map((a,i)=>(
-    <div key={i} style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:T.radiusSm,padding:"6px 10px",marginBottom:4,border:`1px solid ${T.border}`}}>
-      <span style={{fontSize:12,flex:1,color:T.textMuted}}>{a.name}</span>
-      <button onClick={()=>{
-  if(a.data.startsWith("http")){
-    window.open(a.data,"_blank");
-  } else {
-    try {
-      const byteStr=atob(a.data.split(",")[1]);
-      const ab=new ArrayBuffer(byteStr.length);
-      const ia=new Uint8Array(ab);
-      for(let i=0;i<byteStr.length;i++) ia[i]=byteStr.charCodeAt(i);
-      const blob=new Blob([ab],{type:a.type||"application/octet-stream"});
-      const url=URL.createObjectURL(blob);
-      window.open(url,"_blank");
-      setTimeout(()=>URL.revokeObjectURL(url),10000);
-    } catch(e){ window.open(a.data,"_blank"); }
-  }
-}} style={{fontSize:12,color:T.primary,fontWeight:600,background:"none",border:"none",cursor:"pointer",padding:0}}>
-  {a.type==="application/pdf"?"Open PDF":"View"}
-</button>
-      {onRemove&&<button onClick={()=>onRemove(i)} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:14}}>&times;</button>}
-    </div>
-  ))}</div>):null;
-  const GuideForm=({form,setForm,onSave,onCancel,onDel})=>(
-    <div style={{...card({padding:18,marginBottom:8}),border:`1px solid ${T.primary}30`}}>
-      <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14,padding:8,background:T.bg,borderRadius:T.radiusSm,border:`1px solid ${T.border}`}}>{ICONS.map(ic=><button key={ic} onClick={()=>setForm(f=>({...f,icon:ic}))} style={{fontSize:22,background:form.icon===ic?T.surface:"transparent",border:`1px solid ${form.icon===ic?T.border:"transparent"}`,borderRadius:8,cursor:"pointer",padding:"6px 8px",boxShadow:form.icon===ic?T.shadow:"none"}}>{ic}</button>)}</div>
-      <input style={inp} placeholder="Guide title *" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/>
-      <label style={lbl}>Instructions</label>
-      <textarea style={{...inp,height:100,resize:"vertical"}} value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))}/>
-      <label style={lbl}>External Links</label>
-      <LinksList links={form.links||[]} setLinks={ls=>setForm(f=>({...f,links:ls}))}/>
-      <label style={lbl}>Attachments</label>
-      <AttList atts={form.attachments} onRemove={i=>setForm(f=>({...f,attachments:f.attachments.filter((_,j)=>j!==i)}))}/>
-      <label style={{...btn(T.bg,T.textMuted,{display:"inline-block",marginTop:10,cursor:"pointer",fontSize:12,border:`1px solid ${T.border}`})}}>
-        Attach File<input type="file" accept=".pdf,image/*" style={{display:"none"}} onChange={e=>handleFile(e,!editing)}/>
-      </label>
-      <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
-        <button onClick={onSave} style={btn(T.primary,T.surface)}>Save</button>
-        <button onClick={onCancel} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
-        {onDel&&<DeleteButton label="Delete" message={`Delete "${form.title}"?`} onConfirm={onDel} style={{fontSize:12}}/>}
-      </div>
-    </div>
-  );
   return(
     <div>
       <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
@@ -1921,7 +1921,7 @@ function GuidesPanel({guides,dispatch}){
         <button onClick={()=>setAddingNew(true)} style={btn(T.primary,T.surface)}>+ Guide</button>
       </div>
       {search&&<p style={{color:T.textDim,fontSize:12,margin:"0 0 10px"}}>{filtered.length} result{filtered.length!==1?"s":""} for "{search}"</p>}
-      {addingNew&&<GuideForm form={nf} setForm={setNf} onSave={()=>{if(!nf.title)return;dispatch({type:"ADD_GUIDE",payload:{...nf,id:"g"+Date.now()}});setAddingNew(false);setNf({title:"",icon:"📄",content:"",attachments:[],links:[]});}} onCancel={()=>setAddingNew(false)}/>}
+      {addingNew&&<GuideForm form={nf} setForm={setNf} onFileUpload={e=>handleFile(e,true)} onSave={()=>{if(!nf.title)return;dispatch({type:"ADD_GUIDE",payload:{...nf,id:"g"+Date.now()}});setAddingNew(false);setNf({title:"",icon:"📄",content:"",attachments:[],links:[]});}} onCancel={()=>setAddingNew(false)}/>}
       {!search&&guides.length===0&&<p style={{color:T.textDim,fontSize:13}}>No guides yet. Add your first one!</p>}
       {search&&filtered.length===0&&<div style={{...card({padding:24,textAlign:"center"})}}>
         <p style={{color:T.textDim,margin:0,fontSize:14}}>No guides match "{search}"</p>
@@ -1929,7 +1929,7 @@ function GuidesPanel({guides,dispatch}){
       {(search?filtered:guides).map(g=>(
         <div key={g.id} style={{marginBottom:8}}>
           {editing===g.id
-            ?<GuideForm form={ef} setForm={setEf} onSave={()=>{dispatch({type:"UPDATE_GUIDE",payload:ef});setEditing(null);}} onCancel={()=>setEditing(null)} onDel={()=>{dispatch({type:"DEL_GUIDE",id:g.id});setEditing(null);}}/>
+            ?<GuideForm form={ef} setForm={setEf} onFileUpload={e=>handleFile(e,false)} onSave={()=>{dispatch({type:"UPDATE_GUIDE",payload:ef});setEditing(null);}} onCancel={()=>setEditing(null)} onDel={()=>{dispatch({type:"DEL_GUIDE",id:g.id});setEditing(null);}}/>
             :(<div style={card({padding:0,overflow:"hidden"})}>
                 <button onClick={()=>setOpen(open===g.id?null:g.id)}
                   ref={el=>{
@@ -1953,7 +1953,7 @@ function GuidesPanel({guides,dispatch}){
                   <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
                     <pre style={{margin:"14px 0 12px",whiteSpace:"pre-wrap",fontSize:13,color:T.textMuted,lineHeight:1.8,fontFamily:"inherit"}}>{g.content}</pre>
                     {(g.links||[]).length>0&&<div style={{marginBottom:12}}><p style={{...sectionHead,marginBottom:8}}>Links</p>{g.links.map((l,i)=><a key={i} href={l.url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,color:T.sky,fontSize:13,marginBottom:6,textDecoration:"none",marginRight:12}}>{l.label||l.url}</a>)}</div>}
-                    <AttList atts={g.attachments}/>
+                    <GuideAttList atts={g.attachments}/>
                     <button onClick={()=>{setEditing(g.id);setEf({...g});}} style={{...btn(T.bg,T.textMuted,{fontSize:12,marginTop:12,border:`1px solid ${T.border}`})}}>Edit</button>
                   </div>
                 )}
