@@ -3060,15 +3060,19 @@ export default function App(){
 
       {showBook&&<BookingForm bookings={state.bookings} dispatch={sbDispatch} onClose={()=>setShowBook(false)} currentFamilyId={currentFamily} families={families}/>}
 
-    {/* Bottom tab bar — 2x2 | centre | 2x2 */}
+    {/* Safe zone fill — behind everything, same colour as bar */}
+    <div style={{position:"fixed",bottom:0,left:0,right:0,height:"env(safe-area-inset-bottom)",background:T.surface,zIndex:499}}/>
+    {/* Bottom tab bar — sits above safe zone */}
     <div style={{
-      position:"fixed",bottom:0,left:0,right:0,
+      position:"fixed",
+      bottom:"env(safe-area-inset-bottom)",
+      left:0,right:0,
       zIndex:500,
       background:T.surface,
       boxShadow:"0 -4px 16px rgba(0,0,0,0.10)",
       borderTop:`1px solid ${T.border}`,
     }}>
-      {/* Icon grid — fixed height, stays above safe area */}
+      {/* Icon grid */}
       <div style={{paddingTop:8,height:84,display:"flex",alignItems:"stretch"}}>
           {/* Left 2x2 grid */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1}}>
@@ -3101,17 +3105,17 @@ export default function App(){
             ))}
           </div>
       </div>
-      {/* Safe area spacer */}
-      <div style={{height:"env(safe-area-inset-bottom)",background:T.surface}}/>
+
       {/* Centre BOOK button — fixed, breaks out of bar, ignores safe zone */}
       <button onClick={()=>setShowBook(true)}
         style={{
           position:"fixed",
-          bottom:0,
           left:"50%",
           transform:"translateX(-50%)",
           width:64,
-          top:`calc(100% - 84px - 18px)`,
+          bottom:"env(safe-area-inset-bottom)",
+          top:"auto",
+          height:`calc(84px + 18px + env(safe-area-inset-bottom))`,
           borderRadius:"18px 18px 0 0",
           background:`linear-gradient(160deg,${T.primary},#3a8a5f)`,
           border:"none",
