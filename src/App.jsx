@@ -158,6 +158,18 @@ const DEFAULT_FAMILIES = [
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const TODAY = new Date();
+// Generate day-by-day structure between two date strings
+const generateDays = (start, end) => {
+  if(!start || !end) return [];
+  const days = [];
+  const s = new Date(start + 'T12:00:00');
+  const e = new Date(end + 'T12:00:00');
+  for(let d = new Date(s); d <= e; d.setDate(d.getDate()+1)){
+    days.push({date: fmt(new Date(d)), activities:[]});
+  }
+  return days;
+};
+
 const fmt = d => { const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
 const addDays = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
 const nights = (s,e) => Math.max(0, Math.round((new Date(e)-new Date(s))/86400000));
@@ -215,8 +227,8 @@ const SEED_RULES = [
 
 // ─── REDUCER ──────────────────────────────────────────────────────────────────
 const INIT = {
-  bookings:SEED_BOOKINGS, places:SEED_PLACES, equipment:SEED_EQUIPMENT,
-  guides:SEED_GUIDES, rules:SEED_RULES, itineraries:[],
+  bookings:[], places:[], equipment:[],
+  guides:[], rules:[], itineraries:[],
   families:DEFAULT_FAMILIES, vanPhoto:null, vanName:"The Family Campervan",
   packingByFamily:{}, // { familyId: [{id,category,item,status}] }
   odoLog:[], // [{id,familyId,date,startKm,endKm,notes,bookingId}]
@@ -554,7 +566,8 @@ function CalendarView({bookings,families,itineraries,onOpenItinerary,currentFami
         const itin=itinForBooking(b);
         const totalActs=itin?(itin.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0):0;
         return(
-          <div key={b.id} style={{...card({padding:14,marginBottom:12}),borderLeft:`4px solid ${fColor(b.familyId)}`}}>
+          <div key={b.id} onClick={()=>{const it=itinForBooking(b);if(it){onClose();onOpenItinerary(it.id);}}}
+            style={{...card({padding:14,marginBottom:12}),borderLeft:`4px solid ${fColor(b.familyId)}`,cursor:itinForBooking(b)?"pointer":"default",transition:"box-shadow 0.15s"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
               <div>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
@@ -572,32 +585,21 @@ function CalendarView({bookings,families,itineraries,onOpenItinerary,currentFami
             {/* Itinerary section — own bookings only */}
             <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
               {itin?(
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                <button onClick={()=>{onClose();onOpenItinerary(itin.id);}}
+                  style={{...card({padding:"10px 14px"}),width:"100%",textAlign:"left",cursor:"pointer",
+                    border:`1px solid ${T.primary}30`,background:T.primary+"08",display:"flex",
+                    alignItems:"center",justifyContent:"space-between",gap:8}}>
                   <div>
-                    <div style={{fontSize:12,fontWeight:700,color:T.primary}}>{itin.title}</div>
-                    <div style={{fontSize:11,color:T.textDim,marginTop:2}}>{totalActs} activit{totalActs===1?"y":"ies"} planned</div>
+                    <div style={{fontSize:13,fontWeight:700,color:T.primary}}>🗺️ {itin.title}</div>
+                    <div style={{fontSize:11,color:T.textDim,marginTop:2}}>
+                      {totalActs} activit{totalActs===1?"y":"ies"} planned
+                      {itin.visibility==="shared"&&<span style={{marginLeft:6,color:T.green}}>· Shared</span>}
+                    </div>
                   </div>
-                  {b.familyId===currentFamilyId?(
-                    <button onClick={()=>{onClose();onOpenItinerary(itin.id);}}
-                      style={{...btn(T.primary+"15",T.primary,{fontSize:12,padding:"6px 14px",border:`1px solid ${T.primary}30`,flexShrink:0})}}>
-                      View / Edit Trip
-                    </button>
-                  ):(
-                    <span style={{fontSize:11,color:T.textDim,fontStyle:"italic"}}>
-                      {itin.visibility==="shared"?"Shared trip":"Private trip"}
-                    </span>
-                  )}
-                </div>
-              ):b.familyId===currentFamilyId?(
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                  <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>No trip itinerary yet</span>
-                  <button onClick={()=>{onClose();onOpenItinerary(null,b);}}
-                    style={{...btn(T.accent+"15",T.accent,{fontSize:12,padding:"6px 14px",border:`1px solid ${T.accent}30`,flexShrink:0})}}>
-                    + Plan a Trip
-                  </button>
-                </div>
+                  <span style={{color:T.primary,fontSize:18}}>›</span>
+                </button>
               ):(
-                <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>No itinerary planned</span>
+                <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>No trip yet — booking will create one automatically</span>
               )}
             </div>
           </div>
@@ -968,7 +970,1019 @@ function BookingCard({b,families,itineraries,onOpenItinerary,currentFamilyId,dis
   const [odoForm,setOdoForm]=useState({startKm:"",endKm:"",tolls:"",notes:""});
 
   return(
-    <div style={{...card({padding:12,marginBottom:8}),borderLeft:`4px solid ${fColor(b.familyId)}`}}>
+    <div style={{...card({padding:12,marginBottom:8}),borderLeft:"4px solid "+fColor(b.familyId)}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+        <div style={{flex:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+            <span style={{fontWeight:700,color:T.text,fontSize:14,display:"flex",alignItems:"center",gap:6}}>
+              <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={24} fontSize={16}/>
+              {fName(b.familyId)}
+            </span>
+            {b.familyId==="maintenance"
+              ?<span style={{...pill("#88888820","#666666"),fontSize:11}}>🔧 Van unavailable</span>
+              :<span style={pill(b.status==="tentative"?T.accent+"20":T.primary+"15",b.status==="tentative"?T.accent:T.primary)}>{b.status}</span>
+            }
+          </div>
+          <div style={{color:T.textMuted,fontSize:13,fontWeight:500}}>{b.destination}</div>
+          <div style={{color:T.textDim,fontSize:12,marginTop:3}}>{b.start} to {b.end} &middot; {nights(b.start,b.end)} nights</div>
+          {b.notes&&<div style={{color:T.textDim,fontSize:12,marginTop:4,fontStyle:"italic"}}>"{b.notes}"</div>}
+{/* /* Trip — taps open trip */}
+            {(()=>{
+            const itin=(itineraries||[]).find(i=>i.bookingId===b.id);
+            const totalActs=itin?(itin.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0):0;
+            const isOwn=b.familyId===currentFamilyId;
+            return itin?(
+              <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderLight}`}}>
+                <button onClick={()=>onOpenItinerary&&onOpenItinerary(itin.id)}
+                  style={{...card({padding:"10px 12px"}),width:"100%",textAlign:"left",cursor:"pointer",
+                    border:`1px solid ${T.primary}25`,background:T.primary+"06",
+                    display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:700,color:T.primary}}>🗺️ {itin.title}</div>
+                    <div style={{fontSize:11,color:T.textDim,marginTop:2}}>
+                      {totalActs} activit{totalActs===1?"y":"ies"}
+                      {itin.visibility==="shared"&&<span style={{color:T.green,marginLeft:6}}>· Shared</span>}
+                    </div>
+                  </div>
+                  {isOwn
+                    ?<span style={{...pill(T.primary+"15",T.primary),fontSize:10}}>Edit Trip ›</span>
+                    :<span style={{...pill(T.green+"15",T.green),fontSize:10}}>View ›</span>}
+                </button>
+              </div>
+            ):null;
+          })()}rt React, { useState, useReducer, useRef, useEffect, useCallback } from "react";
+
+// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
+// Supabase config — works both in Vite (import.meta.env) and plain browser
+const SUPABASE_URL = "https://jlnwuzgcubfzrwxlwfkn.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impsbnd1emdjdWJmenJ3eGx3ZmtuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4OTQ1MzUsImV4cCI6MjA5ODQ3MDUzNX0.Ord113mzsfyYQw2RTKMBnw80wWO9I_jkwwJFAqxXnEs";
+
+// Log config on load to help debug
+if(!SUPABASE_KEY) console.error("⚠️ SUPABASE_KEY is empty — check GitHub secrets are named VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY");
+else console.log("✓ Supabase configured:", SUPABASE_URL);
+
+const supa = {
+  get: async (table, query="") => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json" }
+    });
+    if(!res.ok){ console.error("Supabase GET "+table+" failed:", res.status); return []; }
+    return res.json();
+  },
+  insert: async (table, data) => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method:"POST",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"return=representation" },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  update: async (table, data, match) => {
+    const q = Object.entries(match).map(([k,v])=>k+"=eq."+v).join("&");
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
+      method:"PATCH",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"return=representation" },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  upsert: async (table, data) => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method:"POST",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  delete: async (table, match) => {
+    const q = Object.entries(match).map(([k,v])=>k+"=eq."+v).join("&");
+    await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
+      method:"DELETE",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` }
+    });
+  },
+  uploadImage: async (file, path) => {
+    const formData = new FormData();
+    formData.append("", file);
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/app-images/${path}`, {
+      method:"POST",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` },
+      body: formData
+    });
+    if(!res.ok){
+      const res2 = await fetch(`${SUPABASE_URL}/storage/v1/object/app-images/${path}`, {
+        method:"PUT",
+        headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` },
+        body: formData
+      });
+      if(!res2.ok) throw new Error("Upload failed");
+    }
+    return `${SUPABASE_URL}/storage/v1/object/public/app-images/${path}`;
+  },
+  deleteImage: async (path) => {
+    await fetch(`${SUPABASE_URL}/storage/v1/object/app-images/${path}`, {
+      method:"DELETE",
+      headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` }
+    });
+  },
+  subscribe: (table, callback) => {
+    // Supabase realtime via WebSocket
+    const wsUrl = SUPABASE_URL.replace("https://","wss://") + "/realtime/v1/websocket?apikey=" + SUPABASE_KEY + "&vsn=1.0.0";
+    const ws = new WebSocket(wsUrl);
+    const topic = `realtime:public:${table}`;
+    ws.onopen = () => {
+      ws.send(JSON.stringify({topic, event:"phx_join", payload:{}, ref:"1"}));
+    };
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if(msg.topic===topic && msg.event==="INSERT" || msg.event==="UPDATE" || msg.event==="DELETE"){
+        callback(msg.event, msg.payload?.record, msg.payload?.old_record);
+      }
+    };
+    return () => ws.close();
+  }
+};
+
+// Convert DB row format to app format and back
+const fromDB = {
+  booking: b => b ? ({id:b.id, familyId:b.family_id, start:b.start_date, end:b.end_date, destination:b.destination, notes:b.notes||"", status:b.status}) : null,
+  place:   p => p ? ({id:p.id, name:p.name, familyId:p.family_id, category:p.category, lat:p.lat, lng:p.lng, overallRating:p.overall_rating||0, reviews:[]}) : null,
+  review:  r => r ? ({familyId:r.family_id, rating:r.rating, text:r.review_text, date:r.review_date}) : null,
+  itin:    i => i ? ({id:i.id, title:i.title, familyId:i.family_id, start:i.start_date||"", end:i.end_date||"", destination:i.destination||"", notes:i.notes||"", bookingId:i.booking_id||"", visibility:i.visibility||"private", days:i.days||[]}) : null,
+  family:  f => f ? ({id:f.id, name:f.name, color:f.color, emoji:f.emoji, pin:f.pin, photo:f.photo||null}) : null,
+  equip:   e => e ? ({id:e.id, category:e.category, item:e.item, status:e.status||"invan"}) : null,
+  packing: p => p ? ({id:p.id, category:p.category, item:p.item, status:p.status||"tobring"}) : null,
+  guide:   g => g ? ({id:g.id, title:g.title, icon:g.icon, content:g.content||"", links:g.links||[], attachments:g.attachments||[]}) : null,
+  rule:    r => r ? ({id:r.id, icon:r.icon, rule:r.rule, detail:r.detail||""}) : null,
+};
+const toDB = {
+  booking: b => ({id:b.id, family_id:b.familyId, start_date:b.start, end_date:b.end, destination:b.destination, notes:b.notes, status:b.status}),
+  place:   p => ({id:p.id, name:p.name, family_id:p.familyId, category:p.category, lat:p.lat, lng:p.lng, overall_rating:p.overallRating||0}),
+  review:  (placeId,r) => ({place_id:placeId, family_id:r.familyId, rating:r.rating, review_text:r.text, review_date:r.date}),
+  itin:    i => ({id:i.id, title:i.title, family_id:i.familyId, start_date:i.start||null, end_date:i.end||null, destination:i.destination||"", notes:i.notes||"", booking_id:i.bookingId||null, visibility:i.visibility||"private", days:i.days||[]}),
+  family:  f => ({id:f.id, name:f.name, color:f.color, emoji:f.emoji, pin:f.pin, photo:f.photo||null}),
+  equip:   e => ({id:e.id, category:e.category, item:e.item, status:e.status}),
+  packing: (familyId,p) => ({id:p.id, family_id:familyId, category:p.category, item:p.item, status:p.status}),
+  guide:   g => ({id:g.id, title:g.title, icon:g.icon, content:g.content||"", links:g.links||[], attachments:g.attachments||[]}),
+  rule:    r => ({id:r.id, icon:r.icon, rule:r.rule, detail:r.detail||""}),
+};
+
+// ─── NZ HOLIDAY LIGHT THEME ───────────────────────────────────────────────────
+const T = {
+  bg:        "#f0f4f0",        // soft fern-mist green-white
+  surface:   "#ffffff",        // clean white cards
+  card:      "#ffffff",
+  cardHover: "#f7faf7",
+  border:    "#d4e0d0",        // sage green border
+  borderLight:"#e5ede5",
+  primary:   "#2d6a4f",        // pohutukawa forest green
+  primaryDark:"#1b4332",
+  primaryLight:"#52b788",
+  primaryGlow:"rgba(45,106,79,0.1)",
+  accent:    "#e07a28",        // pohutukawa orange-red (sunset/flame)
+  accentGlow:"rgba(224,122,40,0.1)",
+  sky:       "#4a90c4",        // NZ summer sky blue
+  skyGlow:   "rgba(74,144,196,0.1)",
+  sand:      "#c9a96e",        // Kauri sand
+  green2:    "#40916c",
+  yellow:    "#e9c46a",        // golden tussock
+  red:       "#c1440e",
+  text:      "#1a2e1a",        // deep bush green-black
+  textMuted: "#4a6741",        // mid-green
+  textDim:   "#8aab82",        // light sage
+  radius:    "12px",
+  radiusSm:  "8px",
+  shadow:    "0 2px 16px rgba(45,106,79,0.08)",
+  shadowMd:  "0 4px 24px rgba(45,106,79,0.12)",
+  shadowLg:  "0 8px 40px rgba(45,106,79,0.18)",
+};
+
+// ─── FAMILIES ─────────────────────────────────────────────────────────────────
+const ADMIN_PIN = "9999"; // Admin passcode required to remove a family
+
+const DEFAULT_FAMILIES = [
+  { id:"f1", name:"Steve & Lyn",      color:"#2d6a4f", emoji:"🏔️", pin:"0000", homeTab:"calendar" },
+  { id:"f2", name:"Em & Dave",        color:"#e07a28", emoji:"🌊", pin:"0000", homeTab:"calendar" },
+  { id:"f3", name:"Matt & Janine",    color:"#4a90c4", emoji:"🌿", pin:"0000", homeTab:"calendar" },
+  { id:"f4", name:"Jonny & Steph",    color:"#c9a96e", emoji:"🦅", pin:"0000", homeTab:"calendar" },
+  { id:"maintenance", name:"Maintenance", color:"#888888", emoji:"🔧", pin:"9999" },
+];
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const TODAY = new Date();
+// Generate day-by-day structure between two date strings
+const generateDays = (start, end) => {
+  if(!start || !end) return [];
+  const days = [];
+  const s = new Date(start + 'T12:00:00');
+  const e = new Date(end + 'T12:00:00');
+  for(let d = new Date(s); d <= e; d.setDate(d.getDate()+1)){
+    days.push({date: fmt(new Date(d)), activities:[]});
+  }
+  return days;
+};
+
+const fmt = d => { const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
+const addDays = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
+const nights = (s,e) => Math.max(0, Math.round((new Date(e)-new Date(s))/86400000));
+const overlap = (a,b) => new Date(a.start)<new Date(b.end) && new Date(a.end)>new Date(b.start);
+
+// ─── SEED DATA ────────────────────────────────────────────────────────────────
+const SEED_BOOKINGS = [
+  {id:"b1",familyId:"f1",start:fmt(addDays(TODAY,5)), end:fmt(addDays(TODAY,16)),destination:"Blue Lake Campsite",   notes:"School holidays",status:"confirmed"},
+  {id:"b2",familyId:"f3",start:fmt(addDays(TODAY,20)),end:fmt(addDays(TODAY,27)),destination:"Coastal Cove Reserve",notes:"Anniversary",    status:"tentative"},
+  {id:"b3",familyId:"f2",start:fmt(addDays(TODAY,38)),end:fmt(addDays(TODAY,52)),destination:"Mountain Pass Retreat",notes:"Summer trip",   status:"confirmed"},
+];
+const SEED_PLACES = [
+  {id:"p1",name:"Blue Lake Campsite",   familyId:"f1",overallRating:5,reviews:[{familyId:"f1",rating:5,text:"Stunning reflections, great fishing, kids loved the kayaks!",date:"2024-01-10"}],lat:-36.85,lng:174.76,category:"Campsite"},
+  {id:"p2",name:"Coastal Cove Reserve", familyId:"f3",overallRating:4,reviews:[{familyId:"f3",rating:4,text:"Secluded beach, bit windy but beautiful sunsets.",date:"2024-02-20"}],lat:-36.40,lng:175.68,category:"Beach"},
+  {id:"p3",name:"Mountain Pass Retreat",familyId:"f2",overallRating:5,reviews:[{familyId:"f2",rating:5,text:"Epic hikes, great facilities. Book early!",date:"2024-03-05"}],lat:-39.13,lng:175.63,category:"Mountain"},
+  {id:"p4",name:"Riverside Holiday Park",familyId:"f4",overallRating:3,reviews:[{familyId:"f4",rating:3,text:"Nice enough, a bit crowded. Good stopover.",date:"2024-04-15"}],lat:-37.78,lng:175.28,category:"Holiday Park"},
+];
+const SEED_EQUIPMENT = [
+  {id:"e1",category:"Sleeping",item:"Queen bed + linen",status:"invan"},{id:"e2",category:"Sleeping",item:"Extra blankets x2",status:"invan"},
+  {id:"e3",category:"Kitchen",item:"2-burner gas cooktop",status:"invan"},{id:"e4",category:"Kitchen",item:"12V fridge/freezer",status:"invan"},
+  {id:"e5",category:"Kitchen",item:"Portable BBQ",status:"invan"},{id:"e6",category:"Kitchen",item:"Fold-out dining table",status:"invan"},
+  {id:"e7",category:"Power",item:"Solar panel (200W)",status:"invan"},{id:"e8",category:"Power",item:"Inverter (1000W)",status:"invan"},
+  {id:"e9",category:"Power",item:"USB-C charging x4",status:"invan"},
+  {id:"e10",category:"Water",item:"Fresh water tank (80L)",status:"invan"},{id:"e11",category:"Water",item:"Grey water tank",status:"invan"},
+  {id:"e12",category:"Sanitation",item:"Portable toilet",status:"invan"},
+  {id:"e13",category:"Outdoor",item:"Camp chairs x4",status:"invan"},{id:"e14",category:"Outdoor",item:"Camp table",status:"invan"},{id:"e15",category:"Outdoor",item:"Awning",status:"invan"},
+  {id:"e16",category:"Safety",item:"First aid kit",status:"invan"},{id:"e17",category:"Safety",item:"Fire extinguisher",status:"invan"},
+  {id:"e18",category:"Safety",item:"Jumper cables",status:"invan"},{id:"e19",category:"Safety",item:"Tool kit",status:"invan"},
+  {id:"e20",category:"Safety",item:"Levelling ramps",status:"invan"},{id:"e21",category:"Safety",item:"Torch + batteries",status:"invan"},
+  {id:"e22",category:"Bedding",item:"Pillows",status:"tobring"},{id:"e23",category:"Bedding",item:"Sleeping bag",status:"tobring"},{id:"e24",category:"Bedding",item:"Eye masks",status:"tobring"},
+  {id:"e25",category:"Kitchen",item:"Cooking oil",status:"tobring"},{id:"e26",category:"Kitchen",item:"Spices",status:"tobring"},{id:"e27",category:"Kitchen",item:"Snacks",status:"tobring"},{id:"e28",category:"Kitchen",item:"Coffee/tea",status:"tobring"},{id:"e29",category:"Kitchen",item:"Water bottles",status:"tobring"},{id:"e30",category:"Kitchen",item:"Rubbish bags",status:"tobring"},
+  {id:"e31",category:"Hygiene",item:"Towels",status:"tobring"},{id:"e32",category:"Hygiene",item:"Toiletries",status:"tobring"},{id:"e33",category:"Hygiene",item:"Toilet paper",status:"tobring"},{id:"e34",category:"Hygiene",item:"Hand sanitiser",status:"tobring"},
+  {id:"e35",category:"Outdoors",item:"Hiking boots",status:"tobring"},{id:"e36",category:"Outdoors",item:"Raincoats",status:"tobring"},{id:"e37",category:"Outdoors",item:"Sunscreen & hats",status:"tobring"},{id:"e38",category:"Outdoors",item:"Insect repellent",status:"tobring"},
+  {id:"e39",category:"Kids",item:"Toys/games",status:"tobring"},{id:"e40",category:"Kids",item:"Beach gear",status:"tobring"},{id:"e41",category:"Kids",item:"Colouring books",status:"tobring"},
+  {id:"e42",category:"Safety",item:"Medications",status:"tobring"},{id:"e43",category:"Safety",item:"ID copies",status:"tobring"},{id:"e44",category:"Safety",item:"Cash",status:"tobring"},
+];
+const SEED_GUIDES = [
+  {id:"g1",title:"Starting the Engine",icon:"🔑",content:"1. Ensure handbrake is on.\n2. Wait for glow plug light to go out.\n3. Turn key fully to start.\n\nNever leave engine running in enclosed spaces.",attachments:[],links:[]},
+  {id:"g2",title:"Mains Power (240V)",icon:"🔌",content:"1. Plug campsite end first, then van inlet.\n2. Flip the RCD breaker inside.\n3. To disconnect: flip breaker off first.\n\nNever leave cable coiled when in use.",attachments:[],links:[]},
+  {id:"g3",title:"Fresh Water System",icon:"💧",content:"1. Fill via external cap (WATER, right rear).\n2. Turn water pump switch on inside.\n3. Run tap until air clears.\n4. Empty grey tank at dump stations.",attachments:[],links:[]},
+  {id:"g4",title:"Gas Cooktop Safety",icon:"🔥",content:"1. Open windows and roof vent before lighting.\n2. Turn knob to max, press and hold, click igniter.\n3. Hold 5 seconds after flame lights.\n4. Turn gas off at bottle when done.\n\nSmell gas? Step outside immediately.",attachments:[],links:[]},
+  {id:"g5",title:"Toilet Cassette",icon:"🚽",content:"1. Close blade valve inside toilet.\n2. Access cassette from external hatch.\n3. Take to dump station, rinse, add chemical tablet, reinsert.",attachments:[],links:[]},
+  {id:"g6",title:"Solar & Battery",icon:"☀️",content:"1. Keep battery above 50%.\n2. Solar charges automatically in daylight.\n3. Run engine 30+ mins to charge if needed.\n4. Below 20% -- connect to mains ASAP.",attachments:[],links:[]},
+];
+const SEED_RULES = [
+  {id:"r1",icon:"⏱️",rule:"Advance booking",detail:"Book up to 6 months ahead."},
+  {id:"r2",icon:"🔁",rule:"Peak season rotation",detail:"School holidays rotate priority -- last to book is lowest priority next round."},
+  {id:"r3",icon:"🧹",rule:"Handover condition",detail:"Return van clean, full fuel, empty tanks, fresh water topped up."},
+  {id:"r4",icon:"⛽",rule:"Fuel costs",detail:"Booking family pays fuel. Major services split equally."},
+  {id:"r5",icon:"🛑",rule:"Cancellations",detail:"Cancel 14+ days out so others can claim the slot."},
+  {id:"r6",icon:"🔧",rule:"Damage",detail:"Accidental = shared. Negligence = booking family pays. Report damage immediately."},
+  {id:"r7",icon:"✏️",rule:"Tentative bookings",detail:"Holds a date temporarily. Confirmed bookings take priority."},
+  {id:"r8",icon:"🤝",rule:"Conflict resolution",detail:"Fewer nights used = priority. Ties = coin flip."},
+];
+
+// ─── REDUCER ──────────────────────────────────────────────────────────────────
+const INIT = {
+  bookings:[], places:[], equipment:[],
+  guides:[], rules:[], itineraries:[],
+  families:DEFAULT_FAMILIES, vanPhoto:null, vanName:"The Family Campervan",
+  packingByFamily:{}, // { familyId: [{id,category,item,status}] }
+  odoLog:[], // [{id,familyId,date,startKm,endKm,notes,bookingId}]
+  odoRate:0.30, // cost per km in dollars
+};
+function reducer(state,{type,payload,id}){
+  switch(type){
+    case "ADD_BOOKING":      return {...state,bookings:[...state.bookings,payload]};
+    case "DEL_BOOKING":      return {...state,bookings:state.bookings.filter(b=>b.id!==id)};
+    case "CONFIRM_BOOKING":  return {...state,bookings:state.bookings.map(b=>b.id===id?{...b,status:"confirmed"}:b)};
+    case "ADD_PLACE":        return {...state,places:[...state.places,payload]};
+    case "DEL_PLACE":        return {...state,places:state.places.filter(p=>p.id!==id)};
+    case "ADD_REVIEW":       return {...state,places:state.places.map(p=>{
+      if(p.id!==payload.placeId)return p;
+      const reviews=[...p.reviews,payload.review];
+      return{...p,reviews,overallRating:Math.round(reviews.reduce((a,r)=>a+r.rating,0)/reviews.length)};
+    })};
+    case "SET_EQUIPMENT":    return {...state,equipment:payload};
+    case "ADD_GUIDE":        return {...state,guides:[...state.guides,payload]};
+    case "UPDATE_GUIDE":     return {...state,guides:state.guides.map(g=>g.id===payload.id?payload:g)};
+    case "DEL_GUIDE":        return {...state,guides:state.guides.filter(g=>g.id!==id)};
+    case "SET_RULES":        return {...state,rules:payload};
+    case "ADD_ITINERARY":    return {...state,itineraries:[...state.itineraries,payload]};
+    case "UPDATE_ITINERARY": return {...state,itineraries:state.itineraries.map(i=>i.id===payload.id?payload:i)};
+    case "DEL_ITINERARY":    return {...state,itineraries:state.itineraries.filter(i=>i.id!==id)};
+    case "ADD_FAMILY":       return {...state,families:[...state.families,payload]};
+    case "SET_FAMILY_PACKING": return {...state,packingByFamily:{...state.packingByFamily,[payload.familyId]:payload.items}};
+    case "UPDATE_FAMILY":    return {...state,families:state.families.map(f=>f.id===payload.id?payload:f)};
+    case "DEL_FAMILY":       return {...state,families:state.families.filter(f=>f.id!==id)};
+    case "SET_VAN_PHOTO":    return {...state,vanPhoto:payload};
+    case "SET_VAN_NAME":     return {...state,vanName:payload};
+    // Supabase bulk load actions
+    case "RESET_FAMILIES":    return {...state,families:payload};
+    case "RESET_BOOKINGS":    return {...state,bookings:payload};
+    case "RESET_PLACES":      return {...state,places:payload};
+    case "RESET_EQUIPMENT":   return {...state,equipment:payload};
+    case "RESET_PACKING":     return {...state,packingByFamily:payload};
+    case "RESET_ITINERARIES": return {...state,itineraries:payload};
+    case "RESET_GUIDES":      return {...state,guides:payload};
+    case "RESET_RULES":       return {...state,rules:payload};
+    case "ADD_ODO":           return {...state,odoLog:[...state.odoLog,payload]};
+    case "DEL_ODO":           return {...state,odoLog:state.odoLog.filter(e=>e.id!==id)};
+    case "MARK_ODO_PAID":     return {...state,odoLog:state.odoLog.map(e=>e.id===id?{...e,paid:!e.paid}:e)};
+    case "RESET_ODO":         return {...state,odoLog:payload};
+    case "SET_ODO_RATE":      return {...state,odoRate:payload};
+    default: return state;
+  }
+}
+
+// ─── STYLE HELPERS ────────────────────────────────────────────────────────────
+const card   = (x={}) => ({background:T.surface,borderRadius:T.radius,border:`1px solid ${T.border}`,boxShadow:T.shadow,padding:"14px",...x});
+const pill   = (bg,color) => ({background:bg,color,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:99,display:"inline-flex",alignItems:"center",gap:4});
+const btn    = (bg,color,x={}) => ({background:bg,color,border:"none",borderRadius:T.radiusSm,padding:"8px 14px",cursor:"pointer",fontWeight:600,fontSize:13,transition:"all 0.15s",...x});
+const inp    = {width:"100%",boxSizing:"border-box",background:"#f8faf8",border:`1.5px solid ${T.border}`,borderRadius:T.radiusSm,padding:"8px 11px",fontSize:13,color:T.text,outline:"none",fontFamily:"inherit"};
+const lbl    = {display:"block",fontSize:10,fontWeight:700,color:T.textMuted,marginBottom:4,marginTop:10,textTransform:"uppercase",letterSpacing:"0.5px"};
+const sectionHead = {fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.5,color:T.textDim,margin:"0 0 10px"};
+
+
+// ─── FAMILY AVATAR ─────────────────────────────────────────────────────────────
+// Shows family photo if available, otherwise emoji. Used everywhere a family
+// is identified so the photo choice flows through the whole app automatically.
+function FamilyAvatar({family, size=28, fontSize=18}){
+  if(!family) return null;
+  if(family.photo){
+    return(
+      <img src={family.photo} alt={family.name}
+        style={{width:size,height:size,borderRadius:"50%",objectFit:"cover",
+          border:`2px solid ${family.color}50`,flexShrink:0,display:"inline-block",verticalAlign:"middle"}}/>
+    );
+  }
+  return <span style={{fontSize,lineHeight:1,flexShrink:0}}>{family.emoji}</span>;
+}
+
+function StarRating({value,onChange,size=18}){
+  return(<div style={{display:"flex",gap:2}}>{[1,2,3,4,5].map(n=>(
+    <button key={n} onClick={()=>onChange&&onChange(n)} style={{background:"none",border:"none",cursor:onChange?"pointer":"default",fontSize:size,color:n<=value?T.accent:"#d4e0d0",padding:0,lineHeight:1}}>★</button>
+  ))}</div>);
+}
+
+function ConfirmDialog({message,detail,onConfirm,onCancel,confirmLabel="Delete"}){
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(26,46,26,0.4)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:16}} onClick={onCancel}>
+      <div style={{...card({padding:22}),width:340,maxWidth:"92vw",boxShadow:T.shadowLg,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:52,height:52,borderRadius:99,background:T.red+"15",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:24}}>!</div>
+        <p style={{color:T.text,fontSize:15,fontWeight:700,margin:"0 0 6px"}}>{message}</p>
+        {detail&&<p style={{color:T.textMuted,fontSize:13,margin:"0 0 24px",lineHeight:1.5}}>{detail}</p>}
+        {!detail&&<p style={{color:T.textMuted,fontSize:13,margin:"0 0 24px"}}>This cannot be undone.</p>}
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onCancel} style={{...btn(T.bg,T.textMuted,{flex:1,border:`1px solid ${T.border}`})}}>Cancel</button>
+          <button onClick={onConfirm} style={{...btn(T.red,T.surface,{flex:1})}}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Modal({title,onClose,children,width=480}){
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(26,46,26,0.4)",backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",zIndex:800,padding:"16px 12px",overflowY:"auto"}} onClick={onClose}>
+      <div style={{...card({padding:18}),width,maxWidth:"96vw",maxHeight:"none",overflowY:"visible",overflowX:"hidden",boxShadow:T.shadowLg,marginTop:8,marginBottom:16}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <h3 style={{margin:0,color:T.text,fontSize:17,fontWeight:700}}>{title}</h3>
+          <button onClick={onClose} style={{background:T.bg,border:`1px solid ${T.border}`,color:T.textMuted,fontSize:18,cursor:"pointer",lineHeight:1,borderRadius:T.radiusSm,width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center"}}>&times;</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function DeleteButton({label="Delete",message,detail,onConfirm,style:sx={}}){
+  const [c,setC]=useState(false);
+  return(<>
+    <button onClick={()=>setC(true)} style={{...btn(T.red+"15",T.red,{fontSize:12,...sx}),border:`1px solid ${T.red}30`}}>
+      {label}
+    </button>
+    {c&&<ConfirmDialog message={message||"Delete this item?"} detail={detail} onConfirm={()=>{setC(false);onConfirm();}} onCancel={()=>setC(false)} confirmLabel={label||"Delete"}/>}
+  </>);
+}
+
+// ─── PIN PAD ──────────────────────────────────────────────────────────────────
+function PinPad({familyId,families,onSuccess,onBack}){
+  const [pin,setPin]=useState(""); const [err,setErr]=useState(""); const [shake,setShake]=useState(false);
+  const fam=families.find(f=>f.id===familyId);
+  const handleDigit=d=>{
+    if(pin.length>=4)return;
+    const next=pin+d; setPin(next); setErr("");
+    if(next.length===4){
+      if(next===fam.pin){setTimeout(()=>onSuccess(),150);}
+      else{setShake(true);setErr("Incorrect PIN");setTimeout(()=>{setPin("");setShake(false);},500);}
+    }
+  };
+  const DIGITS=["1","2","3","4","5","6","7","8","9","","0","<"];
+  return(
+    <div style={{textAlign:"center"}}>
+      <button onClick={onBack} style={{...btn("transparent",T.textMuted,{fontSize:13,marginBottom:24,padding:"6px 12px",border:`1px solid ${T.border}`,borderRadius:T.radiusSm})}}>&#8592; Back</button>
+      <div style={{width:72,height:72,borderRadius:99,background:fam.color+"20",border:`3px solid ${fam.color}40`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",overflow:"hidden"}}>
+        {fam.photo
+          ?<img src={fam.photo} alt={fam.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+          :<span style={{fontSize:36}}>{fam.emoji}</span>}
+      </div>
+      <p style={{color:T.text,fontWeight:700,fontSize:16,margin:"0 0 4px"}}>{fam.name}</p>
+      <p style={{color:T.textDim,fontSize:13,marginBottom:24}}>Enter your 4-digit PIN</p>
+      <div style={{display:"flex",justifyContent:"center",gap:12,marginBottom:8,animation:shake?"shake 0.4s":""}}>
+        {[0,1,2,3].map(i=>(<div key={i} style={{width:14,height:14,borderRadius:99,border:`2px solid ${pin.length>i?fam.color:T.border}`,background:pin.length>i?fam.color:"transparent",transition:"all 0.15s"}}/>))}
+      </div>
+      {err&&<p style={{color:T.red,fontSize:12,marginBottom:8,minHeight:20}}>{err}</p>}
+      {!err&&<div style={{minHeight:28}}/>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,maxWidth:200,margin:"0 auto"}}>
+        {DIGITS.map((d,i)=>(
+          d===""?<div key={i}/>
+          :d==="<"?<button key={i} onClick={()=>{setPin(p=>p.slice(0,-1));setErr("");}} style={{...btn(T.bg,T.textMuted,{padding:"14px",fontSize:16,borderRadius:T.radius,border:`1px solid ${T.border}`})}}>&#9003;</button>
+          :<button key={i} onClick={()=>handleDigit(d)} style={{...btn(T.surface,T.text,{padding:"12px",fontSize:17,fontWeight:700,borderRadius:T.radius,border:`1px solid ${T.border}`,boxShadow:"0 1px 4px rgba(45,106,79,0.08)"})}} onMouseEnter={e=>e.currentTarget.style.background=T.cardHover} onMouseLeave={e=>e.currentTarget.style.background=T.surface}>{d}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
+function LoginScreen({families,vanPhoto,vanName,onLogin}){
+  const [sel,setSel]=useState(null);
+  return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Inter,Segoe UI,system-ui,sans-serif",padding:14}}>
+      <div style={{width:"100%",maxWidth:420}}>
+        {/* Van photo or illustrated header */}
+        <div style={{textAlign:"center",marginBottom:36}}>
+          {vanPhoto?(
+            <div style={{width:"100%",height:200,borderRadius:T.radius,overflow:"hidden",marginBottom:20,boxShadow:T.shadowMd}}>
+              <img src={vanPhoto} alt="campervan" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            </div>
+          ):(
+            <div style={{fontSize:72,marginBottom:12,filter:"drop-shadow(0 4px 8px rgba(45,106,79,0.2))"}}>
+              🚐
+            </div>
+          )}
+          <h1 style={{margin:"0 0 4px",fontSize:28,fontWeight:800,color:T.primary,letterSpacing:-0.5}}>{vanName||"Adventure Hub"}</h1>
+          <p style={{margin:0,color:T.textDim,fontSize:14}}>Family Campervan</p>
+        </div>
+
+        {!sel?(
+          <div>
+            <p style={{textAlign:"center",color:T.textMuted,fontWeight:600,fontSize:13,marginBottom:16,textTransform:"uppercase",letterSpacing:1}}>Who's signing in?</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              {(families||[]).filter(f=>f.id!=="maintenance").map(f=>(
+                <button key={f.id} onClick={()=>setSel(f.id)}
+                  style={{...card({padding:14,textAlign:"center",cursor:"pointer",border:`2px solid transparent`,boxShadow:T.shadow,transition:"all 0.2s"}),textAlign:"center"}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=f.color;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=T.shadowMd;}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow=T.shadow;}}>
+                  <div style={{width:52,height:52,borderRadius:99,background:f.color+"20",border:`2px solid ${f.color}40`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 8px",overflow:"hidden"}}>
+                    {f.photo
+                      ?<img src={f.photo} alt={f.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                      :<span style={{fontSize:28}}>{f.emoji}</span>}
+                  </div>
+                  <div style={{fontWeight:700,color:T.text,fontSize:13}}>{f.name}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ):(
+          <div style={{...card({padding:18})}}>
+            <PinPad familyId={sel} families={families} onSuccess={()=>onLogin(sel)} onBack={()=>setSel(null)}/>
+          </div>
+        )}
+
+        <p style={{textAlign:"center",color:T.textDim,fontSize:11,marginTop:20,lineHeight:1.7}}>
+          Default PIN for all families: 0000 &mdash; change yours in Settings
+        </p>
+      </div>
+      <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
+    </div>
+  );
+}
+
+// ─── MAP TOUCH WRAPPER ────────────────────────────────────────────────────────
+// Attaches non-passive touchmove listener so preventDefault actually works,
+// stopping the page from scrolling while the user drags inside the map.
+function MapTouchWrapper({children, height, radius=T.radius}){
+  const ref = useRef(null);
+  useEffect(()=>{
+    const el = ref.current;
+    if(!el) return;
+    const block = e => e.preventDefault();
+    el.addEventListener("touchmove", block, {passive:false});
+    return () => el.removeEventListener("touchmove", block);
+  },[]);
+  return(
+    <div ref={ref} style={{height,borderRadius:radius,overflow:"hidden",border:`1px solid ${T.border}`,touchAction:"none",flexShrink:0}}>
+      {children}
+    </div>
+  );
+}
+
+// ─── LEAFLET MAP ──────────────────────────────────────────────────────────────
+function LeafletMap({places,onPinDrop,pickMode,center,height=360}){
+  const ref=useRef(null);const mapRef=useRef(null);const markersRef=useRef([]);
+  const [mapReady,setMapReady]=useState(false);
+
+  useEffect(()=>{
+    if(!ref.current)return;
+    // Block page scroll while touching the map.
+    // We re-attach touchmove on every touchstart so it's always active —
+    // subsequent drags were losing the block because Leaflet internally
+    // calls stopPropagation on touchstart which can reset browser state.
+    const el=ref.current;
+    el.style.touchAction="none";
+    const blockScroll=e=>e.preventDefault();
+    // Attach immediately
+    el.addEventListener("touchmove",blockScroll,{passive:false});
+    // Re-attach on every touchstart to ensure it's always registered
+    const onTouchStart=()=>{
+      el.removeEventListener("touchmove",blockScroll);
+      el.addEventListener("touchmove",blockScroll,{passive:false});
+    };
+    el.addEventListener("touchstart",onTouchStart,{passive:true});
+    const load=()=>{
+      if(mapRef.current)return;
+      const L=window.L;
+      const map=L.map(el,{zoomControl:true}).setView(center||[-37.5,175.5],center?11:6);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"(c) OpenStreetMap"}).addTo(map);
+      mapRef.current=map;
+      if(pickMode&&onPinDrop)map.on("click",e=>onPinDrop({lat:e.latlng.lat.toFixed(5),lng:e.latlng.lng.toFixed(5)}));
+      setMapReady(true);
+    };
+    if(!document.getElementById("lf-css")){const l=document.createElement("link");l.id="lf-css";l.rel="stylesheet";l.href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";document.head.appendChild(l);}
+    if(window.L)load();else{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";s.onload=load;document.head.appendChild(s);}
+    return()=>{
+      el.removeEventListener("touchmove",blockScroll);
+      el.removeEventListener("touchstart",onTouchStart);
+      if(mapRef.current){mapRef.current.remove();mapRef.current=null;setMapReady(false);}
+    };
+  },[]);
+
+  // Pan map to new center when pin is moved — without remounting
+  useEffect(()=>{
+    if(mapRef.current&&center&&mapReady){
+      mapRef.current.panTo(center,{animate:true});
+    }
+  },[center,mapReady]);
+
+  useEffect(()=>{
+    const map=mapRef.current;if(!map||!window.L||!mapReady)return;
+    markersRef.current.forEach(m=>m.remove());markersRef.current=[];
+    places.filter(p=>p.lat&&p.lng).forEach(p=>{
+      const ic=window.L.divIcon({className:"",html:`<div style="background:${p.familyColor||T.primary};color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:14px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.2);">📍</div>`,iconSize:[32,32],iconAnchor:[16,32]});
+      const m=window.L.marker([p.lat,p.lng],{icon:ic}).addTo(map).bindPopup(`<b>${p.name}</b><br><em style="font-size:12px">${p.reviews?.[0]?.text||""}</em>`);
+      markersRef.current.push(m);
+    });
+  },[places,mapReady]);
+
+  return <div ref={ref} style={{width:"100%",height,borderRadius:T.radius,overflow:"hidden",border:`1px solid ${T.border}`}}/>;
+}
+
+function PlaceSearch({onSelect}){
+  const [q,setQ]=useState("");const [results,setResults]=useState([]);const [loading,setLoading]=useState(false);
+  const search=async()=>{if(!q.trim())return;setLoading(true);try{const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,{headers:{"Accept-Language":"en"}});setResults(await r.json());}catch(e){}setLoading(false);};
+  return(
+    <div>
+      <div style={{display:"flex",gap:8}}>
+        <input style={inp} placeholder="Search for a place..." value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&search()}/>
+        <button onClick={search} style={btn(T.primary,T.surface,{flexShrink:0})}>{loading?"...":"Search"}</button>
+      </div>
+      {results.map(r=>(
+        <div key={r.place_id} onClick={()=>{onSelect({name:r.display_name.split(",")[0],lat:parseFloat(r.lat).toFixed(5),lng:parseFloat(r.lon).toFixed(5)});setResults([]);setQ("");}}
+          style={{padding:"10px 12px",margin:"4px 0",background:T.bg,borderRadius:T.radiusSm,cursor:"pointer",fontSize:13,border:`1px solid ${T.border}`}}
+          onMouseEnter={e=>e.currentTarget.style.borderColor=T.primary} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+          <div style={{fontWeight:600,color:T.text}}>{r.display_name.split(",")[0]}</div>
+          <div style={{color:T.textDim,fontSize:11,marginTop:2}}>{r.display_name.split(",").slice(1,4).join(",")} &middot; {parseFloat(r.lat).toFixed(4)}, {parseFloat(r.lon).toFixed(4)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CALENDAR
+// ═══════════════════════════════════════════════════════════════════════════════
+function CalendarView({bookings,families,itineraries,onOpenItinerary,currentFamilyId}){
+  const [month,setMonth]=useState(new Date(TODAY.getFullYear(),TODAY.getMonth(),1));
+  const [sel,setSel]=useState(null);
+  const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
+  const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
+  const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
+  const y=month.getFullYear(),m=month.getMonth();
+  const first=new Date(y,m,1).getDay(),dim=new Date(y,m+1,0).getDate();
+  const cells=[];for(let i=0;i<first;i++)cells.push(null);for(let d=1;d<=dim;d++)cells.push(d);
+  const bkDay=d=>{if(!d)return[];const ds=fmt(new Date(y,m,d));return bookings.filter(b=>ds>=b.start&&ds<=b.end);};
+  const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DayModal=({date,onClose})=>{
+    const ds=fmt(date);const bks=bookings.filter(b=>ds>=b.start&&ds<=b.end);
+    // find any linked itinerary for a booking
+    const itinForBooking=b=>(itineraries||[]).find(it=>it.bookingId===b.id);
+    return(<Modal title={date.toLocaleDateString("en-NZ",{weekday:"long",day:"numeric",month:"long"})} onClose={onClose} width={420}>
+      {bks.length===0?<p style={{color:T.textMuted}}>No bookings on this day.</p>:bks.map(b=>{
+        const itin=itinForBooking(b);
+        const totalActs=itin?(itin.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0):0;
+        return(
+          <div key={b.id} onClick={()=>{const it=itinForBooking(b);if(it){onClose();onOpenItinerary(it.id);}}}
+            style={{...card({padding:14,marginBottom:12}),borderLeft:`4px solid ${fColor(b.familyId)}`,cursor:itinForBooking(b)?"pointer":"default",transition:"box-shadow 0.15s"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                  <span style={{fontWeight:700,color:T.text,fontSize:13,display:"flex",alignItems:"center",gap:6}}>
+              <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={22} fontSize={16}/>
+              {fName(b.familyId)}
+            </span>
+                  <span style={pill(b.status==="tentative"?T.yellow+"30":T.primary+"20",b.status==="tentative"?T.accent:T.primary)}>{b.status==="tentative"?"Tentative":"Confirmed"}</span>
+                </div>
+                <div style={{color:T.textMuted,fontSize:13,fontWeight:500}}>{b.destination}</div>
+                <div style={{color:T.textDim,fontSize:12,marginTop:3}}>{b.start} to {b.end} &middot; {nights(b.start,b.end)} nights</div>
+                {b.notes&&<div style={{color:T.textDim,fontSize:12,marginTop:4,fontStyle:"italic"}}>"{b.notes}"</div>}
+              </div>
+            </div>
+            {/* Itinerary section — own bookings only */}
+            <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+              {itin?(
+                <button onClick={()=>{onClose();onOpenItinerary(itin.id);}}
+                  style={{...card({padding:"10px 14px"}),width:"100%",textAlign:"left",cursor:"pointer",
+                    border:`1px solid ${T.primary}30`,background:T.primary+"08",display:"flex",
+                    alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:T.primary}}>🗺️ {itin.title}</div>
+                    <div style={{fontSize:11,color:T.textDim,marginTop:2}}>
+                      {totalActs} activit{totalActs===1?"y":"ies"} planned
+                      {itin.visibility==="shared"&&<span style={{marginLeft:6,color:T.green}}>· Shared</span>}
+                    </div>
+                  </div>
+                  <span style={{color:T.primary,fontSize:18}}>›</span>
+                </button>
+              ):(
+                <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>No trip yet — booking will create one automatically</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </Modal>);
+  };
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setMonth(new Date(y,m-1,1))} style={{...btn(T.surface,T.textMuted,{padding:"8px 14px",border:`1px solid ${T.border}`})}}>&#8249;</button>
+        <h3 style={{margin:0,flex:1,textAlign:"center",color:T.primary,fontSize:16,fontWeight:800}}>{MONTHS[m]} {y}</h3>
+        <button onClick={()=>setMonth(new Date(y,m+1,1))} style={{...btn(T.surface,T.textMuted,{padding:"8px 14px",border:`1px solid ${T.border}`})}}>&#8250;</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+        {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:T.textDim,padding:"6px 0"}}>{d}</div>)}
+        {cells.map((d,i)=>{
+          const bks=bkDay(d),isToday=d&&new Date(y,m,d).toDateString()===TODAY.toDateString();
+          return(
+            <div key={i} onClick={()=>d&&setSel(new Date(y,m,d))}
+              style={{minHeight:52,background:d?T.surface:"transparent",borderRadius:T.radiusSm,padding:5,
+                border:`1.5px solid ${isToday?T.primary:bks.length?T.border:"transparent"}`,
+                cursor:d?"pointer":"default",transition:"all 0.1s",boxShadow:d?T.shadow:"none"}}
+              onMouseEnter={e=>{if(d){e.currentTarget.style.borderColor=T.primary;e.currentTarget.style.background=T.cardHover;}}}
+              onMouseLeave={e=>{if(d){e.currentTarget.style.borderColor=isToday?T.primary:bks.length?T.border:"transparent";e.currentTarget.style.background=T.surface;}}}>
+              {d&&<div style={{fontSize:11,fontWeight:isToday?800:500,color:isToday?T.primary:T.textMuted,marginBottom:2}}>{d}</div>}
+              {bks.slice(0,2).map(b=>(
+                <div key={b.id} style={{borderRadius:4,fontSize:8,fontWeight:600,color:"white",padding:"2px 4px",marginBottom:2,
+                  background:b.status==="tentative"?`repeating-linear-gradient(45deg,${fColor(b.familyId)}99 0,${fColor(b.familyId)}99 3px,${fColor(b.familyId)}44 3px,${fColor(b.familyId)}44 6px)`:fColor(b.familyId),
+                  opacity:0.9,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                  <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={14} fontSize={10}/>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:14}}>
+        {families.map(f=><div key={f.id} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}><div style={{width:10,height:10,borderRadius:3,background:f.color}}/><span style={{color:T.textMuted,fontWeight:500}}>{f.name}</span></div>)}
+      </div>
+      {sel&&<DayModal date={sel} onClose={()=>setSel(null)}/>}
+    </div>
+  );
+}
+
+function CollapsibleStats({bookings,families}){
+  const [open,setOpen]=useState(false);
+  return(
+    <div style={{marginBottom:12}}>
+      <button onClick={()=>setOpen(!open)}
+        style={{...btn("transparent",T.textMuted,{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",border:`1px solid ${T.border}`,borderRadius:open?`${T.radius} ${T.radius} 0 0`:T.radius})}}>
+        <span style={{fontWeight:700,fontSize:13}}>📊 Van Usage</span>
+        <span style={{fontSize:11,transform:open?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
+      </button>
+      {open&&<div style={{border:`1px solid ${T.border}`,borderTop:"none",borderRadius:`0 0 ${T.radius} ${T.radius}`,overflow:"hidden"}}>
+        <UsageStats bookings={bookings} families={families}/>
+      </div>}
+    </div>
+  );
+}
+
+function UsageStats({bookings,families}){
+  const y=TODAY.getFullYear();
+  const stats=families.map(f=>{
+    const n=bookings.filter(b=>b.familyId===f.id&&new Date(b.start).getFullYear()===y).reduce((s,b)=>s+nights(b.start,b.end),0);
+    const t=bookings.filter(b=>b.familyId===f.id&&new Date(b.start).getFullYear()===y).length;
+    return{...f,nights:n,trips:t};
+  });
+  const mx=Math.max(...stats.map(s=>s.nights),1);
+  return(
+    <div>
+      <p style={sectionHead}>{y} Usage</p>
+      {stats.map(s=>(
+        <div key={s.id} style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:6}}>
+            <span style={{color:T.text,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+              <FamilyAvatar family={s} size={20} fontSize={14}/>
+              {s.name}
+            </span>
+            <span style={{color:T.textMuted}}>{s.nights}n &middot; {s.trips} trip{s.trips!==1?"s":""}</span>
+          </div>
+          <div style={{background:T.bg,borderRadius:99,height:8,overflow:"hidden",border:`1px solid ${T.border}`}}>
+            <div style={{width:`${(s.nights/mx)*100}%`,background:s.color,height:"100%",borderRadius:99,transition:"width 0.5s",minWidth:s.nights>0?8:0}}/>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── DATE RANGE PICKER ────────────────────────────────────────────────────────
+function DateRangePicker({startDate,endDate,onChange,minDate,bookings=[],families=[]}){
+  const [month,setMonth]=useState(()=>{
+    const base=startDate?new Date(startDate):new Date();
+    return new Date(base.getFullYear(),base.getMonth(),1);
+  });
+  const [hovered,setHovered]=useState(null);
+  const [selectingEnd,setSelectingEnd]=useState(!!startDate&&!endDate);
+
+  const y=month.getFullYear(),mo=month.getMonth();
+  const firstDay=(new Date(y,mo,1).getDay()+6)%7; // Mon=0 ... Sun=6
+  const daysInMonth=new Date(y,mo+1,0).getDate();
+  const cells=[];
+  for(let i=0;i<firstDay;i++)cells.push(null);
+  for(let d=1;d<=daysInMonth;d++)cells.push(d);
+
+  const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DAY_LABELS=["Mo","Tu","We","Th","Fr","Sa","Su"];
+
+  const toStr=(yy,mm,dd)=>`${yy}-${String(mm+1).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+
+  // Find bookings that cover a given date string
+  const bkgsOnDay=ds=>(bookings||[]).filter(b=>b.start&&b.end&&ds>=b.start&&ds<=b.end);
+  const fColor=id=>(families||[]).find(f=>f.id===id)?.color||T.primary;
+
+  const handleDay=d=>{
+    if(!d) return;
+    const ds=toStr(y,mo,d);
+    if(minDate&&ds<minDate) return;
+    if(!startDate||!selectingEnd){
+      onChange({start:ds,end:""});
+      setSelectingEnd(true);
+    } else {
+      if(ds<startDate){
+        onChange({start:ds,end:""});
+        setSelectingEnd(true);
+      } else {
+        onChange({start:startDate,end:ds});
+        setSelectingEnd(false);
+      }
+    }
+  };
+
+  const previewEnd=selectingEnd&&hovered&&hovered>=startDate?hovered:endDate;
+  const nightCount=startDate&&previewEnd&&previewEnd!==startDate?nights(startDate,previewEnd):0;
+
+  const renderDay=(d,i)=>{
+    if(!d) return <div key={i}/>;
+    const ds=toStr(y,mo,d);
+    const isStart=ds===startDate;
+    const isEnd=ds===previewEnd;
+    const inRange=startDate&&previewEnd&&ds>startDate&&ds<previewEnd;
+    const disabled=!!(minDate&&ds<minDate);
+    const isToday=ds===fmt(new Date());
+    const isPreview=selectingEnd&&hovered&&ds===hovered&&!endDate;
+    const dayBkgs=bkgsOnDay(ds);
+    const hasBooking=dayBkgs.length>0;
+
+    let bg="transparent";
+    let txtColor=disabled?T.textDim:isToday&&!isStart&&!isEnd?T.primary:T.text;
+    let fw=isToday||isStart||isEnd?700:400;
+    if(inRange){ bg=T.primary+"20"; }
+    if(isStart||isEnd){ bg=T.primary; txtColor=T.surface; }
+    if(isPreview&&!isEnd){ bg=T.primary+"50"; }
+
+    let dotBr=T.radiusSm;
+    if(isStart&&previewEnd&&previewEnd!==startDate) dotBr="50% 4px 4px 50%";
+    else if(isEnd&&startDate&&previewEnd!==startDate) dotBr="4px 50% 50% 4px";
+    else if(isStart||isEnd) dotBr="50%";
+
+    const wrapBr=inRange?"0":dotBr;
+
+    return(
+      <div key={i}
+        onClick={()=>{ if(!disabled) handleDay(d); }}
+        onMouseEnter={()=>{ if(selectingEnd) setHovered(ds); }}
+        onMouseLeave={()=>setHovered(null)}
+        style={{
+          textAlign:"center",padding:"3px 1px",
+          cursor:disabled?"not-allowed":"pointer",
+          background:inRange?T.primary+"15":"transparent",
+          borderRadius:wrapBr
+        }}>
+        <div style={{
+          width:30,height:30,
+          borderRadius:dotBr,
+          background:bg,
+          color:txtColor,
+          fontWeight:fw,
+          fontSize:13,
+          display:"flex",alignItems:"center",justifyContent:"center",
+          margin:"0 auto",
+          transition:"all 0.1s",
+          border:isToday&&!isStart&&!isEnd?`1.5px solid ${T.primary}`:"none",
+          position:"relative"
+        }}>
+          {d}
+          {/* Booking shading — coloured background per family */}
+          {hasBooking&&!isStart&&!isEnd&&(
+            <div style={{
+              position:"absolute",inset:0,borderRadius:dotBr,
+              background:dayBkgs.length===1
+                ? fColor(dayBkgs[0].familyId)+"45"
+                : `linear-gradient(135deg, ${fColor(dayBkgs[0].familyId)}55 50%, ${fColor(dayBkgs[1].familyId)}55 50%)`,
+              display:"flex",alignItems:"flex-end",justifyContent:"center",
+              paddingBottom:2,opacity:disabled?0.4:1,
+              pointerEvents:"none"
+            }}>
+              {dayBkgs.length>2&&<span style={{fontSize:7,fontWeight:800,color:T.text,lineHeight:1}}>+{dayBkgs.length-1}</span>}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return(
+    <div style={{background:T.surface,borderRadius:T.radius,border:`1px solid ${T.border}`,overflow:"hidden",boxShadow:T.shadow}}>
+      <div style={{display:"flex",alignItems:"center",padding:"10px 12px",borderBottom:`1px solid ${T.border}`}}>
+        <button onClick={()=>setMonth(new Date(y,mo-1,1))} style={{background:"none",border:"none",cursor:"pointer",color:T.textMuted,fontSize:20,padding:"2px 10px",lineHeight:1}}>&#8249;</button>
+        <span style={{flex:1,textAlign:"center",fontWeight:700,color:T.primary,fontSize:14}}>{MONTHS[mo]} {y}</span>
+        <button onClick={()=>setMonth(new Date(y,mo+1,1))} style={{background:"none",border:"none",cursor:"pointer",color:T.textMuted,fontSize:20,padding:"2px 10px",lineHeight:1}}>&#8250;</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"8px 8px 2px"}}>
+        {DAY_LABELS.map(dl=>(<div key={dl} style={{textAlign:"center",fontSize:10,fontWeight:700,color:T.textDim,padding:"2px 0"}}>{dl}</div>))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"0 8px 8px",gap:1}}>
+        {cells.map((d,i)=>renderDay(d,i))}
+      </div>
+      {(bookings||[]).length>0&&(
+        <div style={{padding:"4px 8px 6px",display:"flex",gap:6,flexWrap:"wrap",borderTop:`1px solid ${T.border}`}}>
+          <span style={{fontSize:10,color:T.textDim,alignSelf:"center",marginRight:2}}>Booked:</span>
+          {[...new Set((bookings||[]).map(b=>b.familyId))].map(fid=>{
+            const fam=(families||[]).find(f=>f.id===fid);
+            return fam?(
+              <span key={fid} style={{display:"flex",alignItems:"center",gap:3,fontSize:10,color:T.textMuted}}>
+                <span style={{width:6,height:6,borderRadius:99,background:fam.color,display:"inline-block"}}/>
+                {fam.name.split(" ")[0]}
+              </span>
+            ):null;
+          })}
+        </div>
+      )}
+      <div style={{borderTop:`1px solid ${T.border}`,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",background:T.bg,gap:8}}>
+        <div style={{fontSize:12,color:T.textMuted,flex:1}}>
+          {!startDate&&(<span>Tap a start date</span>)}
+          {startDate&&!previewEnd&&(<span style={{color:T.primary,fontWeight:600}}>{startDate} &rarr; tap end date</span>)}
+          {startDate&&previewEnd&&(
+            <span>
+              <b style={{color:T.primary}}>{startDate}</b>
+              <span style={{color:T.textDim}}> &rarr; </span>
+              <b style={{color:T.primary}}>{previewEnd}</b>
+            </span>
+          )}
+        </div>
+        {nightCount>0&&(<span style={{...pill(T.primary+"15",T.primary),fontSize:11,flexShrink:0}}>{nightCount} nights</span>)}
+      </div>
+      {startDate&&(
+        <div style={{padding:"0 12px 10px",display:"flex",gap:8,alignItems:"center"}}>
+          <button
+            onClick={()=>{ onChange({start:"",end:""}); setSelectingEnd(false); setHovered(null); }}
+            style={{...btn("transparent",T.textMuted,{fontSize:12,border:`1px solid ${T.border}`,padding:"4px 10px"})}}>
+            Clear
+          </button>
+          {startDate&&endDate&&(
+            <span style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Dates set</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// BOOKING FORM
+function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
+  const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
+  const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
+  const [f,setF]=useState({familyId:currentFamilyId||"f1",start:"",end:"",destination:"",notes:"",status:"tentative"});
+  const [err,setErr]=useState("");
+  const h=(k,v)=>{setF(p=>({...p,[k]:v}));if(k==="start"||k==="end")setErr("");};
+  const submit=()=>{
+    if(!f.start||!f.end||!f.destination){setErr("Fill in all required fields.");return;}
+    if(f.end<=f.start){setErr("End must be after start.");return;}
+    const clash=bookings.filter(b=>b.status==="confirmed"&&overlap(b,f));
+    const tentativeClash=bookings.filter(b=>b.status==="tentative"&&overlap(b,f));
+    if(clash.length){
+      setErr({msg:"Your dates clash with existing confirmed bookings:",clashes:clash});
+      return;
+    }
+    if(tentativeClash.length){
+      setErr({msg:"⚠️ Note: there are tentative bookings on these dates — you can still book but check with the others first:",clashes:tentativeClash,warning:true});
+    }
+    dispatch({type:"ADD_BOOKING",payload:{...f,id:"b"+Date.now()}});onClose();
+  };
+  return(
+    <Modal title="New Booking" onClose={onClose}>
+      {err&&(
+        <div style={{background:err.warning?T.accent+"12":T.red+"12",borderRadius:T.radiusSm,marginBottom:12,border:`1px solid ${err.warning?T.accent+"40":T.red+"30"}`,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",color:err.warning?T.accent:T.red,fontSize:13,fontWeight:600}}>{err.msg||err}</div>
+          {err.clashes&&err.clashes.map((b,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderTop:`1px solid ${err.warning?T.accent:T.red}20`,background:err.warning?T.accent+"08":T.red+"08"}}>
+              <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={28} fontSize={16}/>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,color:T.text,fontSize:13}}>{fName(b.familyId)}</div>
+                <div style={{color:T.textMuted,fontSize:12}}>{b.destination} &middot; {b.start} to {b.end} &middot; {nights(b.start,b.end)} nights</div>
+              </div>
+              <span style={{...pill(b.status==="tentative"?T.accent+"20":T.primary+"15",b.status==="tentative"?T.accent:T.primary),fontSize:10}}>{b.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{display:"flex",gap:8,marginBottom:4}}>
+        <div style={{flex:1,display:"flex",alignItems:"center",gap:10,padding:"8px 12px",
+          background:f.familyId==="maintenance"?T.textDim+"15":T.primary+"08",
+          borderRadius:T.radiusSm,
+          border:`1px solid ${f.familyId==="maintenance"?T.textDim+"40":T.primary+"20"}`}}>
+          <FamilyAvatar family={families.find(fam=>fam.id===f.familyId)} size={32} fontSize={18}/>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.5}}>Booking as</div>
+            <div style={{fontWeight:700,color:f.familyId==="maintenance"?T.textMuted:T.primary,fontSize:14}}>
+              {families.find(fam=>fam.id===f.familyId)?.name||"Unknown"}
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={()=>h("familyId", f.familyId==="maintenance"?currentFamilyId:"maintenance")}
+          style={{...btn(
+            f.familyId==="maintenance"?T.textDim+"20":"transparent",
+            f.familyId==="maintenance"?T.textMuted:T.textDim,
+            {border:`1px solid ${T.border}`,fontSize:11,padding:"8px 10px",flexShrink:0}
+          )}}>
+          {f.familyId==="maintenance"?"🔧 Undo":"🔧 Maint."}
+        </button>
+      </div>
+      <label style={lbl}>Type</label>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {["confirmed","tentative"].map(s=>(
+          <button key={s} onClick={()=>h("status",s)} style={{padding:"10px",border:`2px solid ${f.status===s?fColor(f.familyId):T.border}`,borderRadius:T.radiusSm,cursor:"pointer",fontWeight:700,fontSize:13,background:f.status===s?fColor(f.familyId)+"15":T.surface,color:f.status===s?fColor(f.familyId):T.textMuted,transition:"all 0.15s"}}>
+            {s==="confirmed"?"Confirmed":"Tentative"}
+          </button>
+        ))}
+      </div>
+      <label style={lbl}>Dates *</label>
+      <DateRangePicker
+        startDate={f.start} endDate={f.end}
+        minDate={fmt(TODAY)}
+        onChange={({start,end})=>setF(p=>({...p,start,end}))}
+        bookings={bookings}
+        families={families}
+      />
+      <label style={lbl}>Destination *</label>
+      <input style={inp} placeholder="e.g. Blue Lake Campsite" value={f.destination} onChange={e=>h("destination",e.target.value)}/>
+      <label style={lbl}>Notes</label>
+      <textarea style={{...inp,height:60,resize:"vertical"}} value={f.notes} onChange={e=>h("notes",e.target.value)}/>
+      <div style={{display:"flex",gap:8,marginTop:20}}>
+        <button onClick={submit} style={btn(T.primary,T.surface)}>
+          {err&&err.warning?"Book Anyway":"Save Booking"}
+        </button>
+        <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
+function BookingCard({b,families,itineraries,onOpenItinerary,currentFamilyId,dispatch,odoLog,odoRate,onAddOdo}){
+  const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
+  const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
+
+  // Itinerary link state
+  const itin=(itineraries||[]).find(i=>i.bookingId===b.id);
+  const totalActs=itin?(itin.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0):0;
+  const isOwn=b.familyId===currentFamilyId;
+
+  // Odo state
+  const odo=(odoLog||[]).filter(e=>e.bookingId===b.id);
+  const [showOdoForm,setShowOdoForm]=useState(false);
+  const [odoForm,setOdoForm]=useState({startKm:"",endKm:"",tolls:"",notes:""});
+
+  return(
+    <div style={{...card({padding:12,marginBottom:8}),borderLeft:"4px solid "+fColor(b.familyId)}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
         <div style={{flex:1}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
@@ -1018,8 +2032,6 @@ function BookingCard({b,families,itineraries,onOpenItinerary,currentFamilyId,dis
                   <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>No itinerary planned</span>
                 )}
               </div>
-            );
-          })()}
           {/* Odometer readings for this booking */}
               <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderLight}`}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
@@ -1101,8 +2113,6 @@ function BookingCard({b,families,itineraries,onOpenItinerary,currentFamilyId,dis
                   </div>
                 )}
               </div>
-            );
-          })()}
         </div>
         {b.end>=fmt(TODAY)&&b.familyId===currentFamilyId&&(
           <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
@@ -1654,51 +2664,130 @@ function ItinCard({itin,dispatch,places,families,onEdit,currentFamilyId,archived
 
 function TripsPanel({itineraries,dispatch,places,bookings,families,autoOpenItinId,onAutoOpenHandled,currentFamilyId,onGoToTab}){
   const [editing,setEditing]=useState(null);
+  const [showPast,setShowPast]=useState(false);
 
-  // When calendar triggers auto-open, start editing that itinerary
+  // Auto-open itinerary from calendar/booking link
   useEffect(()=>{
-    if(!autoOpenItinId) return;
-    const target=itineraries.find(i=>i.id===autoOpenItinId);
-    if(target){ setEditing(target); onAutoOpenHandled&&onAutoOpenHandled(); }
+    if(autoOpenItinId){
+      const it=itineraries.find(i=>i.id===autoOpenItinId);
+      if(it) setEditing(it);
+      onAutoOpenHandled&&onAutoOpenHandled();
+    }
   },[autoOpenItinId]);
 
-  const newItin=()=>{
-    const id="it"+Date.now();
-    const blank={id,title:"New Trip",familyId:currentFamilyId||"f1",start:"",end:"",notes:"",days:[],bookingId:"",visibility:"private",_unsaved:true};
-    setEditing(blank);
-  };
-  const [showArchive,setShowArchive]=useState(false);
-  const visible = itineraries
-    .filter(i=>i.id!==editing?.id)
-    .filter(i=>i.familyId===currentFamilyId||i.visibility==="shared");
-  const upcoming = visible.filter(i=>!i.end||i.end>=fmt(TODAY));
-  const past     = visible.filter(i=>i.end&&i.end<fmt(TODAY));
+  // Only show THIS family's bookings/trips
+  const myBookings=[...bookings].filter(b=>b.familyId===currentFamilyId)
+    .sort((a,b)=>a.start.localeCompare(b.start));
+  const myItins=itineraries.filter(i=>i.familyId===currentFamilyId);
+
+  const today=fmt(new Date());
+  const upcoming=myBookings.filter(b=>b.end>=today);
+  const past=myBookings.filter(b=>b.end<today);
+
+  const itinFor=b=>myItins.find(i=>i.bookingId===b.id);
+  const fam=families.find(f=>f.id===currentFamilyId);
 
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,gap:8}}>
-        <p style={{margin:0,color:T.textMuted,fontSize:13,flex:1}}>Plan day-by-day activities, link to bookings and get directions.</p>
-        <button onClick={()=>onGoToTab&&onGoToTab("places")} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`,fontSize:12,padding:"7px 12px"})}}>+ Add Place</button>
-        <button onClick={newItin} style={btn(T.primary,T.surface)}>+ New Trip</button>
-      </div>
-      {editing&&<ItineraryEditor itin={editing} dispatch={dispatch} places={places} bookings={bookings} families={families} onClose={()=>setEditing(null)}/>}
-      {upcoming.length===0&&!editing&&<div style={{...card({padding:24,textAlign:"center"})}}>
-        <div style={{fontSize:36,marginBottom:8}}>🗺️</div>
-        <p style={{color:T.textDim,margin:0,fontSize:14}}>No upcoming trips. Plan one!</p>
-      </div>}
-      {upcoming.filter(i=>i.id!==editing?.id).map(itin=><ItinCard key={itin.id} itin={itin} dispatch={dispatch} places={places} families={families} onEdit={setEditing} currentFamilyId={currentFamilyId}/>)}
+      {editing&&(
+        <ItineraryEditor itin={editing} dispatch={dispatch} places={places}
+          bookings={bookings.filter(b=>b.familyId===currentFamilyId)}
+          families={families} onClose={()=>setEditing(null)}/>
+      )}
 
+      {/* Upcoming */}
+      {upcoming.length===0&&!editing&&(
+        <div style={{...card({padding:24,textAlign:"center"})}}>
+          <div style={{fontSize:36,marginBottom:8}}>🗺️</div>
+          <p style={{color:T.textDim,margin:"0 0 16px",fontSize:14}}>No upcoming trips for {fam?.name||"your family"}.</p>
+          <p style={{color:T.textDim,fontSize:12,margin:0}}>Tap <b>+&nbsp;BOOK</b> to make a booking — a trip plan will be created automatically.</p>
+        </div>
+      )}
+
+      {upcoming.map(b=>{
+        const itin=itinFor(b);
+        const days=(itin?.days||[]);
+        const acts=days.reduce((s,d)=>s+(d.activities||[]).length,0);
+        const nights_count=nights(b.start,b.end);
+        return(
+          <div key={b.id} style={{...card({padding:14,marginBottom:12}),borderLeft:"4px solid "+(fam?.color||T.primary)}}>
+            {/* Header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+              <div>
+                <div style={{fontWeight:800,color:T.text,fontSize:15}}>{b.destination}</div>
+                <div style={{color:T.textMuted,fontSize:12,marginTop:2}}>
+                  {b.start} → {b.end} · {nights_count} night{nights_count!==1?"s":""}
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+                <span style={{...pill(b.status==="tentative"?T.accent+"20":T.primary+"15",
+                  b.status==="tentative"?T.accent:T.primary),fontSize:10}}>{b.status}</span>
+                {b.status==="tentative"&&(
+                  <button onClick={()=>dispatch({type:"CONFIRM_BOOKING",id:b.id})}
+                    style={{...btn(T.primary+"15",T.primary,{fontSize:10,padding:"3px 8px",border:`1px solid ${T.primary}30`})}}>
+                    Confirm
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Trip plan section */}
+            {itin?(
+              <button onClick={()=>setEditing(itin)}
+                style={{width:"100%",textAlign:"left",background:T.primary+"08",border:`1px solid ${T.primary}25`,
+                  borderRadius:T.radiusSm,padding:"10px 12px",cursor:"pointer",display:"flex",
+                  alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:T.primary}}>✏️ Edit Trip Plan</div>
+                  <div style={{fontSize:11,color:T.textDim,marginTop:2}}>
+                    {days.length} days · {acts} activit{acts===1?"y":"ies"} planned
+                    {itin.visibility==="shared"&&<span style={{color:T.green,marginLeft:6}}>· Shared</span>}
+                  </div>
+                </div>
+                <span style={{color:T.primary,fontSize:18}}>›</span>
+              </button>
+            ):(
+              <div style={{fontSize:12,color:T.textDim,fontStyle:"italic",marginBottom:8}}>No trip plan yet</div>
+            )}
+
+            {/* Remove button */}
+            <div style={{display:"flex",justifyContent:"flex-end"}}>
+              <DeleteButton label="Remove booking" message={`Remove ${b.destination}?`}
+                detail={`${b.start} to ${b.end}`}
+                onConfirm={()=>dispatch({type:"DEL_BOOKING",id:b.id})}
+                style={{fontSize:11,padding:"3px 10px"}}/>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Past trips — collapsible */}
       {past.length>0&&(
-        <div style={{marginTop:20}}>
-          <button onClick={()=>setShowArchive(!showArchive)}
-            style={{...btn("transparent",T.textMuted,{width:"100%",border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:T.radius})}}>
-            <span style={{fontWeight:700,fontSize:13}}>📦 Completed Trips ({past.length})</span>
-            <span style={{fontSize:11,transform:showArchive?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
+        <div style={{marginTop:8}}>
+          <button onClick={()=>setShowPast(!showPast)}
+            style={{...btn("transparent",T.textMuted,{width:"100%",display:"flex",justifyContent:"space-between",
+              alignItems:"center",padding:"10px 14px",border:`1px solid ${T.border}`,borderRadius:showPast?`${T.radius} ${T.radius} 0 0`:T.radius})}}>
+            <span style={{fontWeight:700,fontSize:13}}>📦 Past Trips ({past.length})</span>
+            <span style={{fontSize:11,transform:showPast?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
           </button>
-          {showArchive&&(
-            <div style={{marginTop:8,opacity:0.85}}>
-              <p style={{color:T.textDim,fontSize:12,margin:"0 0 10px"}}>Past trips are read-only in the archive.</p>
-              {past.map(itin=><ItinCard key={itin.id} itin={itin} dispatch={dispatch} places={places} families={families} onEdit={()=>{}} currentFamilyId={"_archive"} archived={true}/>)}
+          {showPast&&(
+            <div style={{border:`1px solid ${T.border}`,borderTop:"none",borderRadius:`0 0 ${T.radius} ${T.radius}`,padding:12}}>
+              {past.map(b=>{
+                const itin=itinFor(b);
+                const acts=(itin?.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0);
+                return(
+                  <div key={b.id} style={{...card({padding:12,marginBottom:8}),opacity:0.7,borderLeft:`3px solid ${fam?.color||T.primary}40`}}>
+                    <div style={{fontWeight:700,color:T.text,fontSize:13}}>{b.destination}</div>
+                    <div style={{color:T.textDim,fontSize:12}}>{b.start} → {b.end}</div>
+                    {itin&&(
+                      <button onClick={()=>setEditing(itin)}
+                        style={{...btn("transparent",T.primary,{fontSize:11,padding:"4px 0",border:"none"})}}>
+                        📖 View trip plan · {acts} activit{acts===1?"y":"ies"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1707,7 +2796,7 @@ function TripsPanel({itineraries,dispatch,places,bookings,families,autoOpenItinI
   );
 }
 
-// GUIDES
+
 function GuidesPanel({guides,dispatch}){
   const [open,setOpen]=useState(null);const [editing,setEditing]=useState(null);const [addingNew,setAddingNew]=useState(false);
   const [ef,setEf]=useState({});const [nf,setNf]=useState({title:"",icon:"📄",content:"",attachments:[],links:[]});
@@ -2094,7 +3183,6 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
     </div>
   );
 }
-
 
 
 // RULES
@@ -2556,10 +3644,10 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
 // ═══════════════════════════════════════════════════════════════════════════════
 const TABS=[
   {id:"calendar",label:"Bookings",  icon:"📅"},
-  {id:"trips",   label:"Trips",     icon:"🗺️"},
+  {id:"trips",   label:"Our Trips",  icon:"🗺️"},
   {id:"places",  label:"Places",    icon:"📍"},
-  {id:"guides",  label:"How-To",    icon:"📖"},
   {id:"kit",     label:"Kit & Pack",icon:"🎒"},
+  {id:"guides",  label:"How-To",    icon:"📖"},
   {id:"odo",     label:"Odometer",  icon:"🔢"},
   {id:"rules",   label:"Rules",     icon:"📜"},
   {id:"settings",label:"Settings",  icon:"⚙️"},
@@ -2571,7 +3659,6 @@ function OdometerPanel({odoLog,odoRate,dispatch,families,bookings,currentFamilyI
   const [rateEdit,setRateEdit]=useState(false);
   const [newRate,setNewRate]=useState(String(odoRate||0.30));
   const [view,setView]=useState("log"); // log | summary
-
 
 
   // Per-family km totals
@@ -2593,7 +3680,6 @@ function OdometerPanel({odoLog,odoRate,dispatch,families,bookings,currentFamilyI
 
   // Latest odometer reading
   const latestReading=odoLog.length>0?Math.max(...odoLog.map(e=>e.endKm)):null;
-
 
 
   return(
@@ -2845,7 +3931,6 @@ export default function App(){
   };
   const [showBook,setShowBook]=useState(false);
   const [currentFamily,setCurrentFamily]=useState(null);
-  const [menuOpen,setMenuOpen]=useState(false);
   const [openItinId,setOpenItinId]=useState(null); // itinerary to auto-open in Trips tab
   const currentTab=TABS.find(t=>t.id===tab)||TABS[0];
   const {families}=state;
@@ -2876,7 +3961,17 @@ export default function App(){
       switch(type){
         // BOOKINGS
         case "ADD_BOOKING":    await supa.upsert("bookings", toDB.booking(payload));
-          await logActivity("Added booking", `${payload.destination} (${payload.start} to ${payload.end})`); break;
+          await logActivity("Added booking", `${payload.destination} (${payload.start} to ${payload.end})`);
+          // Auto-create a linked trip itinerary
+          { const itinId="it"+Date.now();
+            const days=generateDays(payload.start, payload.end);
+            const itin={id:itinId,title:payload.destination,familyId:payload.familyId,
+              start:payload.start,end:payload.end,destination:payload.destination,
+              notes:"",bookingId:payload.id,visibility:"private",days};
+            dispatch({type:"ADD_ITINERARY",payload:itin});
+            await supa.upsert("itineraries", toDB.itin(itin));
+          }
+          break;
         case "DEL_BOOKING":    await supa.delete("bookings", {id});
           await logActivity("Deleted booking", `Booking ID: ${id}`); break;
         case "CONFIRM_BOOKING": await supa.update("bookings", {status:"confirmed"}, {id}); break;
@@ -3004,8 +4099,7 @@ export default function App(){
 
   return(
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"Inter,Segoe UI,system-ui,sans-serif",color:T.text}}>
-      {/* When nav menu is open, prevent Leaflet map from capturing clicks */}
-      {menuOpen&&<style>{".leaflet-container { pointer-events: none !important; }"}</style>}
+
       {/* HEADER — two rows so nothing overlaps on mobile */}
       <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:50,boxShadow:"0 1px 12px rgba(45,106,79,0.08)"}}>
         <div style={{maxWidth:860,margin:"0 auto",padding:"0 12px"}}>
