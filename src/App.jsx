@@ -1865,7 +1865,7 @@ function GuideAttList({atts,onRemove}){
   );
 }
 const GUIDE_ICONS=["📖","🔑","🔌","💧","🔥","🚽","☀️","🛠️","⚠️","📄","🗺️","🔋","🧰","📷"];
-function GuideForm({form,setForm,onSave,onCancel,onDel,onFileUpload}){
+function GuideForm({form,setForm,onSave,onCancel,onDel,onFileUpload,uploading}){
   return(
     <div style={{...card({padding:18,marginBottom:8}),border:`1px solid ${T.primary}30`}}>
       <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14,padding:8,background:T.bg,borderRadius:T.radiusSm,border:`1px solid ${T.border}`}}>
@@ -1878,8 +1878,8 @@ function GuideForm({form,setForm,onSave,onCancel,onDel,onFileUpload}){
       <GuideLinksEditor links={form.links||[]} setLinks={ls=>setForm(f=>({...f,links:ls}))}/>
       <label style={lbl}>Attachments</label>
       <GuideAttList atts={form.attachments} onRemove={i=>setForm(f=>({...f,attachments:f.attachments.filter((_,j)=>j!==i)}))}/>
-      <label style={{...btn(T.bg,T.textMuted,{display:"inline-block",marginTop:10,cursor:"pointer",fontSize:12,border:`1px solid ${T.border}`})}}>
-        Attach File<input type="file" accept=".pdf,image/*" style={{display:"none"}} onChange={onFileUpload}/>
+      <label style={{...btn(uploading?T.textDim+"20":T.bg,T.textMuted,{display:"inline-block",marginTop:10,cursor:uploading?"not-allowed":"pointer",fontSize:12,border:`1px solid ${T.border}`})}}>
+        {uploading?"⏳ Uploading...":"📎 Attach File"}<input type="file" accept=".pdf,image/*" style={{display:"none"}} onChange={onFileUpload} disabled={uploading}/>
       </label>
       <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
         <button onClick={onSave} style={btn(T.primary,T.surface)}>Save</button>
@@ -1895,23 +1895,28 @@ function GuidesPanel({guides,dispatch}){
   const [ef,setEf]=useState({});const [nf,setNf]=useState({title:"",icon:"📄",content:"",attachments:[],links:[]});
   const [search,setSearch]=useState("");
   const filtered=guides.filter(g=>!search||g.title.toLowerCase().includes(search.toLowerCase())||g.content.toLowerCase().includes(search.toLowerCase())||g.links?.some(l=>l.label?.toLowerCase().includes(search.toLowerCase())));
+  const [uploading,setUploading]=useState(false);
   const handleFile=async(e,isNew)=>{
-  const file=e.target.files[0];if(!file)return;
-  const addAtt=(data)=>{
-    const att={name:file.name,type:file.type,data};
-    if(isNew)setNf(f=>({...f,attachments:[...f.attachments,att]}));
-    else setEf(f=>({...f,attachments:[...(f.attachments||[]),att]}));
+    const file=e.target.files[0];if(!file)return;
+    if(file.size>5*1024*1024){alert("File too large — max 5MB.");return;}
+    setUploading(true);
+    const addAtt=(data)=>{
+      const att={name:file.name,type:file.type,data,size:file.size};
+      if(isNew)setNf(f=>({...f,attachments:[...(f.attachments||[]),att]}));
+      else setEf(f=>({...f,attachments:[...(f.attachments||[]),att]}));
+    };
+    try{
+      const path=`guides/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
+      const url=await supa.uploadImage(file,path);
+      addAtt(url);
+    }catch(err){
+      // Fall back to base64
+      const r=new FileReader();
+      r.onload=()=>{addAtt(r.result);};
+      r.onerror=()=>alert("Failed to read file.");
+      r.readAsDataURL(file);
+    }finally{setUploading(false);}
   };
-  try{
-    const path=`guides/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
-    const url=await supa.uploadImage(file,path);
-    addAtt(url);
-  }catch(err){
-    const r=new FileReader();
-    r.onload=()=>addAtt(r.result);
-    r.readAsDataURL(file);
-  }
-};
   return(
     <div>
       <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
@@ -1921,7 +1926,7 @@ function GuidesPanel({guides,dispatch}){
         <button onClick={()=>setAddingNew(true)} style={btn(T.primary,T.surface)}>+ Guide</button>
       </div>
       {search&&<p style={{color:T.textDim,fontSize:12,margin:"0 0 10px"}}>{filtered.length} result{filtered.length!==1?"s":""} for "{search}"</p>}
-      {addingNew&&<GuideForm form={nf} setForm={setNf} onFileUpload={e=>handleFile(e,true)} onSave={()=>{if(!nf.title)return;dispatch({type:"ADD_GUIDE",payload:{...nf,id:"g"+Date.now()}});setAddingNew(false);setNf({title:"",icon:"📄",content:"",attachments:[],links:[]});}} onCancel={()=>setAddingNew(false)}/>}
+      {addingNew&&<GuideForm form={nf} setForm={setNf} uploading={uploading} onFileUpload={e=>handleFile(e,true)} onSave={()=>{if(!nf.title)return;dispatch({type:"ADD_GUIDE",payload:{...nf,id:"g"+Date.now()}});setAddingNew(false);setNf({title:"",icon:"📄",content:"",attachments:[],links:[]});}} onCancel={()=>setAddingNew(false)}/>}
       {!search&&guides.length===0&&<p style={{color:T.textDim,fontSize:13}}>No guides yet. Add your first one!</p>}
       {search&&filtered.length===0&&<div style={{...card({padding:24,textAlign:"center"})}}>
         <p style={{color:T.textDim,margin:0,fontSize:14}}>No guides match "{search}"</p>
@@ -1929,7 +1934,7 @@ function GuidesPanel({guides,dispatch}){
       {(search?filtered:guides).map(g=>(
         <div key={g.id} style={{marginBottom:8}}>
           {editing===g.id
-            ?<GuideForm form={ef} setForm={setEf} onFileUpload={e=>handleFile(e,false)} onSave={()=>{dispatch({type:"UPDATE_GUIDE",payload:ef});setEditing(null);}} onCancel={()=>setEditing(null)} onDel={()=>{dispatch({type:"DEL_GUIDE",id:g.id});setEditing(null);}}/>
+            ?<GuideForm form={ef} setForm={setEf} uploading={uploading} onFileUpload={e=>handleFile(e,false)} onSave={()=>{dispatch({type:"UPDATE_GUIDE",payload:ef});setEditing(null);}} onCancel={()=>setEditing(null)} onDel={()=>{dispatch({type:"DEL_GUIDE",id:g.id});setEditing(null);}}/>
             :(<div style={card({padding:0,overflow:"hidden"})}>
                 <button onClick={()=>setOpen(open===g.id?null:g.id)}
                   ref={el=>{
