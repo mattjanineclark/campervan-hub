@@ -2935,9 +2935,20 @@ export default function App(){
 
         dispatch({type:"RESET_ITINERARIES",payload:(itins||[]).map(fromDB.itin).filter(Boolean)});
         if(guides&&guides.length>0){dispatch({type:"RESET_GUIDES",payload:guides.map(fromDB.guide)});}
-        else{dispatch({type:"RESET_GUIDES",payload:SEED_GUIDES});for(const g of SEED_GUIDES) await supa.upsert("guides",toDB.guide(g));}
+        else{
+          dispatch({type:"RESET_GUIDES",payload:SEED_GUIDES});
+          // Insert each guide without id (let DB auto-assign), or upsert with title as key
+          for(const g of SEED_GUIDES){
+            await supa.upsert("guides",{title:g.title,icon:g.icon,content:g.content,links:g.links||[],attachments:g.attachments||[]});
+          }
+        }
         if(rules&&rules.length>0){dispatch({type:"RESET_RULES",payload:rules.map(fromDB.rule)});}
-        else{dispatch({type:"RESET_RULES",payload:SEED_RULES});for(const r of SEED_RULES) await supa.upsert("rules",toDB.rule(r));}
+        else{
+          dispatch({type:"RESET_RULES",payload:SEED_RULES});
+          for(const r of SEED_RULES){
+            await supa.upsert("rules",{icon:r.icon,rule:r.rule,detail:r.detail||""});
+          }
+        }
 
         // Odometer
         const [odoLog, odoSettings] = await Promise.all([
