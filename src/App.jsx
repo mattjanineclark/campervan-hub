@@ -3035,7 +3035,7 @@ export default function App(){
       </div>
 
       {/* CONTENT */}
-      <div style={{maxWidth:860,margin:"0 auto",padding:"14px 12px 88px"}}>
+      <div style={{maxWidth:860,margin:"0 auto",padding:"14px 12px 100px"}}>
         {tab==="calendar"&&(
           <>
             <div style={card({padding:14,marginBottom:12})}>
@@ -3064,24 +3064,12 @@ export default function App(){
     <div style={{
       position:"fixed",bottom:0,left:0,right:0,
       zIndex:500,
+      background:T.surface,
+      boxShadow:"0 -4px 16px rgba(0,0,0,0.10)",
+      borderTop:`1px solid ${T.border}`,
     }}>
-      {/* Safe area fill — same colour as bar */}
-      <div style={{
-        position:"absolute",bottom:0,left:0,right:0,
-        height:"env(safe-area-inset-bottom)",
-        background:T.surface,
-        zIndex:0
-      }}/>
-      {/* Main bar */}
-      <div style={{
-        position:"relative",zIndex:1,
-        background:T.surface,
-        borderTop:`1px solid ${T.border}`,
-        paddingTop:6,
-        paddingBottom:"env(safe-area-inset-bottom)",
-        boxShadow:"0 -4px 16px rgba(0,0,0,0.10)"
-      }}>
-        <div style={{display:"flex",alignItems:"stretch",height:72}}>
+      {/* Icon grid — fixed height, stays above safe area */}
+      <div style={{paddingTop:8,height:84,display:"flex",alignItems:"stretch"}}>
           {/* Left 2x2 grid */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1}}>
             {TABS.slice(0,4).map(t=>(
@@ -3096,27 +3084,8 @@ export default function App(){
               </button>
             ))}
           </div>
-          {/* Centre + button — rises above bar, extends through safe zone */}
-          <div style={{position:"relative",display:"flex",alignItems:"flex-start",justifyContent:"center",flexShrink:0,width:76}}>
-            <button onClick={()=>setShowBook(true)}
-              style={{
-                position:"absolute",
-                bottom:`calc(-1 * env(safe-area-inset-bottom))`,
-                width:64,
-                top:-18,
-                borderRadius:"18px 18px 0 0",
-                background:`linear-gradient(160deg,${T.primary},#3a8a5f)`,
-                border:"none",
-                borderLeft:`1px solid ${T.primary}80`,
-                borderRight:`1px solid ${T.primary}80`,
-                borderTop:`1px solid ${T.primary}80`,
-                cursor:"pointer",display:"flex",flexDirection:"column",
-                alignItems:"center",justifyContent:"center",gap:2,
-                boxShadow:`-2px -4px 20px ${T.primary}40`,color:"white"}}>
-              <span style={{fontSize:30,lineHeight:1,fontWeight:300}}>+</span>
-              <span style={{fontSize:9,fontWeight:600,letterSpacing:0.5,opacity:0.9}}>BOOK</span>
-            </button>
-          </div>
+          {/* Centre spacer — holds the layout space */}
+          <div style={{flexShrink:0,width:76}}/>
           {/* Right 2x2 grid */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1}}>
             {TABS.slice(4,8).map(t=>(
@@ -3131,8 +3100,35 @@ export default function App(){
               </button>
             ))}
           </div>
-        </div>
       </div>
+      {/* Safe area spacer */}
+      <div style={{height:"env(safe-area-inset-bottom)",background:T.surface}}/>
+      {/* Centre BOOK button — fixed, breaks out of bar, ignores safe zone */}
+      <button onClick={()=>setShowBook(true)}
+        style={{
+          position:"fixed",
+          bottom:0,
+          left:"50%",
+          transform:"translateX(-50%)",
+          width:64,
+          top:`calc(100% - 84px - 18px)`,
+          borderRadius:"18px 18px 0 0",
+          background:`linear-gradient(160deg,${T.primary},#3a8a5f)`,
+          border:"none",
+          borderLeft:`1px solid ${T.primary}80`,
+          borderRight:`1px solid ${T.primary}80`,
+          borderTop:`1px solid ${T.primary}80`,
+          cursor:"pointer",
+          display:"flex",flexDirection:"column",
+          alignItems:"center",justifyContent:"flex-start",
+          paddingTop:14,gap:2,
+          boxShadow:`-2px -4px 20px ${T.primary}40`,
+          color:"white",
+          zIndex:501
+        }}>
+        <span style={{fontSize:30,lineHeight:1,fontWeight:300}}>+</span>
+        <span style={{fontSize:9,fontWeight:600,letterSpacing:0.5,opacity:0.9}}>BOOK</span>
+      </button>
     </div>
     </div>
   );
