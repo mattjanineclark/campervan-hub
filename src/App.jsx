@@ -3073,9 +3073,9 @@ export default function App(){
       borderTop:`1px solid ${T.border}`,
     }}>
       {/* Icon grid */}
-      <div style={{paddingTop:8,height:84,display:"flex",alignItems:"stretch"}}>
+      <div style={{paddingTop:8,height:84,display:"flex",alignItems:"flex-start"}}>
           {/* Left 2x2 grid */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"38px 38px",flex:1,height:76}}>
             {TABS.slice(0,4).map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)}
                 style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",
@@ -3091,7 +3091,7 @@ export default function App(){
           {/* Centre spacer — holds the layout space */}
           <div style={{flexShrink:0,width:76}}/>
           {/* Right 2x2 grid */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",flex:1}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"38px 38px",flex:1,height:76}}>
             {TABS.slice(4,8).map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)}
                 style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",
