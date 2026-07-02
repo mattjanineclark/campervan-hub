@@ -93,10 +93,10 @@ const supa = {
 
 // Convert DB row format to app format and back
 const fromDB = {
-  booking: b => b ? ({id:b.id, familyId:b.family_id, start:b.start_date, end:b.end_date, destination:b.destination, notes:b.notes||"", status:b.status}) : null,
+  booking: b => b ? ({id:b.id, familyId:b.family_id, start:b.start_date, end:b.end_date, destination:b.destination, notes:b.notes||"", status:b.status, days:b.days||[]}) : null,
   place:   p => p ? ({id:p.id, name:p.name, familyId:p.family_id, category:p.category, lat:p.lat, lng:p.lng, overallRating:p.overall_rating||0, reviews:[]}) : null,
   review:  r => r ? ({familyId:r.family_id, rating:r.rating, text:r.review_text, date:r.review_date}) : null,
-  itin:    i => i ? ({id:i.id, title:i.title, familyId:i.family_id, start:i.start_date||"", end:i.end_date||"", destination:i.destination||"", notes:i.notes||"", bookingId:i.booking_id||"", visibility:i.visibility||"private", days:i.days||[]}) : null,
+  itin:    i => i ? ({id:i.id, title:i.title, familyId:i.family_id, start:i.start_date||"", end:i.end_date||"", destination:i.destination||"", notes:i.notes||"", bookingId:i.booking_id||"", visibility:"private", days:i.days||[]}) : null,
   family:  f => f ? ({id:f.id, name:f.name, color:f.color, emoji:f.emoji, pin:f.pin, photo:f.photo||null}) : null,
   equip:   e => e ? ({id:e.id, category:e.category, item:e.item, status:e.status||"invan"}) : null,
   packing: p => p ? ({id:p.id, category:p.category, item:p.item, status:p.status||"tobring"}) : null,
@@ -104,7 +104,7 @@ const fromDB = {
   rule:    r => r ? ({id:r.id, icon:r.icon, rule:r.rule, detail:r.detail||""}) : null,
 };
 const toDB = {
-  booking: b => ({id:b.id, family_id:b.familyId, start_date:b.start, end_date:b.end, destination:b.destination, notes:b.notes, status:b.status}),
+  booking: b => ({id:b.id, family_id:b.familyId, start_date:b.start, end_date:b.end, destination:b.destination, notes:b.notes, status:b.status, days:b.days||[]}),
   place:   p => ({id:p.id, name:p.name, family_id:p.familyId, category:p.category, lat:p.lat, lng:p.lng, overall_rating:p.overallRating||0}),
   review:  (placeId,r) => ({place_id:placeId, family_id:r.familyId, rating:r.rating, review_text:r.text, review_date:r.date}),
   itin:    i => ({id:i.id, title:i.title, family_id:i.familyId, start_date:i.start||null, end_date:i.end||null, destination:i.destination||"", notes:i.notes||"", booking_id:i.bookingId||null, visibility:i.visibility||"private", days:i.days||[]}),
@@ -239,6 +239,8 @@ function reducer(state,{type,payload,id}){
     case "ADD_BOOKING":      return {...state,bookings:[...state.bookings,payload]};
     case "DEL_BOOKING":      return {...state,bookings:state.bookings.filter(b=>b.id!==id)};
     case "CONFIRM_BOOKING":  return {...state,bookings:state.bookings.map(b=>b.id===id?{...b,status:"confirmed"}:b)};
+    case "UPD_BOOKING":      return {...state,bookings:state.bookings.map(b=>b.id===payload.id?{...b,...payload}:b)};
+    case "UPD_BOOKING_DAYS":  return {...state,bookings:state.bookings.map(b=>b.id===payload.id?{...b,days:payload.days,notes:payload.notes!==undefined?payload.notes:b.notes}:b)};
     case "ADD_PLACE":        return {...state,places:[...state.places,payload]};
     case "DEL_PLACE":        return {...state,places:state.places.filter(p=>p.id!==id)};
     case "ADD_REVIEW":       return {...state,places:state.places.map(p=>{
@@ -253,6 +255,7 @@ function reducer(state,{type,payload,id}){
     case "SET_RULES":        return {...state,rules:payload};
     case "ADD_ITINERARY":    return {...state,itineraries:[...state.itineraries,payload]};
     case "UPDATE_ITINERARY": return {...state,itineraries:state.itineraries.map(i=>i.id===payload.id?payload:i)};
+    case "SET_ITINERARY":    return {...state,itineraries:state.itineraries.map(i=>i.id===payload.id?payload:i)};
     case "DEL_ITINERARY":    return {...state,itineraries:state.itineraries.filter(i=>i.id!==id)};
     case "ADD_FAMILY":       return {...state,families:[...state.families,payload]};
     case "SET_FAMILY_PACKING": return {...state,packingByFamily:{...state.packingByFamily,[payload.familyId]:payload.items}};
@@ -546,7 +549,7 @@ function PlaceSearch({onSelect}){
 // ═══════════════════════════════════════════════════════════════════════════════
 // CALENDAR
 // ═══════════════════════════════════════════════════════════════════════════════
-function CalendarView({bookings,families,itineraries,onOpenItinerary,currentFamilyId}){
+function CalendarView({bookings,families,onOpenItinerary,currentFamilyId}){
   const [month,setMonth]=useState(new Date(TODAY.getFullYear(),TODAY.getMonth(),1));
   const [sel,setSel]=useState(null);
   const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
@@ -560,14 +563,13 @@ function CalendarView({bookings,families,itineraries,onOpenItinerary,currentFami
   const DayModal=({date,onClose})=>{
     const ds=fmt(date);const bks=bookings.filter(b=>ds>=b.start&&ds<=b.end);
     // find any linked itinerary for a booking
-    const itinForBooking=b=>(itineraries||[]).find(it=>it.bookingId===b.id);
+
     return(<Modal title={date.toLocaleDateString("en-NZ",{weekday:"long",day:"numeric",month:"long"})} onClose={onClose} width={420}>
       {bks.length===0?<p style={{color:T.textMuted}}>No bookings on this day.</p>:bks.map(b=>{
-        const itin=itinForBooking(b);
-        const totalActs=itin?(itin.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0):0;
+        const totalActs=(b.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0);
         return(
-          <div key={b.id} onClick={()=>{const it=itinForBooking(b);if(it){onClose();onOpenItinerary(it.id);}}}
-            style={{...card({padding:14,marginBottom:12}),borderLeft:`4px solid ${fColor(b.familyId)}`,cursor:itinForBooking(b)?"pointer":"default",transition:"box-shadow 0.15s"}}>
+          <div key={b.id} onClick={()=>{onClose();onOpenItinerary(b.id);}}
+            style={{...card({padding:14,marginBottom:12}),borderLeft:`4px solid ${fColor(b.familyId)}`,cursor:"pointer",transition:"box-shadow 0.15s"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
               <div>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
@@ -582,26 +584,23 @@ function CalendarView({bookings,families,itineraries,onOpenItinerary,currentFami
                 {b.notes&&<div style={{color:T.textDim,fontSize:12,marginTop:4,fontStyle:"italic"}}>"{b.notes}"</div>}
               </div>
             </div>
-            {/* Itinerary section — own bookings only */}
-            <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
-              {itin?(
-                <button onClick={()=>{onClose();onOpenItinerary(itin.id);}}
+            {/* Trip plan link */}
+            {b.familyId===currentFamilyId&&(
+              <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+                <button onClick={()=>{onClose();onOpenItinerary(b.id);}}
                   style={{...card({padding:"10px 14px"}),width:"100%",textAlign:"left",cursor:"pointer",
                     border:`1px solid ${T.primary}30`,background:T.primary+"08",display:"flex",
                     alignItems:"center",justifyContent:"space-between",gap:8}}>
                   <div>
-                    <div style={{fontSize:13,fontWeight:700,color:T.primary}}>🗺️ {itin.title}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:T.primary}}>🗺️ {b.destination}</div>
                     <div style={{fontSize:11,color:T.textDim,marginTop:2}}>
-                      {totalActs} activit{totalActs===1?"y":"ies"} planned
-                      {itin.visibility==="shared"&&<span style={{marginLeft:6,color:T.green}}>· Shared</span>}
+                      {totalActs} activit{totalActs===1?"y":"ies"} planned · tap to edit
                     </div>
                   </div>
                   <span style={{color:T.primary,fontSize:18}}>›</span>
                 </button>
-              ):(
-                <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>No trip yet — booking will create one automatically</span>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         );
       })}
@@ -871,37 +870,25 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
   const [f,setF]=useState({familyId:currentFamilyId||"f1",start:"",end:"",destination:"",notes:"",status:"tentative"});
   const [err,setErr]=useState("");
   const h=(k,v)=>{setF(p=>({...p,[k]:v}));if(k==="start"||k==="end")setErr("");};
+  const doSave=()=>{
+    dispatch({type:"ADD_BOOKING",payload:{...f,id:"b"+Date.now()}});
+    onClose();
+  };
   const submit=()=>{
     if(!f.start||!f.end||!f.destination){setErr("Fill in all required fields.");return;}
     if(f.end<=f.start){setErr("End must be after start.");return;}
-    const clash=bookings.filter(b=>b.status==="confirmed"&&overlap(b,f));
-    const tentativeClash=bookings.filter(b=>b.status==="tentative"&&overlap(b,f));
-    if(clash.length){
-      setErr({msg:"Your dates clash with existing confirmed bookings:",clashes:clash});
+    const clash=(bookings||[]).filter(b=>b.status==="confirmed"&&b.end>=f.start&&b.start<=f.end);
+    if(clash.length){setErr({msg:"Your dates clash with existing confirmed bookings:",clashes:clash});return;}
+    const tentativeClash=(bookings||[]).filter(b=>b.status==="tentative"&&b.end>=f.start&&b.start<=f.end);
+    if(tentativeClash.length){
+      setErr({msg:"⚠️ These dates overlap a tentative booking — check with the others first. Book anyway?",clashes:tentativeClash,warning:true});
       return;
     }
-    if(tentativeClash.length){
-      setErr({msg:"⚠️ Note: there are tentative bookings on these dates — you can still book but check with the others first:",clashes:tentativeClash,warning:true});
-    }
-    dispatch({type:"ADD_BOOKING",payload:{...f,id:"b"+Date.now()}});onClose();
+    doSave();
   };
   return(
     <Modal title="New Booking" onClose={onClose}>
-      {err&&(
-        <div style={{background:err.warning?T.accent+"12":T.red+"12",borderRadius:T.radiusSm,marginBottom:12,border:`1px solid ${err.warning?T.accent+"40":T.red+"30"}`,overflow:"hidden"}}>
-          <div style={{padding:"10px 14px",color:err.warning?T.accent:T.red,fontSize:13,fontWeight:600}}>{err.msg||err}</div>
-          {err.clashes&&err.clashes.map((b,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderTop:`1px solid ${err.warning?T.accent:T.red}20`,background:err.warning?T.accent+"08":T.red+"08"}}>
-              <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={28} fontSize={16}/>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:700,color:T.text,fontSize:13}}>{fName(b.familyId)}</div>
-                <div style={{color:T.textMuted,fontSize:12}}>{b.destination} &middot; {b.start} to {b.end} &middot; {nights(b.start,b.end)} nights</div>
-              </div>
-              <span style={{...pill(b.status==="tentative"?T.accent+"20":T.primary+"15",b.status==="tentative"?T.accent:T.primary),fontSize:10}}>{b.status}</span>
-            </div>
-          ))}
-        </div>
-      )}
+
       <div style={{display:"flex",gap:8,marginBottom:4}}>
         <div style={{flex:1,display:"flex",alignItems:"center",gap:10,padding:"8px 12px",
           background:f.familyId==="maintenance"?T.textDim+"15":T.primary+"08",
@@ -945,8 +932,23 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
       <input style={inp} placeholder="e.g. Blue Lake Campsite" value={f.destination} onChange={e=>h("destination",e.target.value)}/>
       <label style={lbl}>Notes</label>
       <textarea style={{...inp,height:60,resize:"vertical"}} value={f.notes} onChange={e=>h("notes",e.target.value)}/>
+      {err&&(
+        <div style={{background:err.warning?T.accent+"12":T.red+"12",borderRadius:T.radiusSm,marginBottom:12,border:`1px solid ${err.warning?T.accent+"40":T.red+"30"}`,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",color:err.warning?T.accent:T.red,fontSize:13,fontWeight:600}}>{err.msg||err}</div>
+          {err.clashes&&err.clashes.map((b,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderTop:`1px solid ${err.warning?T.accent:T.red}20`,background:err.warning?T.accent+"08":T.red+"08"}}>
+              <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={28} fontSize={16}/>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,color:T.text,fontSize:13}}>{fName(b.familyId)}</div>
+                <div style={{color:T.textMuted,fontSize:12}}>{b.destination} &middot; {b.start} to {b.end} &middot; {nights(b.start,b.end)} nights</div>
+              </div>
+              <span style={{...pill(b.status==="tentative"?T.accent+"20":T.primary+"15",b.status==="tentative"?T.accent:T.primary),fontSize:10}}>{b.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{display:"flex",gap:8,marginTop:20}}>
-        <button onClick={submit} style={btn(T.primary,T.surface)}>
+        <button onClick={err&&err.warning?doSave:submit} style={btn(T.primary,T.surface)}>
           {err&&err.warning?"Book Anyway":"Save Booking"}
         </button>
         <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
@@ -955,13 +957,10 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
   );
 }
 
-function BookingCard({b,families,itineraries,onOpenItinerary,currentFamilyId,dispatch,odoLog,odoRate,onAddOdo}){
+function BookingCard({b,families,onOpenItinerary,currentFamilyId,dispatch,odoLog,odoRate,onAddOdo}){
   const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
 
-  // Itinerary link state
-  const itin=(itineraries||[]).find(i=>i.bookingId===b.id);
-  const totalActs=itin?(itin.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0):0;
   const isOwn=b.familyId===currentFamilyId;
 
   // Odo state
@@ -987,25 +986,7 @@ function BookingCard({b,families,itineraries,onOpenItinerary,currentFamilyId,dis
           <div style={{color:T.textDim,fontSize:12,marginTop:3}}>{b.start} to {b.end} &middot; {nights(b.start,b.end)} nights</div>
           {b.notes&&<div style={{color:T.textDim,fontSize:12,marginTop:4,fontStyle:"italic"}}>"{b.notes}"</div>}
 
-            {itin&&(
-              <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderLight}`}}>
-                <button onClick={()=>onOpenItinerary&&onOpenItinerary(itin.id)}
-                  style={{...card({padding:"10px 12px"}),width:"100%",textAlign:"left",cursor:"pointer",
-                    border:`1px solid ${T.primary}25`,background:T.primary+"06",
-                    display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                  <div>
-                    <div style={{fontSize:12,fontWeight:700,color:T.primary}}>🗺️ {itin.title}</div>
-                    <div style={{fontSize:11,color:T.textDim,marginTop:2}}>
-                      {totalActs} activit{totalActs===1?"y":"ies"}
-                      {itin.visibility==="shared"&&<span style={{color:T.green,marginLeft:6}}>· Shared</span>}
-                    </div>
-                  </div>
-                  {isOwn
-                    ?<span style={{...pill(T.primary+"15",T.primary),fontSize:10}}>Edit Trip ›</span>
-                    :<span style={{...pill(T.green+"15",T.green),fontSize:10}}>View ›</span>}
-                </button>
-              </div>
-            )}
+            
 
   </div>
   </div>
@@ -1149,7 +1130,6 @@ function AddPlaceModal({dispatch,onClose,currentFamilyId}){
 }
 
 function PlaceCard({place,dispatch,onAddToItinerary,families}){
-  const [expanded,setExpanded]=useState(false);const [showReview,setShowReview]=useState(false);
   const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
   const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
@@ -1215,7 +1195,7 @@ function PlaceCard({place,dispatch,onAddToItinerary,families}){
   );
 }
 
-function PlacesPanel({places,dispatch,itineraries,onPickItinerary,families,currentFamilyId}){
+function PlacesPanel({places,dispatch,onPickItinerary,families,currentFamilyId}){
   const [view,setView]=useState("list");const [adding,setAdding]=useState(false);const [pickItin,setPickItin]=useState(null);
   const [pickDay,setPickDay]=useState(null); // {itin, place} — day selection step
   // Hide background map while modal is open so it doesn't bleed through
@@ -1300,7 +1280,7 @@ function PlacePickerModal({places,onSelect,onClose}){
   );
 }
 
-function ItineraryEditor({itin,dispatch,places,bookings,families,onClose}){
+function ItineraryEditor({itin,dispatch,places,bookings,families,onClose,inline=false,onFullEdit}){
   const [data,setData]=useState({...itin});
   const h=(k,v)=>setData(d=>({...d,[k]:v}));
   const DAY_NAMES=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -1317,73 +1297,89 @@ function ItineraryEditor({itin,dispatch,places,bookings,families,onClose}){
   const updAct=(di,ai,field,val)=>{const days=[...(data.days||[])];days[di]={...days[di],activities:days[di].activities.map((a,i)=>i===ai?{...a,[field]:val}:a)};h("days",days);};
   const delAct=(di,ai)=>{const days=[...(data.days||[])];days[di]={...days[di],activities:days[di].activities.filter((_,i)=>i!==ai)};h("days",days);};
   const save=()=>{
-    const payload={...data};delete payload._unsaved;
-    if(data._unsaved) sbDispatch({type:"ADD_ITINERARY",payload});
-    else sbDispatch({type:"UPDATE_ITINERARY",payload});
-    onClose();
+    const otherId=data.bookingId||data.id;
+    const clash=(bookings||[]).filter(b=>b.id!==otherId&&b.status==="confirmed"&&data.start<=b.end&&data.end>=b.start);
+    if(clash.length){h("_saveErr","Cannot save - clashes with confirmed: "+clash.map(b=>b.destination).join(", "));return;}
+    const payload={...data};
+    delete payload._unsaved;delete payload._tentClash;delete payload._saveErr;
+    if(data._unsaved) dispatch({type:"ADD_ITINERARY",payload});
+    else dispatch({type:"SET_ITINERARY",payload});
+    if(onClose) onClose();
   };
-  return(
+  if(inline) return(
+    <div style={{padding:"12px 14px"}}>
+      <div style={{padding:"2px 0 10px"}}>
+        <p style={{...sectionHead,margin:0}}>TRIP PLAN</p>
+      </div>
+      {(data.days||[]).map((day,di)=>(
+        <div key={di} style={{marginBottom:12}}>
+          <div style={{fontWeight:700,color:T.textMuted,fontSize:11,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>
+            Day {di+1} · {day.date}
+          </div>
+          {(day.activities||[]).map((act,ai)=>(
+            <div key={ai} style={{...card({padding:"8px 10px"}),marginBottom:4,display:"flex",gap:8,alignItems:"flex-start"}}>
+              {act.time&&<span style={{fontSize:11,color:T.textDim,minWidth:36,paddingTop:1}}>{act.time}</span>}
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,fontSize:12,color:T.text}}>{act.title}</div>
+                {act.place&&<div style={{fontSize:11,color:T.primary,marginTop:1}}>📍 {act.place}</div>}
+                {act.notes&&<div style={{fontSize:11,color:T.textDim,marginTop:1,fontStyle:"italic"}}>{act.notes}</div>}
+              </div>
+            </div>
+          ))}
+          {(day.activities||[]).length===0&&(
+            <div style={{color:T.textDim,fontSize:11,fontStyle:"italic",padding:"4px 0"}}>No activities planned yet</div>
+          )}
+        </div>
+      ))}
+      <button onClick={()=>onFullEdit&&onFullEdit()}
+        style={btn(T.primary+"15",T.primary,{width:"100%",marginTop:8,fontSize:12})}>
+        ✏️ Edit Full Trip Plan
+      </button>
+    </div>
+  );
+    return(
     <div style={{...card(),marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <h3 style={{margin:0,color:T.primary,fontSize:16,fontWeight:700}}>{data.title||"New Trip"}</h3>
         <div style={{display:"flex",gap:8}}>
+          {data._saveErr&&<div style={{padding:"6px 10px",marginBottom:8,background:T.red+"12",border:`1px solid ${T.red}30`,borderRadius:T.radiusSm,fontSize:12,color:T.red,width:"100%"}}>X {data._saveErr}</div>}
+          {data._tentClash&&<div style={{padding:"6px 10px",marginBottom:8,background:T.accent+"12",border:`1px solid ${T.accent}30`,borderRadius:T.radiusSm,fontSize:12,color:T.accent}}>⚠️ Dates overlap tentative booking: {data._tentClash}</div>}
           <button onClick={save} style={btn(T.primary,T.surface)}>Save Trip</button>
           <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
         </div>
       </div>
-      {linkable.length>0&&(
-        <div style={{background:T.bg,borderRadius:T.radiusSm,padding:14,marginBottom:16,border:`1px solid ${T.border}`}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <p style={{fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:0.5,margin:0}}>Link to a booking (auto-fills dates)</p>
-            {data.bookingId&&(
-              <button onClick={()=>setData(d=>({...d,bookingId:""}))}
-                style={{...btn("transparent",T.red,{fontSize:11,padding:"3px 8px",border:`1px solid ${T.red}30`})}}>
-                &times; Remove link
-              </button>
-            )}
-          </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {linkable.map(b=>(
-              <button key={b.id} onClick={()=>setData(d=>({...d,start:b.start,end:b.end,destination:b.destination,bookingId:b.id}))}
-                style={{...btn(data.bookingId===b.id?T.primary:T.surface,data.bookingId===b.id?T.surface:T.textMuted,{fontSize:12,padding:"6px 14px",border:`1px solid ${data.bookingId===b.id?T.primary:T.border}`})}}>
-                {b.status==="tentative"?"Tentative":"Confirmed"}: {b.destination}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:4}}>
-        <div style={{gridColumn:"1/-1"}}><label style={lbl}>Trip Title</label><input style={inp} value={data.title} onChange={e=>h("title",e.target.value)} placeholder="e.g. Summer Lake Adventure"/></div>
-        <div>
-          <label style={lbl}>Trip for</label>
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 11px",background:T.primary+"08",borderRadius:T.radiusSm,border:`1px solid ${T.primary}20`}}>
-            <FamilyAvatar family={families.find(f=>f.id===data.familyId)} size={30} fontSize={18}/>
-            <span style={{fontWeight:700,color:T.primary,fontSize:13}}>{families.find(f=>f.id===data.familyId)?.name}</span>
-          </div>
-        </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
         <div style={{gridColumn:"1/-1"}}>
           <label style={lbl}>Dates</label>
           <DateRangePicker
             startDate={data.start} endDate={data.end}
-            onChange={({start,end})=>setData(d=>({...d,start,end}))}
+            bookings={bookings} families={[]}
+            onChange={({start,end})=>{
+              // Check for clashes with other bookings
+              const clash=(bookings||[]).filter(b=>
+                b.id!==data.bookingId&&b.status==="confirmed"&&
+                start<=b.end&&end>=b.start
+              );
+              if(clash.length){
+                alert("Cannot save — dates clash with a confirmed booking: "+clash.map(b=>b.destination).join(", "));
+                return;
+              }
+              const tentClash=(bookings||[]).filter(b=>
+                b.id!==data.bookingId&&b.status==="tentative"&&
+                start<=b.end&&end>=b.start
+              );
+              // Update trip dates (tentative clash just noted, not blocked)
+              setData(d=>({...d,start,end,_tentClash:tentClash.length?tentClash.map(b=>b.destination).join(", "):null}));
+              // Also update the linked booking dates to keep them in sync
+              if(data.bookingId){
+                dispatch({type:"UPD_BOOKING",payload:{id:data.bookingId,start,end}});
+              }
+            }}
           />
         </div>
         <div style={{gridColumn:"1/-1"}}><label style={lbl}>Notes</label><textarea style={{...inp,height:52}} value={data.notes||""} onChange={e=>h("notes",e.target.value)} placeholder="Overview, goals, reminders..."/></div>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Visibility</label>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <button onClick={()=>h("visibility","private")}
-              style={{padding:"10px 12px",border:`2px solid ${(data.visibility||"private")==="private"?T.primary:T.border}`,borderRadius:T.radiusSm,cursor:"pointer",fontWeight:600,fontSize:12,background:(data.visibility||"private")==="private"?T.primary+"12":T.surface,color:(data.visibility||"private")==="private"?T.primary:T.textMuted,textAlign:"left",transition:"all 0.15s"}}>
-              <div style={{fontSize:16,marginBottom:2}}>🔒 Private</div>
-              <div style={{fontSize:11,fontWeight:400,opacity:0.8}}>Only visible to {families.find(f=>f.id===data.familyId)?.name||"this family"}</div>
-            </button>
-            <button onClick={()=>h("visibility","shared")}
-              style={{padding:"10px 12px",border:`2px solid ${data.visibility==="shared"?T.green:T.border}`,borderRadius:T.radiusSm,cursor:"pointer",fontWeight:600,fontSize:12,background:data.visibility==="shared"?T.green+"12":T.surface,color:data.visibility==="shared"?T.green:T.textMuted,textAlign:"left",transition:"all 0.15s"}}>
-              <div style={{fontSize:16,marginBottom:2}}>👨‍👩‍👧 Shared</div>
-              <div style={{fontSize:11,fontWeight:400,opacity:0.8}}>All families can view (read-only)</div>
-            </button>
-          </div>
-        </div>
+
       </div>
       {(data.days||[]).map((day,di)=>{
         const d=new Date(day.date);
@@ -1465,7 +1461,7 @@ function ItinCard({itin,dispatch,places,families,onEdit,currentFamilyId,archived
               {fName(itin.familyId)}
             </span>
             {itin.start&&<span style={{color:T.textDim,fontSize:12}}>{itin.start} to {itin.end}</span>}
-            {itin.bookingId&&<span style={{...pill(T.primary+"15",T.primary),fontSize:10}}>Linked</span>}
+
             <span style={{...pill(T.sky+"20",T.sky),fontSize:10}}>{total} act.</span>
             {itin.visibility==="shared"
               ?<span style={{...pill(T.green+"15",T.green),fontSize:10}}>Shared</span>
@@ -1534,132 +1530,301 @@ function ItinCard({itin,dispatch,places,families,onEdit,currentFamilyId,archived
   );
 }
 
-function TripsPanel({itineraries,dispatch,places,bookings,families,autoOpenItinId,onAutoOpenHandled,currentFamilyId,onGoToTab}){
-  const [editing,setEditing]=useState(null);
-  const [showPast,setShowPast]=useState(false);
+// ─── BOOKING CARD (unified booking + trip) ────────────────────────────────────
+function BookingTripCard({b,fam,today,odoLog,odoRate,onAddOdo,dispatch,places,families,bookings,currentFamilyId,openId,setOpenId}){
+  const cardRef=useRef(null);
+  const [expanded,setExpanded]=useState(openId===b.id);
+  const [fullEdit,setFullEdit]=useState(false);
+  const [showOdoForm,setShowOdoForm]=useState(false);
+  const [odoForm,setOdoForm]=useState({startKm:"",endKm:"",tolls:false,tollAmt:"",notes:""});
+  const [confirmWarn,setConfirmWarn]=useState(null);
+  useEffect(()=>{
+    if(openId===b.id){setExpanded(true);if(setOpenId)setOpenId(null);setTimeout(()=>cardRef.current&&cardRef.current.scrollIntoView({behavior:"smooth",block:"start"}),150);}
+  },[openId]); // null | {type:"blocked"|"warn", msg:string}
 
-  // Auto-open itinerary from calendar/booking link
+  const odo=(odoLog||[]).filter(e=>e.bookingId===b.id);
+  const isUpcoming=b.end>=today;
+  const nights_n=nights(b.start,b.end);
+  const days=b.days||[];
+
+  // Auto-create days if missing
+  useEffect(()=>{
+    if(b.id&&b.start&&b.end&&(!b.days||b.days.length===0)){
+      dispatch({type:"UPD_BOOKING_DAYS",payload:{id:b.id,days:generateDays(b.start,b.end)}});
+    }
+  },[b.id]);
+
+  // Shape booking as itin-compatible object for ItineraryEditor
+  const bookingAsItin={
+    id:b.id, title:b.destination, familyId:b.familyId,
+    start:b.start, end:b.end, destination:b.destination,
+    notes:b.notes||"", days:b.days||[], bookingId:b.id, visibility:"private"
+  };
+
+  const handleItinSave=(payload)=>{
+    // Save days and notes back to the booking
+    dispatch({type:"UPD_BOOKING_DAYS",payload:{id:b.id,days:payload.days,notes:payload.notes}});
+    // Also update dates if changed
+    if(payload.start!==b.start||payload.end!==b.end){
+      dispatch({type:"UPD_BOOKING",payload:{id:b.id,start:payload.start,end:payload.end,destination:payload.title||b.destination}});
+    }
+  };
+
+  return(
+    <div ref={cardRef} style={{...card({padding:0,marginBottom:16}),borderLeft:"4px solid "+(fam?.color||T.primary),overflow:"visible"}}>
+      {/* Full editor modal */}
+      {fullEdit&&(
+        <Modal title={"Plan: "+b.destination} onClose={()=>setFullEdit(false)}>
+          <ItineraryEditor
+            itin={bookingAsItin}
+            dispatch={(action)=>{
+              if(action.type==="SET_ITINERARY"||action.type==="UPDATE_ITINERARY")
+                handleItinSave(action.payload);
+            }}
+            places={places} bookings={bookings} families={families}
+            onClose={()=>setFullEdit(false)}/>
+        </Modal>
+      )}
+
+      {/* ── Header ── */}
+      <div style={{padding:"14px 14px 10px",cursor:"pointer"}} onClick={()=>setExpanded(!expanded)}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:16,color:T.text}}>{b.destination}</div>
+            <div style={{color:T.textMuted,fontSize:12,marginTop:3}}>
+              {b.start} → {b.end} · {nights_n} night{nights_n!==1?"s":""}
+            </div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+            <span style={{...pill(b.status==="tentative"?T.accent+"20":T.primary+"15",
+              b.status==="tentative"?T.accent:T.primary),fontSize:10}}>
+              {b.familyId==="maintenance"?"🔧 maintenance":b.status}
+            </span>
+            <span style={{fontSize:16,color:T.textDim,transform:expanded?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
+          </div>
+        </div>
+      </div>
+
+      {expanded&&(
+        <div style={{borderTop:`1px solid ${T.borderLight}`}}>
+
+          {/* ── Actions ── */}
+          {isUpcoming&&(
+            <div style={{display:"flex",gap:8,padding:"10px 14px",flexWrap:"wrap"}}>
+              {b.status==="tentative"&&!confirmWarn&&(
+                <button onClick={()=>{
+                  const confirmed=bookings.filter(bk=>bk.id!==b.id&&bk.status==="confirmed"&&bk.end>=b.start&&bk.start<=b.end);
+                  if(confirmed.length){
+                    setConfirmWarn({type:"blocked",msg:"Cannot confirm — van already confirmed for: "+confirmed.map(bk=>bk.destination).join(", ")});
+                    return;
+                  }
+                  const tentative=bookings.filter(bk=>bk.id!==b.id&&bk.status==="tentative"&&bk.end>=b.start&&bk.start<=b.end);
+                  if(tentative.length){
+                    setConfirmWarn({type:"warn",msg:"Another family has a tentative booking on these dates: "+tentative.map(bk=>bk.destination).join(", ")});
+                    return;
+                  }
+                  dispatch({type:"CONFIRM_BOOKING",id:b.id});
+                }} style={btn(T.primary,T.surface,{fontSize:12})}>✓ Confirm</button>
+              )}
+              {confirmWarn&&(
+                <div style={{width:"100%",background:confirmWarn.type==="blocked"?T.red+"12":T.accent+"12",
+                  border:`1px solid ${confirmWarn.type==="blocked"?T.red+"40":T.accent+"40"}`,
+                  borderRadius:T.radiusSm,padding:"10px 12px"}}>
+                  <p style={{margin:"0 0 8px",fontSize:12,color:confirmWarn.type==="blocked"?T.red:T.accent,fontWeight:600}}>
+                    {confirmWarn.type==="blocked"?"⛔ "+confirmWarn.msg:"⚠️ "+confirmWarn.msg}
+                  </p>
+                  <div style={{display:"flex",gap:8}}>
+                    {confirmWarn.type==="warn"&&(
+                      <button onClick={()=>{setConfirmWarn(null);dispatch({type:"CONFIRM_BOOKING",id:b.id});}}
+                        style={btn(T.primary,T.surface,{fontSize:11,padding:"4px 10px"})}>Confirm anyway</button>
+                    )}
+                    <button onClick={()=>setConfirmWarn(null)}
+                      style={btn("transparent",T.textMuted,{fontSize:11,padding:"4px 10px",border:`1px solid ${T.border}`})}>
+                      {confirmWarn.type==="blocked"?"OK":"Cancel"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              <DeleteButton label="Remove" message={`Remove ${b.destination}?`}
+                detail={`${b.start} to ${b.end}`}
+                onConfirm={()=>dispatch({type:"DEL_BOOKING",id:b.id})}
+                style={{fontSize:12}}/>
+            </div>
+          )}
+
+          {/* ── Odometer ── */}
+          <div style={{padding:"10px 14px",borderTop:`1px solid ${T.borderLight}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <span style={{fontSize:11,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.5}}>🔢 Odometer</span>
+              {isUpcoming&&!showOdoForm&&(
+                <button onClick={()=>setShowOdoForm(true)}
+                  style={btn(T.primary+"10",T.primary,{fontSize:10,padding:"3px 8px",border:`1px solid ${T.primary}20`})}>+ Add Reading</button>
+              )}
+            </div>
+            {odo.map((e,i)=>{
+              const km=e.endKm-e.startKm;
+              const cost=km*(odoRate||0.30)+(e.tolls||0);
+              return(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,
+                  padding:"6px 10px",borderRadius:T.radiusSm,
+                  background:e.paid?T.green+"10":T.accent+"08",
+                  border:`1px solid ${e.paid?T.green+"30":T.accent+"20"}`}}>
+                  <div style={{flex:1,fontSize:12}}>
+                    <span style={{fontWeight:700,color:T.primary}}>{km.toLocaleString()} km</span>
+                    <span style={{color:T.textDim,marginLeft:6,fontSize:11}}>{e.startKm.toLocaleString()} → {e.endKm.toLocaleString()}</span>
+                    <span style={{fontWeight:700,color:e.paid?T.green:T.accent,marginLeft:6}}>${cost.toFixed(2)}</span>
+                    {(e.tolls||0)>0&&<span style={{color:T.textDim,fontSize:11,marginLeft:4}}>(+${Number(e.tolls).toFixed(2)} tolls)</span>}
+                    {e.notes&&<span style={{color:T.textDim,fontSize:11,marginLeft:6,fontStyle:"italic"}}>{e.notes}</span>}
+                  </div>
+                  <button onClick={()=>onAddOdo&&onAddOdo({_action:"MARK_PAID",id:e.id})}
+                    style={btn(e.paid?T.green+"20":T.accent+"15",e.paid?T.green:T.accent,
+                      {fontSize:10,padding:"3px 8px",border:`1px solid ${e.paid?T.green+"40":T.accent+"30"}`})}>
+                    {e.paid?"✓ Paid":"To Pay"}
+                  </button>
+                </div>
+              );
+            })}
+            {odo.length===0&&!showOdoForm&&<p style={{fontSize:11,color:T.textDim,fontStyle:"italic",margin:0}}>No readings logged</p>}
+            {showOdoForm&&(
+              <div style={{marginTop:8,background:T.bg,borderRadius:T.radiusSm,padding:10,border:`1px solid ${T.border}`}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
+                  <div><label style={{...lbl,marginTop:0}}>Start km</label>
+                    <input style={inp} type="number" placeholder="45230" value={odoForm.startKm} onChange={ev=>setOdoForm(f=>({...f,startKm:ev.target.value}))}/></div>
+                  <div><label style={{...lbl,marginTop:0}}>End km</label>
+                    <input style={inp} type="number" placeholder="45480" value={odoForm.endKm} onChange={ev=>setOdoForm(f=>({...f,endKm:ev.target.value}))}/></div>
+                </div>
+                {odoForm.startKm&&odoForm.endKm&&parseFloat(odoForm.endKm)>parseFloat(odoForm.startKm)&&(
+                  <p style={{fontSize:11,color:T.primary,fontWeight:700,margin:"0 0 6px"}}>
+                    {(parseFloat(odoForm.endKm)-parseFloat(odoForm.startKm)).toLocaleString()} km
+                    · ${((parseFloat(odoForm.endKm)-parseFloat(odoForm.startKm))*(odoRate||0.30)+(odoForm.tolls?parseFloat(odoForm.tollAmt||0):0)).toFixed(2)}
+                  </p>
+                )}
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                  <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,cursor:"pointer"}}>
+                    <input type="checkbox" checked={odoForm.tolls} onChange={ev=>setOdoForm(f=>({...f,tolls:ev.target.checked,tollAmt:ev.target.checked?f.tollAmt:""}))}/> Tolls?
+                  </label>
+                  {odoForm.tolls&&<input style={{...inp,width:90}} type="number" step="0.10" placeholder="$0.00"
+                    value={odoForm.tollAmt} onChange={ev=>setOdoForm(f=>({...f,tollAmt:ev.target.value}))}/>}
+                </div>
+                <input style={{...inp,marginBottom:8}} placeholder="Notes (optional)" value={odoForm.notes} onChange={ev=>setOdoForm(f=>({...f,notes:ev.target.value}))}/>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>{
+                    const sk=parseFloat(odoForm.startKm);
+                    const ek=parseFloat(odoForm.endKm);
+                    if(!odoForm.startKm||!odoForm.endKm||isNaN(sk)||isNaN(ek)){
+                      alert("Please enter both start and end km.");return;
+                    }
+                    if(ek<=sk){alert("End km must be greater than start km.");return;}
+                    const entry={id:"odo"+Date.now(),familyId:b.familyId,
+                      date:b.start,startKm:sk,endKm:ek,
+                      tolls:odoForm.tolls?parseFloat(odoForm.tollAmt||0):0,
+                      paid:false,notes:odoForm.notes,bookingId:b.id};
+                    if(onAddOdo){onAddOdo(entry);}
+                    else{dispatch({type:"ADD_ODO",payload:entry});}
+                    setOdoForm({startKm:"",endKm:"",tolls:false,tollAmt:"",notes:""});setShowOdoForm(false);
+                  }} style={btn(T.primary,T.surface,{fontSize:12,flex:1})}>Save</button>
+                  <button onClick={()=>setShowOdoForm(false)}
+                    style={btn("transparent",T.textMuted,{fontSize:12,border:`1px solid ${T.border}`})}>Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Trip Plan (days) ── */}
+          <div style={{padding:"10px 14px",borderTop:`1px solid ${T.borderLight}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontSize:11,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.5}}>🗺️ Trip Plan</span>
+              <button onClick={()=>setFullEdit(true)}
+                style={btn(T.primary+"10",T.primary,{fontSize:10,padding:"3px 8px",border:`1px solid ${T.primary}20`})}>
+                ✏️ Edit Plan
+              </button>
+            </div>
+            {days.length===0?(
+              <p style={{fontSize:11,color:T.textDim,fontStyle:"italic",margin:0}}>No plan yet — tap Edit Plan to add activities.</p>
+            ):(
+              days.map((day,di)=>{
+                const acts=day.activities||[];
+                const d=new Date(day.date+"T12:00:00");
+                const dayName=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()];
+                return(
+                  <div key={di} style={{marginBottom:8}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:4}}>
+                      {dayName} {day.date}
+                    </div>
+                    {acts.length===0?(
+                      <p style={{fontSize:11,color:T.textDim,fontStyle:"italic",margin:0,paddingLeft:8}}>Nothing planned</p>
+                    ):(
+                      acts.map((act,ai)=>(
+                        <div key={ai} style={{display:"flex",gap:8,padding:"4px 8px",marginBottom:3,
+                          borderRadius:T.radiusSm,background:T.bg,border:`1px solid ${T.borderLight}`}}>
+                          {act.time&&<span style={{fontSize:11,color:T.textDim,minWidth:36}}>{act.time}</span>}
+                          <div style={{flex:1}}>
+                            <span style={{fontSize:12,fontWeight:600,color:T.text}}>{act.title}</span>
+                            {act.place&&<span style={{fontSize:11,color:T.primary,marginLeft:6}}>📍{act.place}</span>}
+                            {act.notes&&<span style={{fontSize:11,color:T.textDim,marginLeft:6,fontStyle:"italic"}}>{act.notes}</span>}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── OUR TRIPS PANEL ──────────────────────────────────────────────────────────
+function TripsPanel({bookings,dispatch,places,families,currentFamilyId,odoLog,odoRate,onAddOdo,autoOpenItinId,onAutoOpenHandled}){
+  const [showPast,setShowPast]=useState(false);
+  const [openId,setOpenId]=useState(autoOpenItinId||null);
+
   useEffect(()=>{
     if(autoOpenItinId){
-      const it=itineraries.find(i=>i.id===autoOpenItinId);
-      if(it) setEditing(it);
+      setOpenId(autoOpenItinId);
+      const isPast=past.some(b=>b.id===autoOpenItinId);
+      if(isPast) setShowPast(true);
       onAutoOpenHandled&&onAutoOpenHandled();
     }
   },[autoOpenItinId]);
 
-  // Only show THIS family's bookings/trips
-  const myBookings=[...bookings].filter(b=>b.familyId===currentFamilyId)
-    .sort((a,b)=>a.start.localeCompare(b.start));
-  const myItins=itineraries.filter(i=>i.familyId===currentFamilyId);
-
+  const fam=families.find(f=>f.id===currentFamilyId);
   const today=fmt(new Date());
+  const myBookings=[...bookings]
+    .filter(b=>b.familyId===currentFamilyId)
+    .sort((a,b)=>a.start.localeCompare(b.start));
   const upcoming=myBookings.filter(b=>b.end>=today);
   const past=myBookings.filter(b=>b.end<today);
 
-  const itinFor=b=>myItins.find(i=>i.bookingId===b.id);
-  const fam=families.find(f=>f.id===currentFamilyId);
+  const cardProps={fam,today,odoLog,odoRate,onAddOdo,dispatch,places,families,bookings,currentFamilyId,openId,setOpenId};
 
   return(
     <div>
-      {editing&&(
-        <ItineraryEditor itin={editing} dispatch={dispatch} places={places}
-          bookings={bookings.filter(b=>b.familyId===currentFamilyId)}
-          families={families} onClose={()=>setEditing(null)}/>
-      )}
-
-      {/* Upcoming */}
-      {upcoming.length===0&&!editing&&(
+      {upcoming.length===0&&(
         <div style={{...card({padding:24,textAlign:"center"})}}>
           <div style={{fontSize:36,marginBottom:8}}>🗺️</div>
-          <p style={{color:T.textDim,margin:"0 0 16px",fontSize:14}}>No upcoming trips for {fam?.name||"your family"}.</p>
-          <p style={{color:T.textDim,fontSize:12,margin:0}}>Tap <b>+&nbsp;BOOK</b> to make a booking — a trip plan will be created automatically.</p>
+          <p style={{color:T.textDim,margin:"0 0 8px",fontSize:14}}>No upcoming trips for {fam?.name}.</p>
+          <p style={{color:T.textDim,fontSize:12,margin:0}}>Tap <b>+ BOOK</b> to get started.</p>
         </div>
       )}
-
-      {upcoming.map(b=>{
-        const itin=itinFor(b);
-        const days=(itin?.days||[]);
-        const acts=days.reduce((s,d)=>s+(d.activities||[]).length,0);
-        const nights_count=nights(b.start,b.end);
-        return(
-          <div key={b.id} style={{...card({padding:14,marginBottom:12}),borderLeft:"4px solid "+(fam?.color||T.primary)}}>
-            {/* Header */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-              <div>
-                <div style={{fontWeight:800,color:T.text,fontSize:15}}>{b.destination}</div>
-                <div style={{color:T.textMuted,fontSize:12,marginTop:2}}>
-                  {b.start} → {b.end} · {nights_count} night{nights_count!==1?"s":""}
-                </div>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
-                <span style={{...pill(b.status==="tentative"?T.accent+"20":T.primary+"15",
-                  b.status==="tentative"?T.accent:T.primary),fontSize:10}}>{b.status}</span>
-                {b.status==="tentative"&&(
-                  <button onClick={()=>dispatch({type:"CONFIRM_BOOKING",id:b.id})}
-                    style={{...btn(T.primary+"15",T.primary,{fontSize:10,padding:"3px 8px",border:`1px solid ${T.primary}30`})}}>
-                    Confirm
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Trip plan section */}
-            {itin?(
-              <button onClick={()=>setEditing(itin)}
-                style={{width:"100%",textAlign:"left",background:T.primary+"08",border:`1px solid ${T.primary}25`,
-                  borderRadius:T.radiusSm,padding:"10px 12px",cursor:"pointer",display:"flex",
-                  alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                <div>
-                  <div style={{fontSize:12,fontWeight:700,color:T.primary}}>✏️ Edit Trip Plan</div>
-                  <div style={{fontSize:11,color:T.textDim,marginTop:2}}>
-                    {days.length} days · {acts} activit{acts===1?"y":"ies"} planned
-                    {itin.visibility==="shared"&&<span style={{color:T.green,marginLeft:6}}>· Shared</span>}
-                  </div>
-                </div>
-                <span style={{color:T.primary,fontSize:18}}>›</span>
-              </button>
-            ):(
-              <div style={{fontSize:12,color:T.textDim,fontStyle:"italic",marginBottom:8}}>No trip plan yet</div>
-            )}
-
-            {/* Remove button */}
-            <div style={{display:"flex",justifyContent:"flex-end"}}>
-              <DeleteButton label="Remove booking" message={`Remove ${b.destination}?`}
-                detail={`${b.start} to ${b.end}`}
-                onConfirm={()=>dispatch({type:"DEL_BOOKING",id:b.id})}
-                style={{fontSize:11,padding:"3px 10px"}}/>
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Past trips — collapsible */}
+      {upcoming.map(b=><BookingTripCard key={b.id} b={b} {...cardProps}/>)}
       {past.length>0&&(
         <div style={{marginTop:8}}>
           <button onClick={()=>setShowPast(!showPast)}
-            style={{...btn("transparent",T.textMuted,{width:"100%",display:"flex",justifyContent:"space-between",
-              alignItems:"center",padding:"10px 14px",border:`1px solid ${T.border}`,borderRadius:showPast?`${T.radius} ${T.radius} 0 0`:T.radius})}}>
+            style={btn("transparent",T.textMuted,{width:"100%",display:"flex",justifyContent:"space-between",
+              alignItems:"center",padding:"10px 14px",border:`1px solid ${T.border}`,
+              borderRadius:showPast?`${T.radius} ${T.radius} 0 0`:T.radius})}>
             <span style={{fontWeight:700,fontSize:13}}>📦 Past Trips ({past.length})</span>
             <span style={{fontSize:11,transform:showPast?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
           </button>
           {showPast&&(
-            <div style={{border:`1px solid ${T.border}`,borderTop:"none",borderRadius:`0 0 ${T.radius} ${T.radius}`,padding:12}}>
-              {past.map(b=>{
-                const itin=itinFor(b);
-                const acts=(itin?.days||[]).reduce((s,d)=>s+(d.activities||[]).length,0);
-                return(
-                  <div key={b.id} style={{...card({padding:12,marginBottom:8}),opacity:0.7,borderLeft:`3px solid ${fam?.color||T.primary}40`}}>
-                    <div style={{fontWeight:700,color:T.text,fontSize:13}}>{b.destination}</div>
-                    <div style={{color:T.textDim,fontSize:12}}>{b.start} → {b.end}</div>
-                    {itin&&(
-                      <button onClick={()=>setEditing(itin)}
-                        style={{...btn("transparent",T.primary,{fontSize:11,padding:"4px 0",border:"none"})}}>
-                        📖 View trip plan · {acts} activit{acts===1?"y":"ies"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+            <div style={{border:`1px solid ${T.border}`,borderTop:"none",
+              borderRadius:`0 0 ${T.radius} ${T.radius}`,padding:12}}>
+              {past.map(b=><BookingTripCard key={b.id} b={b} {...cardProps}/>)}
             </div>
           )}
         </div>
@@ -2670,11 +2835,11 @@ function OdometerPanel({odoLog,odoRate,dispatch,families,bookings,currentFamilyI
   );
 }
 
-function BookingList({bookings,dispatch,families,itineraries,onOpenItinerary,currentFamilyId,odoLog,odoRate,onAddOdo}){
+function BookingList({bookings,dispatch,families,onOpenItinerary,currentFamilyId,odoLog,odoRate,onAddOdo}){
   const sorted=[...bookings].sort((a,b)=>a.start.localeCompare(b.start));
   const upcoming=sorted.filter(b=>b.end>=fmt(TODAY));
   const past=sorted.filter(b=>b.end<fmt(TODAY));
-  const cardProps={families,itineraries,onOpenItinerary,currentFamilyId,dispatch,odoLog,odoRate,onAddOdo};
+  const cardProps={families,onOpenItinerary,currentFamilyId,dispatch,odoLog,odoRate,onAddOdo};
   return(
     <div>
       <p style={sectionHead}>Upcoming ({upcoming.length})</p>
@@ -2783,21 +2948,7 @@ export default function App(){
         }))});
         if(odoSettings?.[0]?.odo_rate) dispatch({type:"SET_ODO_RATE",payload:odoSettings[0].odo_rate});
 
-        // Auto-create missing trip itineraries for existing bookings
-        { const linkedIds=new Set((await supa.get("itineraries","select=booking_id")||[]).map(i=>i.booking_id).filter(Boolean));
-          const allBkgs=await supa.get("bookings","select=id,family_id,start_date,end_date,destination");
-          for(const b of (allBkgs||[])){
-            if(b.id&&!linkedIds.has(b.id)){
-              const itinId="it"+Date.now()+Math.random().toString(36).slice(2,6);
-              const days=generateDays(b.start_date,b.end_date);
-              const itin={id:itinId,title:b.destination||"Trip",familyId:b.family_id,
-                start:b.start_date,end:b.end_date,destination:b.destination||"",
-                notes:"",bookingId:b.id,visibility:"private",days};
-              dispatch({type:"ADD_ITINERARY",payload:itin});
-              await supa.upsert("itineraries",toDB.itin(itin));
-            }
-          }
-        }
+
         setLoading(false); loadingRef.current=false;
       } catch(e){
         console.error("Supabase load error:",e);
@@ -2872,21 +3023,35 @@ export default function App(){
       if(type.startsWith("RESET_")) return;
       switch(type){
         // BOOKINGS
-        case "ADD_BOOKING":    await supa.upsert("bookings", toDB.booking(payload));
+        case "ADD_BOOKING":
+          if(!payload.days||payload.days.length===0) payload={...payload,days:generateDays(payload.start,payload.end)};
+          await supa.upsert("bookings", toDB.booking(payload));
           await logActivity("Added booking", `${payload.destination} (${payload.start} to ${payload.end})`);
-          // Auto-create a linked trip itinerary
-          { const itinId="it"+Date.now();
-            const days=generateDays(payload.start, payload.end);
-            const itin={id:itinId,title:payload.destination,familyId:payload.familyId,
-              start:payload.start,end:payload.end,destination:payload.destination,
-              notes:"",bookingId:payload.id,visibility:"private",days};
-            dispatch({type:"ADD_ITINERARY",payload:itin});
-            await supa.upsert("itineraries", toDB.itin(itin));
-          }
+
           break;
         case "DEL_BOOKING":    await supa.delete("bookings", {id});
           await logActivity("Deleted booking", `Booking ID: ${id}`); break;
-        case "CONFIRM_BOOKING": await supa.update("bookings", {status:"confirmed"}, {id}); break;
+        case "UPD_BOOKING_DAYS":
+          await supa.update("bookings",{days:payload.days,...(payload.notes!==undefined?{notes:payload.notes}:{})},{id:payload.id});
+          break;
+        case "UPD_BOOKING": {
+          // Clash check before updating dates
+          if(payload.start&&payload.end){
+            const clash=state.bookings.filter(b=>
+              b.id!==payload.id&&b.status==="confirmed"&&
+              payload.start<=b.end&&payload.end>=b.start
+            );
+            if(clash.length){ alert("Date change blocked — clashes with: "+clash.map(b=>b.destination).join(", ")); break; }
+          }
+          await supa.update("bookings",{
+            start_date:payload.start, end_date:payload.end,
+            ...(payload.destination?{destination:payload.destination}:{})
+          },{id:payload.id});
+          break;
+        }
+        case "CONFIRM_BOOKING":
+          await supa.update("bookings", {status:"confirmed"}, {id});
+          break;
         // PLACES
         case "ADD_PLACE":      await supa.upsert("places", toDB.place(payload)); break;
         case "DEL_PLACE":      await supa.delete("places", {id});
@@ -2973,25 +3138,15 @@ export default function App(){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
-  const addPlaceToItinerary=(itinId,place,dayIndex=0)=>{
-    const itin=state.itineraries.find(i=>i.id===itinId);if(!itin)return;
-    const days=(itin.days||[]).map((d,i)=>i===dayIndex?{...d,activities:[...(d.activities||[]),{id:"a"+Date.now(),time:"",title:place.name,placeId:place.id,notes:"",location:""}]}:d);
-    sbDispatch({type:"UPDATE_ITINERARY",payload:{...itin,days}});setTab("trips");
+  const addPlaceToItinerary=(bookingId,place,dayIndex=0)=>{
+    const bk=state.bookings.find(b=>b.id===bookingId);if(!bk)return;
+    const days=(bk.days||[]).map((d,i)=>i===dayIndex?{...d,activities:[...(d.activities||[]),{id:"a"+Date.now(),time:"",title:place.name,placeId:place.id,notes:"",location:place.name}]}:d);
+    sbDispatch({type:"UPD_BOOKING_DAYS",payload:{id:bookingId,days}});
   };
 
   // Called from calendar: open Trips tab and edit a specific itinerary (or create one linked to a booking)
-  const handleOpenItinerary=(itinId,linkedBooking)=>{
-    if(itinId){
-      setOpenItinId(itinId);
-    } else if(linkedBooking){
-      // Create a new itinerary linked to this booking, then open it
-      const newId="it"+Date.now();
-      const blank={id:newId,title:linkedBooking.destination+" Trip",familyId:linkedBooking.familyId,
-        start:linkedBooking.start,end:linkedBooking.end,destination:linkedBooking.destination,
-        notes:"",days:[],bookingId:linkedBooking.id};
-      sbDispatch({type:"ADD_ITINERARY",payload:blank});
-      setOpenItinId(newId);
-    }
+  const handleOpenItinerary=(bookingId)=>{
+    setOpenItinId(bookingId||null);
     setTab("trips");
   };
 
@@ -3045,18 +3200,18 @@ export default function App(){
         {tab==="calendar"&&(
           <>
             <div style={card({padding:14,marginBottom:12})}>
-              <CalendarView bookings={state.bookings} families={families} itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily}/>
+              <CalendarView bookings={state.bookings} families={families} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily}/>
             </div>
             <CollapsibleBookings
               bookings={state.bookings} dispatch={sbDispatch} families={families}
-              itineraries={state.itineraries} onOpenItinerary={handleOpenItinerary}
+              onOpenItinerary={handleOpenItinerary}
               currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate}
               onAddOdo={e=>e._action==="MARK_PAID"?sbDispatch({type:"MARK_ODO_PAID",id:e.id}):sbDispatch({type:"ADD_ODO",payload:e})}
             />
           </>
         )}
-        {tab==="trips"    &&<TripsPanel itineraries={state.itineraries} dispatch={sbDispatch} places={state.places} bookings={state.bookings} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={()=>setOpenItinId(null)} currentFamilyId={currentFamily} onGoToTab={setTab}/>}
-        {tab==="places"   &&<PlacesPanel places={state.places} dispatch={sbDispatch} itineraries={state.itineraries} onPickItinerary={addPlaceToItinerary} families={families} currentFamilyId={currentFamily}/>}
+        {tab==="trips"    &&<TripsPanel bookings={state.bookings} dispatch={sbDispatch} places={state.places} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={()=>setOpenItinId(null)} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e=>e._action==="MARK_PAID"?sbDispatch({type:"MARK_ODO_PAID",id:e.id}):sbDispatch({type:"ADD_ODO",payload:e})}/>}
+        {tab==="places"   &&<PlacesPanel places={state.places} dispatch={sbDispatch} onPickItinerary={addPlaceToItinerary} families={families} currentFamilyId={currentFamily}/>}
         {tab==="guides"   &&<GuidesPanel guides={state.guides} dispatch={sbDispatch}/>}
         {tab==="kit"      &&<KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily}/>}
         {tab==="odo"      &&<OdometerPanel odoLog={state.odoLog} odoRate={state.odoRate} dispatch={sbDispatch} families={families} bookings={state.bookings} currentFamilyId={currentFamily}/>}
