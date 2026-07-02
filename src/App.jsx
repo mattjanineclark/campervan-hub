@@ -3073,16 +3073,18 @@ export default function App(){
       borderTop:`1px solid ${T.border}`,
     }}>
       {/* Icon grid */}
-      <div style={{paddingTop:8,height:84,display:"flex",alignItems:"flex-start"}}>
+      <div style={{paddingTop:8,paddingBottom:10,height:94,display:"flex",alignItems:"flex-start"}}>
           {/* Left 2x2 grid */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"38px 38px",flex:1,height:76}}>
             {TABS.slice(0,4).map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)}
-                style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",
-                  justifyContent:"center",border:"none",borderRadius:0,
-                  background:tab===t.id?T.primary+"10":"transparent",cursor:"pointer",
-                  color:tab===t.id?T.primary:T.textDim,padding:0,margin:0,overflow:"hidden"}}>
-                {tab===t.id&&<div style={{position:"absolute",top:0,left:4,right:4,height:2,borderRadius:"0 0 2px 2px",background:T.primary}}/>}
+                style={{display:"flex",flexDirection:"column",alignItems:"center",
+                  justifyContent:"center",border:"none",
+                  borderRadius:T.radiusSm,
+                  background:tab===t.id?T.primary+"25":"transparent",cursor:"pointer",
+                  color:tab===t.id?T.primary:T.textDim,
+                  margin:"2px 3px",padding:"2px 0",
+                  boxShadow:tab===t.id?`0 0 0 1px ${T.primary}35`:"none"}}>
                 <span style={{fontSize:26,lineHeight:1,display:"block"}}>{t.icon}</span>
                 <span style={{fontSize:8,fontWeight:tab===t.id?700:400,marginTop:-2,color:tab===t.id?T.primary:T.textDim,letterSpacing:0.2,display:"block"}}>{t.label}</span>
               </button>
@@ -3094,11 +3096,13 @@ export default function App(){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"38px 38px",flex:1,height:76}}>
             {TABS.slice(4,8).map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)}
-                style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",
-                  justifyContent:"center",border:"none",borderRadius:0,
-                  background:tab===t.id?T.primary+"10":"transparent",cursor:"pointer",
-                  color:tab===t.id?T.primary:T.textDim,padding:0,margin:0,overflow:"hidden"}}>
-                {tab===t.id&&<div style={{position:"absolute",top:0,left:4,right:4,height:2,borderRadius:"0 0 2px 2px",background:T.primary}}/>}
+                style={{display:"flex",flexDirection:"column",alignItems:"center",
+                  justifyContent:"center",border:"none",
+                  borderRadius:T.radiusSm,
+                  background:tab===t.id?T.primary+"25":"transparent",cursor:"pointer",
+                  color:tab===t.id?T.primary:T.textDim,
+                  margin:"2px 3px",padding:"2px 0",
+                  boxShadow:tab===t.id?`0 0 0 1px ${T.primary}35`:"none"}}>
                 <span style={{fontSize:26,lineHeight:1,display:"block"}}>{t.icon}</span>
                 <span style={{fontSize:8,fontWeight:tab===t.id?700:400,marginTop:-2,color:tab===t.id?T.primary:T.textDim,letterSpacing:0.2,display:"block"}}>{t.label}</span>
               </button>
