@@ -1042,7 +1042,7 @@ function AddPlaceModal({dispatch,onClose,currentFamilyId}){
   const CATS=["Campsite","Beach","Mountain","Holiday Park","Town","Nature Reserve","Other"];
   const submit=()=>{
     if(!picked.name||!form.review)return;
-    sbDispatch({type:"ADD_PLACE",payload:{id:"p"+Date.now(),name:picked.name,lat:parseFloat(picked.lat)||0,lng:parseFloat(picked.lng)||0,familyId:form.familyId,category:form.category,overallRating:form.rating,reviews:[{familyId:form.familyId,rating:form.rating,text:form.review,date:fmt(TODAY)}]}});
+    dispatch({type:"ADD_PLACE",payload:{id:"p"+Date.now(),name:picked.name,lat:parseFloat(picked.lat)||0,lng:parseFloat(picked.lng)||0,familyId:form.familyId,category:form.category,overallRating:form.rating,reviews:[{familyId:form.familyId,rating:form.rating,text:form.review,date:fmt(TODAY)}]}});
     onClose();
   };
   return(
@@ -1130,6 +1130,8 @@ function AddPlaceModal({dispatch,onClose,currentFamilyId}){
 }
 
 function PlaceCard({place,dispatch,onAddToItinerary,families}){
+  const [expanded,setExpanded]=useState(false);
+  const [showReview,setShowReview]=useState(false);
   const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
   const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
@@ -1142,7 +1144,7 @@ function PlaceCard({place,dispatch,onAddToItinerary,families}){
       <label style={lbl}>Review</label>
       <textarea style={{...inp,height:80}} placeholder="Share your experience..." value={txt} onChange={e=>setTxt(e.target.value)}/>
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{if(!txt.trim())return;sbDispatch({type:"ADD_REVIEW",payload:{placeId:place.id,review:{familyId:fam,rating:rat,text:txt,date:fmt(TODAY)}}});onClose();}} style={btn(T.primary,T.surface)}>Post Review</button>
+        <button onClick={()=>{if(!txt.trim())return;dispatch({type:"ADD_REVIEW",payload:{placeId:place.id,review:{familyId:fam,rating:rat,text:txt,date:fmt(TODAY)}}});onClose();}} style={btn(T.primary,T.surface)}>Post Review</button>
         <button onClick={onClose} style={{...btn("transparent",T.textMuted,{border:`1px solid ${T.border}`})}}>Cancel</button>
       </div>
     </Modal>);
@@ -1186,7 +1188,7 @@ function PlaceCard({place,dispatch,onAddToItinerary,families}){
           <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
             <button onClick={()=>setShowReview(true)} style={{...btn(T.primary+"15",T.primary,{fontSize:12}),border:`1px solid ${T.primary}30`}}>+ Review</button>
             <button onClick={()=>onAddToItinerary(place)} style={{...btn(T.accent+"15",T.accent,{fontSize:12}),border:`1px solid ${T.accent}30`}}>Add to Trip</button>
-            <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={()=>sbDispatch({type:"DEL_PLACE",id:place.id})} style={{fontSize:12}}/>
+            <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={()=>dispatch({type:"DEL_PLACE",id:place.id})} style={{fontSize:12}}/>
           </div>
         </div>
       )}
@@ -1209,11 +1211,11 @@ function PlacesPanel({places,dispatch,onPickItinerary,families,currentFamilyId})
         </div>
         <button onClick={()=>setAdding(true)} style={btn(T.primary,T.surface)}>+ Add Place</button>
       </div>
-      {showMap&&<><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420}/></MapTouchWrapper><div style={{marginTop:14}}>{places.map(p=><PlaceCard key={p.id} place={p} dispatch={sbDispatch} onAddToItinerary={handleAdd} families={families}/>)}</div></>}
+      {showMap&&<><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420}/></MapTouchWrapper><div style={{marginTop:14}}>{places.map(p=><PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families}/>)}</div></>}
       {view==="list"&&(places.length===0?<div style={{...card({padding:24,textAlign:"center"})}}>
         <p style={{color:T.textDim,margin:0}}>No places saved yet. Add your first family favourite!</p>
-      </div>:places.map(p=><PlaceCard key={p.id} place={p} dispatch={sbDispatch} onAddToItinerary={handleAdd} families={families}/>))}
-      {adding&&<AddPlaceModal dispatch={sbDispatch} onClose={()=>setAdding(false)} currentFamilyId={currentFamilyId}/>}
+      </div>:places.map(p=><PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families}/>))}
+      {adding&&<AddPlaceModal dispatch={dispatch} onClose={()=>setAdding(false)} currentFamilyId={currentFamilyId}/>}
       {pickItin&&!pickDay&&(
         <Modal title="Add to Trip" onClose={()=>setPickItin(null)} width={360}>
           <p style={{color:T.textMuted,fontSize:13,marginBottom:12}}>Which trip to add <b>{pickItin.name}</b> to?</p>
@@ -1517,7 +1519,7 @@ function ItinCard({itin,dispatch,places,families,onEdit,currentFamilyId,archived
             {archived?(
               <span style={{...pill(T.textDim+"20",T.textDim),fontSize:11}}>📦 Archived — read only</span>
             ):itin.familyId===currentFamilyId?(
-              <DeleteButton label="Delete Trip" message={`Delete "${itin.title}"?`} detail="All planned activities will be lost." onConfirm={()=>sbDispatch({type:"DEL_ITINERARY",id:itin.id})} style={{fontSize:12}}/>
+              <DeleteButton label="Delete Trip" message={`Delete "${itin.title}"?`} detail="All planned activities will be lost." onConfirm={()=>dispatch({type:"DEL_ITINERARY",id:itin.id})} style={{fontSize:12}}/>
             ):(
               <span style={{fontSize:12,color:T.textDim,fontStyle:"italic"}}>
                 {itin.visibility==="shared"?"Read-only — shared by "+families.find(f=>f.id===itin.familyId)?.name:"Private trip"}
