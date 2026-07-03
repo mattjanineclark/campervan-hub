@@ -556,7 +556,9 @@ function CalendarView({bookings,families,onOpenItinerary,currentFamilyId}){
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
   const fEmoji=id=>families.find(f=>f.id===id)?.emoji??"";
   const y=month.getFullYear(),m=month.getMonth();
-  const first=new Date(y,m,1).getDay(),dim=new Date(y,m+1,0).getDate();
+  const rawFirst=new Date(y,m,1).getDay(); // 0=Sun,1=Mon...6=Sat
+  const first=(rawFirst+6)%7; // convert to Mon=0,Tue=1...Sun=6
+  const dim=new Date(y,m+1,0).getDate();
   const cells=[];for(let i=0;i<first;i++)cells.push(null);for(let d=1;d<=dim;d++)cells.push(d);
   const bkDay=d=>{if(!d)return[];const ds=fmt(new Date(y,m,d));return bookings.filter(b=>ds>=b.start&&ds<=b.end);};
   const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
