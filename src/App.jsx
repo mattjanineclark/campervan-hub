@@ -396,7 +396,7 @@ function PinPad({familyId,families,onSuccess,onBack}){
 function LoginScreen({families,vanPhoto,vanName,onLogin}){
   const [sel,setSel]=useState(null);
   return(
-    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Inter,Segoe UI,system-ui,sans-serif",padding:14}}>
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Inter,Segoe UI,system-ui,sans-serif",padding:14,paddingBottom:"calc(14px + env(safe-area-inset-bottom))"}}>
       <div style={{width:"100%",maxWidth:420}}>
         {/* Van photo or illustrated header */}
         <div style={{textAlign:"center",marginBottom:36}}>
@@ -441,7 +441,9 @@ function LoginScreen({families,vanPhoto,vanName,onLogin}){
         <p style={{textAlign:"center",color:T.textDim,fontSize:11,marginTop:20,lineHeight:1.7}}>
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
-        <p style={{textAlign:"center",color:T.textDim,fontSize:11,marginTop:8}}>v2.0</p>
+        <p style={{textAlign:"center",color:T.textMuted,fontSize:12,marginTop:12,fontWeight:600,letterSpacing:0.5}}>
+          Adventure Hub · v2.0
+        </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
     </div>
