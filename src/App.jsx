@@ -441,7 +441,7 @@ function LoginScreen({families,vanPhoto,vanName,onLogin}){
         <p style={{textAlign:"center",color:T.textDim,fontSize:11,marginTop:20,lineHeight:1.7}}>
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
-        <p style={{textAlign:"center",color:T.borderLight,fontSize:10,marginTop:8}}>v2.0</p>
+        <p style={{textAlign:"center",color:T.textDim,fontSize:11,marginTop:8}}>v2.0</p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
     </div>
