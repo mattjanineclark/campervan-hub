@@ -229,7 +229,7 @@ const SEED_RULES = [
 const INIT = {
   bookings:[], places:[], equipment:[],
   guides:[], rules:[], itineraries:[],
-  families:DEFAULT_FAMILIES, vanPhoto:null, vanName:"The Family Campervan",
+  families:DEFAULT_FAMILIES, vanPhoto:null, vanName:"The Family Campervan", vanManual:null,
   packingByFamily:{}, // { familyId: [{id,category,item,status}] }
   odoLog:[], // [{id,familyId,date,startKm,endKm,notes,bookingId}]
   odoRate:0.30, // cost per km in dollars
@@ -263,6 +263,7 @@ function reducer(state,{type,payload,id}){
     case "DEL_FAMILY":       return {...state,families:state.families.filter(f=>f.id!==id)};
     case "SET_VAN_PHOTO":    return {...state,vanPhoto:payload};
     case "SET_VAN_NAME":     return {...state,vanName:payload};
+    case "SET_VAN_MANUAL":   return {...state,vanManual:payload};
     // Supabase bulk load actions
     case "RESET_FAMILIES":    return {...state,families:payload};
     case "RESET_BOOKINGS":    return {...state,bookings:payload};
@@ -1892,7 +1893,7 @@ function GuideForm({form,setForm,onSave,onCancel,onDel,onFileUpload,uploading}){
   );
 }
 
-function GuidesPanel({guides,dispatch}){
+function GuidesPanel({guides,dispatch,vanManual,onSetManual}){
   const [open,setOpen]=useState(null);const [editing,setEditing]=useState(null);const [addingNew,setAddingNew]=useState(false);
   const [ef,setEf]=useState({});const [nf,setNf]=useState({title:"",icon:"📄",content:"",attachments:[],links:[]});
   const [search,setSearch]=useState("");
@@ -1921,6 +1922,41 @@ function GuidesPanel({guides,dispatch}){
   };
   return(
     <div>
+      {/* ── Van Manual — pinned at top ── */}
+      <div style={{...card({padding:14,marginBottom:16}),border:`2px solid ${T.primary}30`,background:T.primary+"06"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:vanManual?8:0}}>
+          <span style={{fontSize:22}}>📋</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,color:T.primary,fontSize:14}}>Van Manual</div>
+            <div style={{fontSize:11,color:T.textDim}}>Full owner's manual for the campervan</div>
+          </div>
+          <label style={{...btn(T.primary,T.surface,{fontSize:11,padding:"5px 10px",cursor:"pointer"})}}>
+            {vanManual?"Replace":"Upload PDF"}
+            <input type="file" accept=".pdf" style={{display:"none"}} onChange={async e=>{
+              const file=e.target.files[0];if(!file)return;
+              if(file.size>20*1024*1024){alert("File too large — max 20MB.");return;}
+              try{
+                const path=`manuals/van-manual-${Date.now()}.pdf`;
+                const url=await supa.uploadImage(file,path);
+                onSetManual(url);
+              }catch(err){
+                // Fall back to base64
+                const r=new FileReader();
+                r.onload=()=>onSetManual(r.result);
+                r.readAsDataURL(file);
+              }
+            }}/>
+          </label>
+        </div>
+        {vanManual&&(
+          <button onClick={()=>{
+            const a=document.createElement("a");a.href=vanManual;a.target="_blank";a.click();
+          }} style={{...btn(T.primary+"15",T.primary,{fontSize:12,width:"100%",border:`1px solid ${T.primary}30`})}}>
+            📖 Open Van Manual
+          </button>
+        )}
+        {!vanManual&&<p style={{fontSize:11,color:T.textDim,margin:0,marginTop:4}}>No manual uploaded yet.</p>}
+      </div>
       <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
         <input style={{...inp,flex:1}} placeholder="Search guides..." value={search}
           onChange={e=>{setSearch(e.target.value);setOpen(null);}}/>
@@ -2960,7 +2996,7 @@ export default function App(){
         // Odometer
         const [odoLog, odoSettings] = await Promise.all([
           supa.get("odometer_log","order=date.desc"),
-          supa.get("van_settings","id=eq.1&select=odo_rate")
+          supa.get("van_settings","id=eq.1&select=odo_rate,van_manual")
         ]);
         if(odoLog&&odoLog.length>0) dispatch({type:"RESET_ODO",payload:odoLog.map(e=>({
           id:e.id, familyId:e.family_id, date:e.date,
@@ -2969,6 +3005,7 @@ export default function App(){
           notes:e.notes||"", bookingId:e.booking_id||""
         }))});
         if(odoSettings?.[0]?.odo_rate) dispatch({type:"SET_ODO_RATE",payload:odoSettings[0].odo_rate});
+        if(odoSettings?.[0]?.van_manual) dispatch({type:"SET_VAN_MANUAL",payload:odoSettings[0].van_manual});
 
 
         setLoading(false); loadingRef.current=false;
@@ -3150,8 +3187,9 @@ export default function App(){
           { const f=state.families.find(f=>f.id===id);
             await logActivity("Removed family", f?.name||id); } break;
         // VAN SETTINGS
-        case "SET_VAN_NAME":  await supa.update("van_settings", {van_name:payload}, {id:1}); break;
-        case "SET_VAN_PHOTO": await supa.update("van_settings", {van_photo:payload}, {id:1}); break;
+        case "SET_VAN_NAME":   await supa.update("van_settings", {van_name:payload}, {id:1}); break;
+        case "SET_VAN_PHOTO":  await supa.update("van_settings", {van_photo:payload}, {id:1}); break;
+        case "SET_VAN_MANUAL": await supa.update("van_settings", {van_manual:payload}, {id:1}); break;
         default: break;
       }
     } catch(e){
@@ -3234,7 +3272,7 @@ export default function App(){
         )}
         {tab==="trips"    &&<TripsPanel bookings={state.bookings} dispatch={sbDispatch} places={state.places} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={()=>setOpenItinId(null)} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e=>e._action==="MARK_PAID"?sbDispatch({type:"MARK_ODO_PAID",id:e.id}):sbDispatch({type:"ADD_ODO",payload:e})}/>}
         {tab==="places"   &&<PlacesPanel places={state.places} dispatch={sbDispatch} onPickItinerary={addPlaceToItinerary} families={families} currentFamilyId={currentFamily}/>}
-        {tab==="guides"   &&<GuidesPanel guides={state.guides} dispatch={sbDispatch}/>}
+        {tab==="guides"   &&<GuidesPanel guides={state.guides} dispatch={sbDispatch} vanManual={state.vanManual} onSetManual={url=>sbDispatch({type:"SET_VAN_MANUAL",payload:url})}/>}
         {tab==="kit"      &&<KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily}/>}
         {tab==="odo"      &&<OdometerPanel odoLog={state.odoLog} odoRate={state.odoRate} dispatch={sbDispatch} families={families} bookings={state.bookings} currentFamilyId={currentFamily}/>}
         {tab==="rules"    &&<RulesPanel rules={state.rules} dispatch={sbDispatch}/>}
