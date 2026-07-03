@@ -1975,12 +1975,7 @@ function GuidesPanel({guides,dispatch,vanManual,onSetManual}){
             ?<GuideForm form={ef} setForm={setEf} uploading={uploading} onFileUpload={e=>handleFile(e,false)} onSave={()=>{dispatch({type:"UPDATE_GUIDE",payload:ef});setEditing(null);}} onCancel={()=>setEditing(null)} onDel={()=>{dispatch({type:"DEL_GUIDE",id:g.id});setEditing(null);}}/>
             :(<div style={card({padding:0,overflow:"hidden"})}>
                 <button onClick={()=>setOpen(open===g.id?null:g.id)}
-                  ref={el=>{
-                    // Auto-expand if search matches content but not title
-                    if(el&&search&&g.content.toLowerCase().includes(search.toLowerCase())&&!g.title.toLowerCase().includes(search.toLowerCase())&&open!==g.id){
-                      setOpen(g.id);
-                    }
-                  }} style={{width:"100%",background:"transparent",border:"none",padding:"11px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",textAlign:"left"}} onMouseEnter={e=>e.currentTarget.style.background=T.cardHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  style={{width:"100%",background:"transparent",border:"none",padding:"11px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",textAlign:"left"}} onMouseEnter={e=>e.currentTarget.style.background=T.cardHover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                   <span style={{fontWeight:600,color:T.text,fontSize:14}}>
                     {g.icon} {search&&g.title.toLowerCase().includes(search.toLowerCase())
                       ?<>{g.title.slice(0,g.title.toLowerCase().indexOf(search.toLowerCase()))}<mark style={{background:T.yellow+"60",borderRadius:3,padding:"0 1px"}}>{g.title.slice(g.title.toLowerCase().indexOf(search.toLowerCase()),g.title.toLowerCase().indexOf(search.toLowerCase())+search.length)}</mark>{g.title.slice(g.title.toLowerCase().indexOf(search.toLowerCase())+search.length)}</>
@@ -2552,14 +2547,28 @@ function ActivityLog({families}){
   const load=async()=>{
     setLoading(true);
     try{
-      const data=await supa.get("activity_log","order=created_at.desc&limit=50");
+      const data=await supa.get("activity_log","order=created_at.desc&limit=100");
       setLogs(data||[]);
     }catch(e){ console.error(e); }
     setLoading(false);
   };
 
-  const fName=id=>(families||[]).find(f=>f.id===id)?.name||"Unknown";
-  const fColor=id=>(families||[]).find(f=>f.id===id)?.color||T.textDim;
+  const fam=id=>(families||[]).find(f=>f.id===id);
+  const dayLabel=ts=>{
+    const d=new Date(ts);
+    const today=new Date();const yesterday=new Date(today);yesterday.setDate(today.getDate()-1);
+    if(d.toDateString()===today.toDateString()) return "Today";
+    if(d.toDateString()===yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString("en-NZ",{weekday:"short",day:"numeric",month:"short"});
+  };
+
+  // Group logs by day
+  const grouped=logs.reduce((acc,log)=>{
+    const key=log.created_at?new Date(log.created_at).toDateString():"Unknown";
+    if(!acc[key]){acc[key]={label:log.created_at?dayLabel(log.created_at):"Unknown",items:[]};}
+    acc[key].items.push(log);
+    return acc;
+  },{});
 
   return(
     <div style={{...card({padding:14,marginBottom:12})}}>
@@ -2570,18 +2579,29 @@ function ActivityLog({families}){
       </button>
       {open&&(
         <div style={{marginTop:12}}>
+          <button onClick={load} style={{...btn(T.bg,T.textMuted,{fontSize:11,padding:"4px 10px",border:`1px solid ${T.border}`,marginBottom:10})}}>↻ Refresh</button>
           {loading&&<p style={{color:T.textDim,fontSize:13}}>Loading...</p>}
           {!loading&&logs.length===0&&<p style={{color:T.textDim,fontSize:13}}>No activity recorded yet.</p>}
-          {logs.map((log,i)=>(
-            <div key={i} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderLight}`,alignItems:"flex-start"}}>
-              <div style={{width:8,height:8,borderRadius:99,background:fColor(log.family_id),marginTop:5,flexShrink:0}}/>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,fontWeight:600,color:T.text}}>{log.action}</div>
-                {log.detail&&<div style={{fontSize:11,color:T.textMuted,marginTop:1}}>{log.detail}</div>}
-                <div style={{fontSize:10,color:T.textDim,marginTop:2}}>
-                  {fName(log.family_id)} &middot; {log.created_at?new Date(log.created_at).toLocaleString("en-NZ",{dateStyle:"short",timeStyle:"short"}):""}
-                </div>
+          {Object.values(grouped).map((group,gi)=>(
+            <div key={gi} style={{marginBottom:16}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.8,marginBottom:6,paddingBottom:4,borderBottom:`1px solid ${T.borderLight}`}}>
+                {group.label}
               </div>
+              {group.items.map((log,i)=>{
+                const f=fam(log.family_id);
+                return(
+                  <div key={i} style={{display:"flex",gap:10,padding:"7px 0",borderBottom:i<group.items.length-1?`1px solid ${T.borderLight}`:"none",alignItems:"flex-start"}}>
+                    <div style={{fontSize:16,lineHeight:1,marginTop:1,flexShrink:0}}>{f?.emoji||"🚐"}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:12,fontWeight:600,color:T.text}}>{log.action}</div>
+                      {log.detail&&<div style={{fontSize:11,color:T.textMuted,marginTop:1}}>{log.detail}</div>}
+                    </div>
+                    <div style={{fontSize:10,color:T.textDim,flexShrink:0,paddingTop:2}}>
+                      {log.created_at?new Date(log.created_at).toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"}):""}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ))}
         </div>
@@ -2661,9 +2681,13 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
               packingByFamily:state.packingByFamily,
               guides:state.guides,
               rules:state.rules,
+              odoLog:state.odoLog,
+              odoRate:state.odoRate,
               vanName:state.vanName,
+              vanPhoto:state.vanPhoto,
+              vanManual:state.vanManual,
               exportedAt:new Date().toISOString(),
-              version:"1.0"
+              version:"2.0"
             },null,2);
             const blob=new Blob([data],{type:"application/json"});
             const url=URL.createObjectURL(blob);
@@ -2691,6 +2715,10 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
                   if(data.guides) dispatch({type:"RESET_GUIDES",payload:data.guides});
                   if(data.rules) dispatch({type:"RESET_RULES",payload:data.rules});
                   if(data.vanName) dispatch({type:"SET_VAN_NAME",payload:data.vanName});
+                  if(data.vanPhoto) dispatch({type:"SET_VAN_PHOTO",payload:data.vanPhoto});
+                  if(data.vanManual) dispatch({type:"SET_VAN_MANUAL",payload:data.vanManual});
+                  if(data.odoLog) dispatch({type:"RESET_ODO",payload:data.odoLog});
+                  if(data.odoRate) dispatch({type:"SET_ODO_RATE",payload:data.odoRate});
                   alert("Backup restored successfully!");
                 } catch(err){ alert("Error reading backup file: "+err.message); }
               };
@@ -2700,23 +2728,6 @@ function SettingsPanel({state,dispatch,currentFamilyId}){
         </div>
       </div>
 
-      {/* How-To Guides shortcut */}
-      <div style={{...card({padding:14,marginBottom:12})}}>
-        <p style={{...sectionHead,marginBottom:4}}>Guides & Manuals</p>
-        <p style={{color:T.textMuted,fontSize:13,margin:"0 0 14px",lineHeight:1.5}}>Add, edit or remove how-to guides, user manual links and attached PDFs from the <b>How-To</b> tab.</p>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <div style={{...pill(T.primary+"15",T.primary),fontSize:12,padding:"6px 12px"}}>{(state.guides||[]).length} guides</div>
-          <div style={{...pill(T.accent+"15",T.accent),fontSize:12,padding:"6px 12px"}}>{(state.guides||[]).reduce((a,g)=>a+(g?.links?.length||0),0)} links</div>
-          <div style={{...pill(T.sky+"20",T.sky),fontSize:12,padding:"6px 12px"}}>{(state.guides||[]).reduce((a,g)=>a+(g?.attachments?.length||0),0)} attachments</div>
-        </div>
-      </div>
-
-      {/* Data note */}
-      <div style={{...card({padding:12,background:T.yellow+"15",border:`1px solid ${T.yellow}40`})}}>
-        <p style={{margin:0,fontSize:13,color:T.text,lineHeight:1.6}}>
-          <b>Note:</b> All data is stored in memory for this session. Refreshing the page resets the app. For permanent storage, consider exporting to a shared Google Sheet or contacting a developer to add a backend.
-        </p>
-      </div>
     </div>
   );
 }
