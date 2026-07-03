@@ -132,19 +132,19 @@ const LIGHT_THEME = {
 };
 
 const DARK_THEME = {
-  bg: "#0f1a12", surface: "#16241a", card: "#16241a", cardHover: "#1c2e21",
-  border: "#2a3f2d", borderLight: "#233527",
+  bg: "#14161a", surface: "#1c1f24", card: "#1c1f24", cardHover: "#24282f",
+  border: "#2e333b", borderLight: "#282c33",
   primary: "#52b788", primaryDark: "#2d6a4f", primaryLight: "#95d5b2", primaryGlow: "rgba(82,183,136,0.15)",
   accent: "#f4954a", accentGlow: "rgba(244,149,74,0.15)",
   sky: "#6fb1e0", skyGlow: "rgba(111,177,224,0.15)",
   sand: "#d9bd8c", green: "#57b98d", green2: "#57b98d",
   yellow: "#f0d27f", red: "#e0672f",
-  text: "#eaf2e8", textMuted: "#a8c4a0", textDim: "#5f7a58",
+  text: "#eef0f2", textMuted: "#a3aab3", textDim: "#63696f",
   radius: "12px", radiusSm: "8px",
   shadow: "0 2px 16px rgba(0,0,0,0.35)",
   shadowMd: "0 4px 24px rgba(0,0,0,0.45)",
   shadowLg: "0 8px 40px rgba(0,0,0,0.6)",
-  inputBg: "#1c2e21", overlay: "rgba(0,0,0,0.55)",
+  inputBg: "#24282f", overlay: "rgba(0,0,0,0.55)",
 };
 
 const T = { ...LIGHT_THEME };
