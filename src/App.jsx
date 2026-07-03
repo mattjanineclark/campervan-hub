@@ -2951,17 +2951,11 @@ export default function App(){
   useEffect(()=>{
     async function loadAll(){
       try{
-        const [families,vs,bookings,places,reviews,equipment,packing,itins,guides,rules] = await Promise.all([
+        // ── Phase 1: Essential data — show app ASAP ───────────────────────
+        const [families,vs,bookings] = await Promise.all([
           supa.get("families","order=name"),
           supa.get("van_settings","id=eq.1"),
           supa.get("bookings","order=start_date"),
-          supa.get("places","order=name"),
-          supa.get("reviews","order=place_id"),
-          supa.get("equipment","order=category,item"),
-          supa.get("family_packing","order=category,item"),
-          supa.get("itineraries","order=start_date"),
-          supa.get("guides","order=title"),
-          supa.get("rules","order=id"),
         ]);
 
         if(families&&families.length>0) dispatch({type:"RESET_FAMILIES",payload:families.map(f=>fromDB.family(f))});
@@ -2970,9 +2964,26 @@ export default function App(){
         if(vans[0]){
           if(vans[0].van_name) sbDispatch({type:"SET_VAN_NAME",payload:vans[0].van_name});
           if(vans[0].van_photo) sbDispatch({type:"SET_VAN_PHOTO",payload:vans[0].van_photo});
+          if(vans[0].van_manual) dispatch({type:"SET_VAN_MANUAL",payload:vans[0].van_manual});
+          if(vans[0].odo_rate) dispatch({type:"SET_ODO_RATE",payload:vans[0].odo_rate});
         }
 
         dispatch({type:"RESET_BOOKINGS",payload:(bookings||[]).map(fromDB.booking).filter(Boolean)});
+
+        // App is usable now — show it
+        setLoading(false); loadingRef.current=false;
+
+        // ── Phase 2: Background load everything else ──────────────────────
+        const [places,reviews,equipment,packing,itins,guides,rules,odoLog] = await Promise.all([
+          supa.get("places","order=name"),
+          supa.get("reviews","order=place_id"),
+          supa.get("equipment","order=category,item"),
+          supa.get("family_packing","order=category,item"),
+          supa.get("itineraries","order=start_date"),
+          supa.get("guides","order=title"),
+          supa.get("rules","order=id"),
+          supa.get("odometer_log","order=date.desc"),
+        ]);
 
         const placesWithReviews=(places||[]).map(p=>{
           const pr=(reviews||[]).filter(r=>r.place_id===p.id);
@@ -2980,7 +2991,6 @@ export default function App(){
             overallRating:pr.length?Math.round(pr.reduce((a,r)=>a+r.rating,0)/pr.length):0};
         });
         dispatch({type:"RESET_PLACES",payload:placesWithReviews});
-
         dispatch({type:"RESET_EQUIPMENT",payload:(equipment||[]).map(fromDB.equip).filter(Boolean)});
 
         const pbf={};
@@ -2988,10 +2998,10 @@ export default function App(){
         dispatch({type:"RESET_PACKING",payload:pbf});
 
         dispatch({type:"RESET_ITINERARIES",payload:(itins||[]).map(fromDB.itin).filter(Boolean)});
+
         if(guides&&guides.length>0){dispatch({type:"RESET_GUIDES",payload:guides.map(fromDB.guide)});}
         else{
           dispatch({type:"RESET_GUIDES",payload:SEED_GUIDES});
-          // Insert each guide without id (let DB auto-assign), or upsert with title as key
           for(const g of SEED_GUIDES){
             await supa.upsert("guides",{title:g.title,icon:g.icon,content:g.content,links:g.links||[],attachments:g.attachments||[]});
           }
@@ -3004,22 +3014,13 @@ export default function App(){
           }
         }
 
-        // Odometer
-        const [odoLog, odoSettings] = await Promise.all([
-          supa.get("odometer_log","order=date.desc"),
-          supa.get("van_settings","id=eq.1&select=odo_rate,van_manual")
-        ]);
         if(odoLog&&odoLog.length>0) dispatch({type:"RESET_ODO",payload:odoLog.map(e=>({
           id:e.id, familyId:e.family_id, date:e.date,
           startKm:e.start_km, endKm:e.end_km,
           tolls:e.tolls||0, paid:e.paid||false,
           notes:e.notes||"", bookingId:e.booking_id||""
         }))});
-        if(odoSettings?.[0]?.odo_rate) dispatch({type:"SET_ODO_RATE",payload:odoSettings[0].odo_rate});
-        if(odoSettings?.[0]?.van_manual) dispatch({type:"SET_VAN_MANUAL",payload:odoSettings[0].van_manual});
 
-
-        setLoading(false); loadingRef.current=false;
       } catch(e){
         console.error("Supabase load error:",e);
         setDbError(true);
