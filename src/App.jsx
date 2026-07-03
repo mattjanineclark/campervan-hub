@@ -93,7 +93,7 @@ const supa = {
 
 // Convert DB row format to app format and back
 const fromDB = {
-  booking: b => b ? ({id:b.id, familyId:b.family_id, start:b.start_date, end:b.end_date, destination:b.destination, notes:b.notes||"", status:b.status, days:b.days||[]}) : null,
+  booking: b => b ? ({id:b.id, familyId:b.family_id, start:b.start_date, end:b.end_date, destination:b.destination, notes:b.notes||"", status:b.status, days:b.days||[], collaborators:b.collaborators||[]}) : null,
   place:   p => p ? ({id:p.id, name:p.name, familyId:p.family_id, category:p.category, lat:p.lat, lng:p.lng, overallRating:p.overall_rating||0, reviews:[]}) : null,
   review:  r => r ? ({familyId:r.family_id, rating:r.rating, text:r.review_text, date:r.review_date}) : null,
   itin:    i => i ? ({id:i.id, title:i.title, familyId:i.family_id, start:i.start_date||"", end:i.end_date||"", destination:i.destination||"", notes:i.notes||"", bookingId:i.booking_id||"", visibility:"private", days:i.days||[]}) : null,
@@ -104,7 +104,7 @@ const fromDB = {
   rule:    r => r ? ({id:r.id, icon:r.icon, rule:r.rule, detail:r.detail||""}) : null,
 };
 const toDB = {
-  booking: b => ({id:b.id, family_id:b.familyId, start_date:b.start, end_date:b.end, destination:b.destination, notes:b.notes, status:b.status, days:b.days||[]}),
+  booking: b => ({id:b.id, family_id:b.familyId, start_date:b.start, end_date:b.end, destination:b.destination, notes:b.notes, status:b.status, days:b.days||[], collaborators:b.collaborators||[]}),
   place:   p => ({id:p.id, name:p.name, family_id:p.familyId, category:p.category, lat:p.lat, lng:p.lng, overall_rating:p.overallRating||0}),
   review:  (placeId,r) => ({place_id:placeId, family_id:r.familyId, rating:r.rating, review_text:r.text, review_date:r.date}),
   itin:    i => ({id:i.id, title:i.title, family_id:i.familyId, start_date:i.start||null, end_date:i.end||null, destination:i.destination||"", notes:i.notes||"", booking_id:i.bookingId||null, visibility:i.visibility||"private", days:i.days||[]}),
@@ -240,6 +240,7 @@ function reducer(state,{type,payload,id}){
     case "DEL_BOOKING":      return {...state,bookings:state.bookings.filter(b=>b.id!==id)};
     case "CONFIRM_BOOKING":  return {...state,bookings:state.bookings.map(b=>b.id===id?{...b,status:"confirmed"}:b)};
     case "UPD_BOOKING":      return {...state,bookings:state.bookings.map(b=>b.id===payload.id?{...b,...payload}:b)};
+    case "UPD_BOOKING_COLLAB": return {...state,bookings:state.bookings.map(b=>b.id===payload.id?{...b,collaborators:payload.collaborators}:b)};
     case "UPD_BOOKING_DAYS":  return {...state,bookings:state.bookings.map(b=>b.id===payload.id?{...b,days:payload.days,notes:payload.notes!==undefined?payload.notes:b.notes}:b)};
     case "ADD_PLACE":        return {...state,places:[...state.places,payload]};
     case "DEL_PLACE":        return {...state,places:state.places.filter(p=>p.id!==id)};
@@ -634,8 +635,12 @@ function CalendarView({bookings,families,onOpenItinerary,currentFamilyId}){
               {bks.slice(0,2).map(b=>(
                 <div key={b.id} style={{borderRadius:4,fontSize:8,fontWeight:600,color:"white",padding:"2px 4px",marginBottom:2,
                   background:b.status==="tentative"?`repeating-linear-gradient(45deg,${fColor(b.familyId)}99 0,${fColor(b.familyId)}99 3px,${fColor(b.familyId)}44 3px,${fColor(b.familyId)}44 6px)`:fColor(b.familyId),
-                  opacity:0.9,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                  opacity:0.9,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis",display:"flex",alignItems:"center",gap:1}}>
                   <FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={14} fontSize={10}/>
+                  {(b.collaborators||[]).slice(0,2).map(id=>{
+                    const cf=families.find(f=>f.id===id);
+                    return cf?<FamilyAvatar key={id} family={cf} size={11} fontSize={8}/>:null;
+                  })}
                 </div>
               ))}
             </div>
@@ -873,7 +878,7 @@ function DateRangePicker({startDate,endDate,onChange,minDate,bookings=[],familie
 function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
   const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
-  const [f,setF]=useState({familyId:currentFamilyId||"f1",start:"",end:"",destination:"",notes:"",status:"tentative"});
+  const [f,setF]=useState({familyId:currentFamilyId||"f1",start:"",end:"",destination:"",notes:"",status:"tentative",collaborators:[]});
   const [err,setErr]=useState("");
   const h=(k,v)=>{setF(p=>({...p,[k]:v}));if(k==="start"||k==="end")setErr("");};
   const doSave=()=>{
@@ -938,6 +943,22 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
       <input style={inp} placeholder="e.g. Blue Lake Campsite" value={f.destination} onChange={e=>h("destination",e.target.value)}/>
       <label style={lbl}>Notes</label>
       <textarea style={{...inp,height:60,resize:"vertical"}} value={f.notes} onChange={e=>h("notes",e.target.value)}/>
+      <label style={lbl}>Invite Families to Collaborate</label>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:6}}>
+        {(families||[]).filter(fam=>fam.id!==currentFamilyId&&fam.id!=="maintenance").map(fam=>{
+          const sel=(f.collaborators||[]).includes(fam.id);
+          return(
+            <button key={fam.id} type="button" onClick={()=>setF(p=>({...p,collaborators:sel?p.collaborators.filter(id=>id!==fam.id):[...(p.collaborators||[]),fam.id]}))}
+              style={{...btn(sel?fam.color+"20":"transparent",sel?fam.color:T.textMuted,
+                {fontSize:12,padding:"6px 12px",border:`2px solid ${sel?fam.color:T.border}`,transition:"all 0.15s",display:"flex",alignItems:"center",gap:4})}}>
+              <span>{fam.emoji}</span>
+              <span>{fam.name.split(" ")[0]}</span>
+              {sel&&<span>✓</span>}
+            </button>
+          );
+        })}
+      </div>
+      <p style={{fontSize:11,color:T.textDim,margin:"0 0 8px"}}>Collaborators share the trip plan and can add activities.</p>
       {err&&(
         <div style={{background:err.warning?T.accent+"12":T.red+"12",borderRadius:T.radiusSm,marginBottom:12,border:`1px solid ${err.warning?T.accent+"40":T.red+"30"}`,overflow:"hidden"}}>
           <div style={{padding:"10px 14px",color:err.warning?T.accent:T.red,fontSize:13,fontWeight:600}}>{err.msg||err}</div>
@@ -1552,6 +1573,7 @@ function BookingTripCard({b,fam,today,odoLog,odoRate,onAddOdo,dispatch,places,fa
 
   const odo=(odoLog||[]).filter(e=>e.bookingId===b.id);
   const isUpcoming=b.end>=today;
+  const isOwner=b.familyId===currentFamilyId;
   const nights_n=nights(b.start,b.end);
   const days=b.days||[];
 
@@ -1602,6 +1624,15 @@ function BookingTripCard({b,fam,today,odoLog,odoRate,onAddOdo,dispatch,places,fa
             <div style={{color:T.textMuted,fontSize:12,marginTop:3}}>
               {b.start} → {b.end} · {nights_n} night{nights_n!==1?"s":""}
             </div>
+            {(b.collaborators||[]).length>0&&(
+              <div style={{display:"flex",gap:4,marginTop:5,alignItems:"center"}}>
+                <span style={{fontSize:10,color:T.textDim}}>{isOwner?"with":"booked by"}</span>
+                {isOwner
+                  ?(b.collaborators||[]).map(id=>{const cf=families.find(f=>f.id===id);return cf?<FamilyAvatar key={id} family={cf} size={18} fontSize={12}/>:null;})
+                  :<FamilyAvatar family={families.find(f=>f.id===b.familyId)} size={18} fontSize={12}/>
+                }
+              </div>
+            )}
           </div>
           <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
             <span style={{...pill(b.status==="tentative"?T.accent+"20":T.primary+"15",
@@ -1616,8 +1647,8 @@ function BookingTripCard({b,fam,today,odoLog,odoRate,onAddOdo,dispatch,places,fa
       {expanded&&(
         <div style={{borderTop:`1px solid ${T.borderLight}`}}>
 
-          {/* ── Actions ── */}
-          {isUpcoming&&(
+          {/* ── Actions — owner only ── */}
+          {isUpcoming&&isOwner&&(
             <div style={{display:"flex",gap:8,padding:"10px 14px",flexWrap:"wrap"}}>
               {b.status==="tentative"&&!confirmWarn&&(
                 <button onClick={()=>{
@@ -1660,11 +1691,35 @@ function BookingTripCard({b,fam,today,odoLog,odoRate,onAddOdo,dispatch,places,fa
             </div>
           )}
 
+          {/* ── Collaborators — owner can edit ── */}
+          {isOwner&&(
+            <div style={{padding:"10px 14px",borderTop:`1px solid ${T.borderLight}`}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>👥 Collaborators</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {(families||[]).filter(f=>f.id!==b.familyId&&f.id!=="maintenance").map(cf=>{
+                  const isCollab=(b.collaborators||[]).includes(cf.id);
+                  return(
+                    <button key={cf.id} onClick={()=>{
+                      const next=isCollab?(b.collaborators||[]).filter(id=>id!==cf.id):[...(b.collaborators||[]),cf.id];
+                      dispatch({type:"UPD_BOOKING_COLLAB",payload:{id:b.id,collaborators:next}});
+                    }} style={{...btn(isCollab?cf.color+"20":"transparent",isCollab?cf.color:T.textMuted,
+                      {fontSize:12,padding:"5px 10px",border:`2px solid ${isCollab?cf.color:T.border}`,
+                      transition:"all 0.15s",display:"flex",alignItems:"center",gap:4})}}>
+                      <FamilyAvatar family={cf} size={16} fontSize={11}/>
+                      {cf.name.split(" ")[0]}
+                      {isCollab&&<span>✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ── Odometer ── */}
           <div style={{padding:"10px 14px",borderTop:`1px solid ${T.borderLight}`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
               <span style={{fontSize:11,fontWeight:700,color:T.textDim,textTransform:"uppercase",letterSpacing:0.5}}>🔢 Odometer</span>
-              {isUpcoming&&!showOdoForm&&(
+              {isUpcoming&&isOwner&&!showOdoForm&&(
                 <button onClick={()=>setShowOdoForm(true)}
                   style={btn(T.primary+"10",T.primary,{fontSize:10,padding:"3px 8px",border:`1px solid ${T.primary}20`})}>+ Add Reading</button>
               )}
@@ -1803,7 +1858,7 @@ function TripsPanel({bookings,dispatch,places,families,currentFamilyId,odoLog,od
   const fam=families.find(f=>f.id===currentFamilyId);
   const today=fmt(new Date());
   const myBookings=[...bookings]
-    .filter(b=>b.familyId===currentFamilyId)
+    .filter(b=>b.familyId===currentFamilyId||(b.collaborators||[]).includes(currentFamilyId))
     .sort((a,b)=>a.start.localeCompare(b.start));
   const upcoming=myBookings.filter(b=>b.end>=today);
   const past=myBookings.filter(b=>b.end<today);
@@ -1858,14 +1913,14 @@ function GuideAttList({atts,onRemove}){
   return(
     <div style={{marginTop:8}}>{atts.map((a,i)=>(
       <div key={i} style={{display:"flex",alignItems:"center",gap:8,background:T.bg,borderRadius:T.radiusSm,padding:"6px 10px",marginBottom:4,border:`1px solid ${T.border}`}}>
-        <span style={{fontSize:12,flex:1,color:T.textMuted}}>{a.name}</span>
+        <span style={{fontSize:12,flex:1,color:T.textMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{a.name}</span>
         <button onClick={()=>{
           if(a.data.startsWith("http")){window.open(a.data,"_blank");}
           else{try{const byteStr=atob(a.data.split(",")[1]);const ab=new ArrayBuffer(byteStr.length);const ia=new Uint8Array(ab);for(let i=0;i<byteStr.length;i++)ia[i]=byteStr.charCodeAt(i);const blob=new Blob([ab],{type:a.type||"application/octet-stream"});const url=URL.createObjectURL(blob);window.open(url,"_blank");setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(e){window.open(a.data,"_blank");}}
-        }} style={{fontSize:12,color:T.primary,fontWeight:600,background:"none",border:"none",cursor:"pointer",padding:0}}>
+        }} style={{fontSize:12,color:T.primary,fontWeight:600,background:"none",border:"none",cursor:"pointer",padding:0,flexShrink:0}}>
           {a.type==="application/pdf"?"Open PDF":"View"}
         </button>
-        {onRemove&&<button onClick={()=>onRemove(i)} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:14}}>&times;</button>}
+        {onRemove&&<button onClick={()=>onRemove(i)} style={{background:"none",border:"none",cursor:"pointer",color:T.red,fontSize:14,flexShrink:0}}>&times;</button>}
       </div>
     ))}</div>
   );
@@ -3107,6 +3162,9 @@ export default function App(){
           await logActivity("Deleted booking", `Booking ID: ${id}`); break;
         case "UPD_BOOKING_DAYS":
           await supa.update("bookings",{days:payload.days,...(payload.notes!==undefined?{notes:payload.notes}:{})},{id:payload.id});
+          break;
+        case "UPD_BOOKING_COLLAB":
+          await supa.update("bookings",{collaborators:payload.collaborators},{id:payload.id});
           break;
         case "UPD_BOOKING": {
           // Clash check before updating dates
