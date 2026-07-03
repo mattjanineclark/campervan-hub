@@ -1,3 +1,20 @@
+/**
+ * Adventure Hub — Family Campervan Booking & Trip Planning App
+ * ─────────────────────────────────────────────────────────────
+ * Stack:     React 18 + Vite, single-file JSX
+ * Database:  Supabase (Postgres + Realtime)
+ * Maps:      Leaflet.js via CDN
+ * Deploy:    GitHub Pages via GitHub Actions
+ *
+ * Architecture:
+ *   - All state managed by useReducer (reducer function)
+ *   - sbDispatch wraps dispatch to also persist changes to Supabase
+ *   - Single App.jsx file — all components defined at top level
+ *   - T = theme object, mutated by applyTheme() for dark/light mode
+ *
+ * Families: f1=Steve&Lyn, f2=Em&Dave, f3=Matt&Janine, f4=Jonny&Steph, f5=Sophie
+ * Version:  v2.1
+ */
 import React, { useState, useReducer, useRef, useEffect, useCallback } from "react";
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
@@ -167,6 +184,7 @@ const DEFAULT_FAMILIES = [
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const TODAY = new Date();
 // Generate day-by-day structure between two date strings
+/** Generates a day-by-day array between two ISO date strings (e.g. "2026-07-01"). */
 const generateDays = (start, end) => {
   if(!start || !end) return [];
   const days = [];
@@ -178,9 +196,11 @@ const generateDays = (start, end) => {
   return days;
 };
 
+/** Formats a Date object to "YYYY-MM-DD" string using local timezone (avoids NZ UTC offset bug). */
 const fmt = d => { const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
 const addDays = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
 const nights = (s,e) => Math.max(0, Math.round((new Date(e)-new Date(s))/86400000));
+/** Returns true if two booking objects overlap in dates. */
 const overlap = (a,b) => new Date(a.start)<new Date(b.end) && new Date(a.end)>new Date(b.start);
 
 // ─── SEED DATA ────────────────────────────────────────────────────────────────
@@ -242,6 +262,10 @@ const INIT = {
   odoLog:[], // [{id,familyId,date,startKm,endKm,notes,bookingId}]
   odoRate:0.30, // cost per km in dollars
 };
+
+// ─── REDUCER ──────────────────────────────────────────────────────────
+// Central state machine — all state changes flow through here
+
 function reducer(state,{type,payload,id}){
   switch(type){
     case "ADD_BOOKING":      return {...state,bookings:[...state.bookings,payload]};
@@ -314,6 +338,10 @@ function FamilyAvatar({family, size=28, fontSize=18}){
   }
   return <span style={{fontSize,lineHeight:1,flexShrink:0}}>{family.emoji}</span>;
 }
+
+
+// ─── UI PRIMITIVES ────────────────────────────────────────────────────
+// Small reusable UI components used throughout the app
 
 function StarRating({value,onChange,size=18}){
   return(<div style={{display:"flex",gap:2}}>{[1,2,3,4,5].map(n=>(
@@ -562,6 +590,10 @@ function PlaceSearch({onSelect}){
 // ═══════════════════════════════════════════════════════════════════════════════
 // CALENDAR
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── CALENDAR VIEW ────────────────────────────────────────────────────
+// Monthly calendar showing all family bookings
+
 function CalendarView({bookings,families,onOpenItinerary,currentFamilyId}){
   const [month,setMonth]=useState(new Date(TODAY.getFullYear(),TODAY.getMonth(),1));
   const [sel,setSel]=useState(null);
@@ -709,6 +741,10 @@ function UsageStats({bookings,families}){
 }
 
 // ─── DATE RANGE PICKER ────────────────────────────────────────────────────────
+
+// ─── DATE RANGE PICKER ────────────────────────────────────────────────
+// Tap-to-select date range component used in booking form
+
 function DateRangePicker({startDate,endDate,onChange,minDate,bookings=[],families=[]}){
   const [month,setMonth]=useState(()=>{
     const base=startDate?new Date(startDate):new Date();
@@ -883,6 +919,10 @@ function DateRangePicker({startDate,endDate,onChange,minDate,bookings=[],familie
 
 
 // BOOKING FORM
+
+// ─── BOOKING FORM ─────────────────────────────────────────────────────
+// Modal form for creating a new booking
+
 function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
   const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
@@ -995,6 +1035,10 @@ function BookingForm({bookings,dispatch,onClose,currentFamilyId,families}){
   );
 }
 
+
+// ─── BOOKING CARD ─────────────────────────────────────────────────────
+// Compact booking card used in the main Bookings tab calendar view
+
 function BookingCard({b,families,onOpenItinerary,currentFamilyId,dispatch,odoLog,odoRate,onAddOdo}){
   const fColor=id=>families.find(f=>f.id===id)?.color??T.primary;
   const fName =id=>families.find(f=>f.id===id)?.name??"Unknown";
@@ -1032,9 +1076,12 @@ function BookingCard({b,families,onOpenItinerary,currentFamilyId,dispatch,odoLog
   );
 }
 
-// ─── FAMILY AVATAR ─────────────────────────────────────────────────────────────
 // Shows family photo if available, otherwise emoji. Used everywhere a family
 // is identified so the photo choice flows through the whole app automatically.
+
+// ─── MY LOCATION BUTTON ───────────────────────────────────────────────
+// Leaflet map control to centre on user's current location
+
 function MyLocationButton({onLocate}){
   const [status,setStatus]=useState("idle"); // idle | locating | error
 
@@ -1071,6 +1118,10 @@ function MyLocationButton({onLocate}){
 }
 
 // PLACES
+
+// ─── PLACES ───────────────────────────────────────────────────────────
+// Place management — add, view, review locations
+
 function AddPlaceModal({dispatch,onClose,currentFamilyId}){
   const [step,setStep]=useState("search");
   const [picked,setPicked]=useState({name:"",lat:"",lng:""});
@@ -1319,6 +1370,10 @@ function PlacePickerModal({places,onSelect,onClose}){
     </Modal>
   );
 }
+
+
+// ─── ITINERARY EDITOR ─────────────────────────────────────────────────
+// Full trip plan editor — days, activities, places, dates
 
 function ItineraryEditor({itin,dispatch,places,bookings,families,onClose,inline=false,onFullEdit}){
   const [data,setData]=useState({...itin});
@@ -1920,6 +1975,9 @@ function TripsPanel({bookings,dispatch,places,families,currentFamilyId,odoLog,od
 }
 
 
+// ─── GUIDES ───────────────────────────────────────────────────────────
+// How-to guides with attachments and links
+
 function GuideLinksEditor({links,setLinks}){
   return(
     <div>{(links||[]).map((l,i)=>(
@@ -2093,6 +2151,10 @@ const STATUS_TABS = [
 ];
 const CAT_ICONS = {Sleeping:"🛏️",Kitchen:"🍳",Power:"⚡",Water:"💧",Sanitation:"🚽",Outdoor:"🏕️",Outdoors:"🏕️",Safety:"🛡️",Bedding:"🛏️",Hygiene:"🚿",Kids:"🧸",Other:"📦"};
 const catIcon = cat => CAT_ICONS[cat] || "📦";
+
+
+// ─── KIT & PACKING ────────────────────────────────────────────────────
+// Shared van equipment and per-family packing lists
 
 function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
   const [statusTab,setStatusTab]=useState("all");
@@ -2344,6 +2406,10 @@ function KitPanel({equipment,dispatch,currentFamilyId,packingByFamily}){
 
 
 // RULES
+
+// ─── RULES ────────────────────────────────────────────────────────────
+// Shared van rules — displayed and editable by all
+
 function RulesPanel({rules,dispatch}){
   const [editId,setEditId]=useState(null);const [ef,setEf]=useState({});const [adding,setAdding]=useState(false);const [nf,setNf]=useState({icon:"📌",rule:"",detail:""});
   const set=r=>dispatch({type:"SET_RULES",payload:r});
@@ -2386,6 +2452,10 @@ function RulesPanel({rules,dispatch}){
 // FAMILY MANAGER — add, edit, remove families with photo + emoji + colour + PIN
 const FAMILY_COLORS = ["#2d6a4f","#e07a28","#4a90c4","#c9a96e","#9b5de5","#f72585","#0077b6","#606c38"];
 const FAMILY_EMOJIS = ["🏔️","🌊","🌿","🦅","🏄","🎣","🚵","🌻","🦜","🏕️","⛵","🌺"];
+
+
+// ─── FAMILY MANAGER ───────────────────────────────────────────────────
+// Add, edit, remove families and change PINs
 
 function FamilyManager({families,dispatch,currentFamilyId}){
   const [editing,setEditing]=useState(null); // family id being edited, or "new"
@@ -2691,6 +2761,10 @@ function ActivityLog({families}){
   );
 }
 
+
+// ─── SETTINGS PANEL ───────────────────────────────────────────────────
+// App settings — appearance, van identity, family management, backup
+
 function SettingsPanel({state,dispatch,currentFamilyId,themeMode,onToggleTheme}){
   if(!state) return null;
   const families=state.families||[];
@@ -2987,6 +3061,10 @@ function OdometerPanel({odoLog,odoRate,dispatch,families,bookings,currentFamilyI
   );
 }
 
+
+// ─── BOOKING LIST ─────────────────────────────────────────────────────
+// List view of bookings used inside the calendar tab
+
 function BookingList({bookings,dispatch,families,onOpenItinerary,currentFamilyId,odoLog,odoRate,onAddOdo}){
   const sorted=[...bookings].sort((a,b)=>a.start.localeCompare(b.start));
   const upcoming=sorted.filter(b=>b.end>=fmt(TODAY));
@@ -3013,6 +3091,10 @@ function BookingList({bookings,dispatch,families,onOpenItinerary,currentFamilyId
 
 
 // ─── COLLAPSIBLE BOOKINGS ─────────────────────────────────────────────────────
+
+// ─── COLLAPSIBLE BOOKINGS ─────────────────────────────────────────────
+// Expandable bookings section in the calendar tab
+
 function CollapsibleBookings(props){
   const [showBookings,setShowBookings]=useState(false);
   const upcoming=(props.bookings||[]).filter(b=>b.end>=fmt(new Date())).length;
