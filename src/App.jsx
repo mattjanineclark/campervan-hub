@@ -3743,9 +3743,8 @@ export default function App() {
         case "ADD_BOOKING":
           if (!payload.days || payload.days.length === 0) payload = { ...payload, days: generateDays(payload.start, payload.end) };
           try {
-            const result = await supa.upsert("bookings", toDB.booking(payload));
-            console.log("ADD_BOOKING result:", result);
-            if (result && result[0]?.code) console.error("Booking save error:", result);
+            const result = await supa.insert("bookings", toDB.booking(payload));
+            if (result && result[0]?.code) console.error("Booking save error:", result[0]);
           } catch(bookingErr) { console.error("ADD_BOOKING failed:", bookingErr); }
           await logActivity("Added booking", `${payload.destination} (${payload.start} to ${payload.end})`);
           break;
