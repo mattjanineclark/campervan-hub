@@ -3189,6 +3189,7 @@ function CollapsibleBookings(props) {
 
 
 export default function App() {
+  const AUTO_LOGOUT_MS = 0.5 * 60 * 1000; // 30 minutes — change as you like
   const [state, dispatch] = useReducer(reducer, INIT);
   const [themeMode, setThemeMode] = useState(() => {
     try { return localStorage.getItem("theme-mode") || "light"; } catch (e) { return "light"; }
@@ -3322,13 +3323,25 @@ export default function App() {
     const fam = state.families.find(f => f.id === familyId);
     setTab(fam?.homeTab || "calendar");
     setCurrentFamily(familyId);
-    try { sessionStorage.setItem("currentFamily", familyId); } catch (e) { }
+    try {
+      sessionStorage.setItem("currentFamily", familyId);
+      sessionStorage.setItem("lastActive", String(Date.now()));
+    } catch (e) { }
   };
   const [showBook, setShowBook] = useState(() => {
     try { return sessionStorage.getItem("showBookingForm") === "1"; } catch (e) { return false; }
   });
   const [currentFamily, setCurrentFamily] = useState(() => {
-    try { return sessionStorage.getItem("currentFamily") || null; } catch (e) { return null; }
+    try {
+      const fam = sessionStorage.getItem("currentFamily");
+      const lastActive = parseInt(sessionStorage.getItem("lastActive") || "0", 10);
+      if (fam && Date.now() - lastActive > AUTO_LOGOUT_MS) {
+        sessionStorage.removeItem("currentFamily");
+        sessionStorage.removeItem("lastActive");
+        return null;
+      }
+      return fam || null;
+    } catch (e) { return null; }
   });
   const [openItinId, setOpenItinId] = useState(null); // itinerary to auto-open in Trips tab
   const currentTab = TABS.find(t => t.id === tab) || TABS[0];
@@ -3506,6 +3519,38 @@ export default function App() {
     try { sessionStorage.setItem("currentTab", tab); } catch (e) { }
   }, [tab]);
 
+  useEffect(() => {
+    if (!currentFamily) return;
+
+    const markActive = () => {
+      try { sessionStorage.setItem("lastActive", String(Date.now())); } catch (e) { }
+    };
+
+    const checkTimeout = () => {
+      try {
+        const lastActive = parseInt(sessionStorage.getItem("lastActive") || "0", 10);
+        if (Date.now() - lastActive > AUTO_LOGOUT_MS) {
+          setCurrentFamily(null);
+          sessionStorage.removeItem("currentFamily");
+          sessionStorage.removeItem("lastActive");
+        }
+      } catch (e) { }
+    };
+
+    const events = ["click", "touchstart", "keydown"];
+    events.forEach(ev => window.addEventListener(ev, markActive));
+
+    const onVisible = () => { if (document.visibilityState === "visible") checkTimeout(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    markActive();
+
+    return () => {
+      events.forEach(ev => window.removeEventListener(ev, markActive));
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [currentFamily]);
+
   // Called from calendar: open Trips tab and edit a specific itinerary (or create one linked to a booking)
   const handleOpenItinerary = (bookingId) => {
     setOpenItinId(bookingId || null);
@@ -3545,7 +3590,13 @@ export default function App() {
                   ? <img src={fam.photo} alt={fam.name} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover", verticalAlign: "middle" }} />
                   : <span>{fam.emoji}</span>} {fam.name.replace("The ", "").trim()}
               </div>
-              <button onClick={() => { setCurrentFamily(null); try { sessionStorage.removeItem("currentFamily"); } catch (e) { } }} title="Sign out"
+              <button onClick={() => {
+                setCurrentFamily(null);
+                try {
+                  sessionStorage.removeItem("currentFamily");
+                  sessionStorage.removeItem("lastActive");
+                } catch (e) { }
+              }} title="Sign out"
                 style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: `1px solid ${T.border}`, borderRadius: T.radiusSm, cursor: "pointer", color: T.textMuted, fontSize: 14 }}>
                 ⏻
               </button>
