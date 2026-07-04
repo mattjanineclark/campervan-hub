@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v4.0
+          Adventure Hub · v4.1
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1659,6 +1659,7 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
             </a>
           </div>}
           {place.notes && <p style={{ margin: "12px 0 8px", fontSize: 13, color: T.textMuted, fontStyle: "italic", lineHeight: 1.6 }}>"{place.notes}"</p>}
+          {(place.reviews || []).map((r, i) => (
             <div key={i} style={{ background: T.bg, borderRadius: T.radiusSm, padding: "10px 12px", marginBottom: 8, borderLeft: `3px solid ${fColor(r.familyId)}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{fEmoji(r.familyId)} {fName(r.familyId)}</span>
