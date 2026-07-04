@@ -945,6 +945,7 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
   });
   const [err, setErr] = useState("");
   const h = (k, v) => { setF(p => ({ ...p, [k]: v })); if (k === "start" || k === "end") setErr(""); };
+
   useEffect(() => {
     try { sessionStorage.setItem("bookingDraft", JSON.stringify(f)); } catch (e) { }
   }, [f]);
@@ -1415,6 +1416,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
   const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const [pickingPlaceFor, setPickingPlaceFor] = useState(null); // {di, ai} when picker open
   const linkable = bookings.filter(b => b.familyId === data.familyId && b.end >= fmt(TODAY));
+
   useEffect(() => {
     if (!data.start || !data.end) return;
     const n = nights(data.start, data.end); if (n < 0) return;
@@ -3189,7 +3191,8 @@ function CollapsibleBookings(props) {
 
 
 export default function App() {
-  const AUTO_LOGOUT_MS = 0.5 * 60 * 1000; // 30 minutes — change as you like
+  const timeoutMinutes = 5; // Auto-logout after 5 minutes of inactivity
+  const AUTO_LOGOUT_MS = timeoutMinutes * 60 * 1000; // {timeoutMinutes} minutes — change as you like
   const [state, dispatch] = useReducer(reducer, INIT);
   const [themeMode, setThemeMode] = useState(() => {
     try { return localStorage.getItem("theme-mode") || "light"; } catch (e) { return "light"; }
@@ -3199,6 +3202,7 @@ export default function App() {
 
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(false);
+  const [showTimeoutPopup, setShowTimeoutPopup] = useState(false);
   const loadingRef = useRef(true);
 
   // ── Load all data from Supabase on mount ─────────────────────────────────
@@ -3531,6 +3535,7 @@ export default function App() {
         const lastActive = parseInt(sessionStorage.getItem("lastActive") || "0", 10);
         if (Date.now() - lastActive > AUTO_LOGOUT_MS) {
           setCurrentFamily(null);
+          setShowTimeoutPopup(true);
           sessionStorage.removeItem("currentFamily");
           sessionStorage.removeItem("lastActive");
         }
@@ -3543,9 +3548,12 @@ export default function App() {
     const onVisible = () => { if (document.visibilityState === "visible") checkTimeout(); };
     document.addEventListener("visibilitychange", onVisible);
 
+    const interval = setInterval(checkTimeout, 15000); // poll every 15s
+
     markActive();
 
     return () => {
+      clearInterval(interval);
       events.forEach(ev => window.removeEventListener(ev, markActive));
       document.removeEventListener("visibilitychange", onVisible);
     };
@@ -3564,6 +3572,28 @@ export default function App() {
       <p style={{ color: T.textDim, fontSize: 13 }}>{dbError ? "Cannot connect to database — check your connection" : "Loading..."}</p>
       {dbError && <button onClick={() => window.location.reload()} style={{ ...btn(T.primary, T.surface, { marginTop: 16 }) }}>Retry</button>}
     </div>
+  );
+
+  if (!currentFamily) return (
+    <>
+      <LoginScreen families={families} vanPhoto={state.vanPhoto} vanName={state.vanName} onLogin={handleLogin} />
+      {showTimeoutPopup && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(26,46,26,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 900, padding: 16 }}
+          onClick={() => setShowTimeoutPopup(false)}>
+          <div style={{ ...card({ padding: 24 }), width: 320, maxWidth: "92vw", boxShadow: T.shadowLg, textAlign: "center" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ width: 52, height: 52, borderRadius: 99, background: T.accent + "15", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 24 }}>⏱️</div>
+            <p style={{ color: T.text, fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>Session timed out</p>
+            <p style={{ color: T.textMuted, fontSize: 13, margin: "0 0 20px", lineHeight: 1.5 }}>
+              You were signed out after {timeoutMinutes} minutes of inactivity. Please sign in again.
+            </p>
+            <button onClick={() => setShowTimeoutPopup(false)} style={{ ...btn(T.primary, T.surface, { width: "100%" }) }}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 
   if (!currentFamily) return <LoginScreen families={families} vanPhoto={state.vanPhoto} vanName={state.vanName} onLogin={handleLogin} />;
