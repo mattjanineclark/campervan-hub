@@ -121,7 +121,12 @@ const fromDB = {
   rule: r => r ? ({ id: r.id, icon: r.icon, rule: r.rule, detail: r.detail || "" }) : null,
 };
 const toDB = {
-  booking: b => ({ id: b.id, family_id: b.familyId, start_date: b.start, end_date: b.end, destination: b.destination, notes: b.notes, status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "", guest_name: b.guestName || "", guest_pin: b.guestPin || "" }),
+  booking: b => {
+    const row = { id: b.id, family_id: b.familyId, start_date: b.start, end_date: b.end, destination: b.destination, notes: b.notes, status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "" };
+    if (b.guestName !== undefined) row.guest_name = b.guestName || "";
+    if (b.guestPin !== undefined) row.guest_pin = b.guestPin || "";
+    return row;
+  },
   place: p => ({ id: p.id, name: p.name, family_id: p.familyId, category: p.category, lat: p.lat, lng: p.lng, overall_rating: p.overallRating || 0 }),
   review: (placeId, r) => ({ place_id: placeId, family_id: r.familyId, rating: r.rating, review_text: r.text, review_date: r.date }),
   itin: i => ({ id: i.id, title: i.title, family_id: i.familyId, start_date: i.start || null, end_date: i.end || null, destination: i.destination || "", notes: i.notes || "", booking_id: i.bookingId || null, visibility: i.visibility || "private", days: i.days || [] }),
@@ -439,17 +444,24 @@ function GuestPinEntry({ onSuccess }) {
     if (p.length !== 4) return;
     setLoading(true); setErr("");
     try {
-      // Search all bookings for a matching guest_pin
-      const today = fmt(new Date());
       const cutoff = fmt(new Date(Date.now() - 21 * 24 * 60 * 60 * 1000)); // 3 weeks ago
-      const bookings = await supa.get("bookings", `guest_pin=eq.${p}&end_date=gte.${cutoff}`);
+
+      // First try: direct column filter (works once SQL migration is run)
+      let bookings = await supa.get("bookings", `guest_pin=eq.${p}&end_date=gte.${cutoff}`);
+
+      // Fallback: if column doesn't exist yet or returns empty, fetch all and search in JS
+      if (!bookings || bookings.length === 0) {
+        const all = await supa.get("bookings", `end_date=gte.${cutoff}`);
+        bookings = (all || []).filter(b => b.guest_pin === p);
+      }
+
       if (!bookings || bookings.length === 0) {
         setErr("PIN not found or booking has expired."); setPin(""); setLoading(false); return;
       }
-      // Find the most relevant (latest start) active or recent booking
-      const booking = bookings.sort((a, b) => b.start_date.localeCompare(a.start_date))[0];
+      const booking = bookings.sort((a, b) => (b.start_date || "").localeCompare(a.start_date || ""))[0];
       onSuccess(booking);
     } catch (e) {
+      console.error("Guest PIN error:", e);
       setErr("Error checking PIN — try again."); setPin("");
     }
     setLoading(false);
@@ -3778,9 +3790,12 @@ export default function App() {
         // BOOKINGS
         case "ADD_BOOKING":
           if (!payload.days || payload.days.length === 0) payload = { ...payload, days: generateDays(payload.start, payload.end) };
-          await supa.upsert("bookings", toDB.booking(payload));
+          try {
+            const result = await supa.upsert("bookings", toDB.booking(payload));
+            console.log("ADD_BOOKING result:", result);
+            if (result && result[0]?.code) console.error("Booking save error:", result);
+          } catch(bookingErr) { console.error("ADD_BOOKING failed:", bookingErr); }
           await logActivity("Added booking", `${payload.destination} (${payload.start} to ${payload.end})`);
-
           break;
         case "DEL_BOOKING": await supa.delete("bookings", { id });
           await logActivity("Deleted booking", `Booking ID: ${id}`); break;
