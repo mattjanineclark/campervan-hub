@@ -936,11 +936,26 @@ function DateRangePicker({ startDate, endDate, onChange, minDate, bookings = [],
 function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families }) {
   const fColor = id => families.find(f => f.id === id)?.color ?? T.primary;
   const fName = id => families.find(f => f.id === id)?.name ?? "Unknown";
-  const [f, setF] = useState({ familyId: currentFamilyId || "f1", start: "", end: "", destination: "", notes: "", status: "tentative", collaborators: [], guests: "" });
+  const [f, setF] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("bookingDraft");
+      if (saved) return JSON.parse(saved);
+    } catch (e) { }
+    return { familyId: currentFamilyId || "f1", start: "", end: "", destination: "", notes: "", status: "tentative", collaborators: [], guests: "" };
+  });
   const [err, setErr] = useState("");
   const h = (k, v) => { setF(p => ({ ...p, [k]: v })); if (k === "start" || k === "end") setErr(""); };
+
+  useEffect(() => {
+    try { sessionStorage.setItem("bookingDraft", JSON.stringify(f)); } catch (e) { }
+  }, [f]);
   const doSave = () => {
     dispatch({ type: "ADD_BOOKING", payload: { ...f, id: "b" + Date.now() } });
+    try { sessionStorage.removeItem("bookingDraft"); } catch (e) { }
+    onClose();
+  };
+  const cancelForm = () => {
+    try { sessionStorage.removeItem("bookingDraft"); } catch (e) { }
     onClose();
   };
   const submit = () => {
@@ -1045,7 +1060,7 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
         <button onClick={err && err.warning ? doSave : submit} style={btn(T.primary, T.surface)}>
           {err && err.warning ? "Book Anyway" : "Save Booking"}
         </button>
-        <button onClick={onClose} style={{ ...btn("transparent", T.textMuted, { border: `1px solid ${T.border}` }) }}>Cancel</button>
+        <button onClick={cancelForm} style={{ ...btn("transparent", T.textMuted, { border: `1px solid ${T.border}` }) }}>Cancel</button>
       </div>
     </Modal>
   );
@@ -1401,6 +1416,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
   const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const [pickingPlaceFor, setPickingPlaceFor] = useState(null); // {di, ai} when picker open
   const linkable = bookings.filter(b => b.familyId === data.familyId && b.end >= fmt(TODAY));
+
   useEffect(() => {
     if (!data.start || !data.end) return;
     const n = nights(data.start, data.end); if (n < 0) return;
@@ -3175,6 +3191,8 @@ function CollapsibleBookings(props) {
 
 
 export default function App() {
+  const timeoutMinutes = 5; // Auto-logout after 5 minutes of inactivity
+  const AUTO_LOGOUT_MS = timeoutMinutes * 60 * 1000; // {timeoutMinutes} minutes — change as you like
   const [state, dispatch] = useReducer(reducer, INIT);
   const [themeMode, setThemeMode] = useState(() => {
     try { return localStorage.getItem("theme-mode") || "light"; } catch (e) { return "light"; }
@@ -3184,6 +3202,7 @@ export default function App() {
 
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(false);
+  const [showTimeoutPopup, setShowTimeoutPopup] = useState(false);
   const loadingRef = useRef(true);
 
   // ── Load all data from Supabase on mount ─────────────────────────────────
@@ -3300,15 +3319,34 @@ export default function App() {
     if (!document.getElementById("no-zoom-style")) document.head.appendChild(style);
   }, []);
   useEffect(() => { applyTheme(themeMode); }, []);
-  const [tab, setTab] = useState("calendar");
+  const [tab, setTab] = useState(() => {
+    try { return sessionStorage.getItem("currentTab") || "calendar"; } catch (e) { return "calendar"; }
+  });
   // Set tab to family's homeTab when they sign in
   const handleLogin = (familyId) => {
     const fam = state.families.find(f => f.id === familyId);
     setTab(fam?.homeTab || "calendar");
     setCurrentFamily(familyId);
+    try {
+      sessionStorage.setItem("currentFamily", familyId);
+      sessionStorage.setItem("lastActive", String(Date.now()));
+    } catch (e) { }
   };
-  const [showBook, setShowBook] = useState(false);
-  const [currentFamily, setCurrentFamily] = useState(null);
+  const [showBook, setShowBook] = useState(() => {
+    try { return sessionStorage.getItem("showBookingForm") === "1"; } catch (e) { return false; }
+  });
+  const [currentFamily, setCurrentFamily] = useState(() => {
+    try {
+      const fam = sessionStorage.getItem("currentFamily");
+      const lastActive = parseInt(sessionStorage.getItem("lastActive") || "0", 10);
+      if (fam && Date.now() - lastActive > AUTO_LOGOUT_MS) {
+        sessionStorage.removeItem("currentFamily");
+        sessionStorage.removeItem("lastActive");
+        return null;
+      }
+      return fam || null;
+    } catch (e) { return null; }
+  });
   const [openItinId, setOpenItinId] = useState(null); // itinerary to auto-open in Trips tab
   const currentTab = TABS.find(t => t.id === tab) || TABS[0];
   const { families } = state;
@@ -3477,6 +3515,50 @@ export default function App() {
 
   useEffect(() => { applyTheme(themeMode); }, []);
 
+  useEffect(() => {
+    try { sessionStorage.setItem("showBookingForm", showBook ? "1" : "0"); } catch (e) { }
+  }, [showBook]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("currentTab", tab); } catch (e) { }
+  }, [tab]);
+
+  useEffect(() => {
+    if (!currentFamily) return;
+
+    const markActive = () => {
+      try { sessionStorage.setItem("lastActive", String(Date.now())); } catch (e) { }
+    };
+
+    const checkTimeout = () => {
+      try {
+        const lastActive = parseInt(sessionStorage.getItem("lastActive") || "0", 10);
+        if (Date.now() - lastActive > AUTO_LOGOUT_MS) {
+          setCurrentFamily(null);
+          setShowTimeoutPopup(true);
+          sessionStorage.removeItem("currentFamily");
+          sessionStorage.removeItem("lastActive");
+        }
+      } catch (e) { }
+    };
+
+    const events = ["click", "touchstart", "keydown"];
+    events.forEach(ev => window.addEventListener(ev, markActive));
+
+    const onVisible = () => { if (document.visibilityState === "visible") checkTimeout(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    const interval = setInterval(checkTimeout, 15000); // poll every 15s
+
+    markActive();
+
+    return () => {
+      clearInterval(interval);
+      events.forEach(ev => window.removeEventListener(ev, markActive));
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [currentFamily]);
+
   // Called from calendar: open Trips tab and edit a specific itinerary (or create one linked to a booking)
   const handleOpenItinerary = (bookingId) => {
     setOpenItinId(bookingId || null);
@@ -3490,6 +3572,28 @@ export default function App() {
       <p style={{ color: T.textDim, fontSize: 13 }}>{dbError ? "Cannot connect to database — check your connection" : "Loading..."}</p>
       {dbError && <button onClick={() => window.location.reload()} style={{ ...btn(T.primary, T.surface, { marginTop: 16 }) }}>Retry</button>}
     </div>
+  );
+
+  if (!currentFamily) return (
+    <>
+      <LoginScreen families={families} vanPhoto={state.vanPhoto} vanName={state.vanName} onLogin={handleLogin} />
+      {showTimeoutPopup && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(26,46,26,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 900, padding: 16 }}
+          onClick={() => setShowTimeoutPopup(false)}>
+          <div style={{ ...card({ padding: 24 }), width: 320, maxWidth: "92vw", boxShadow: T.shadowLg, textAlign: "center" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ width: 52, height: 52, borderRadius: 99, background: T.accent + "15", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 24 }}>⏱️</div>
+            <p style={{ color: T.text, fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>Session timed out</p>
+            <p style={{ color: T.textMuted, fontSize: 13, margin: "0 0 20px", lineHeight: 1.5 }}>
+              You were signed out after {timeoutMinutes} minutes of inactivity. Please sign in again.
+            </p>
+            <button onClick={() => setShowTimeoutPopup(false)} style={{ ...btn(T.primary, T.surface, { width: "100%" }) }}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 
   if (!currentFamily) return <LoginScreen families={families} vanPhoto={state.vanPhoto} vanName={state.vanName} onLogin={handleLogin} />;
@@ -3516,7 +3620,13 @@ export default function App() {
                   ? <img src={fam.photo} alt={fam.name} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover", verticalAlign: "middle" }} />
                   : <span>{fam.emoji}</span>} {fam.name.replace("The ", "").trim()}
               </div>
-              <button onClick={() => setCurrentFamily(null)} title="Sign out"
+              <button onClick={() => {
+                setCurrentFamily(null);
+                try {
+                  sessionStorage.removeItem("currentFamily");
+                  sessionStorage.removeItem("lastActive");
+                } catch (e) { }
+              }} title="Sign out"
                 style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: `1px solid ${T.border}`, borderRadius: T.radiusSm, cursor: "pointer", color: T.textMuted, fontSize: 14 }}>
                 ⏻
               </button>
