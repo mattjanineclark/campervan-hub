@@ -860,7 +860,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v2.8
+          Adventure Hub · v2.9
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2486,7 +2486,9 @@ function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odo
   const fam = families.find(f => f.id === currentFamilyId);
   const today = fmt(new Date());
   const myBookings = [...bookings]
-    .filter(b => b.familyId === currentFamilyId || (b.collaborators || []).includes(currentFamilyId))
+    .filter(b => b.familyId === currentFamilyId
+      || (b.collaborators || []).includes(currentFamilyId)
+      || (b.familyId === "maintenance" && (b.createdBy || "") === currentFamilyId))
     .sort((a, b) => a.start.localeCompare(b.start));
   const upcoming = myBookings.filter(b => b.end >= today);
   const past = myBookings.filter(b => b.end < today);
