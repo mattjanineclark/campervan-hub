@@ -40,7 +40,9 @@ const supa = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data)
     });
-    return res.json();
+    const json = await res.json();
+    if (!res.ok) { console.error(`Supabase INSERT ${table} failed:`, res.status, json); }
+    return json;
   },
   update: async (table, data, match) => {
     const q = Object.entries(match).map(([k, v]) => k + "=eq." + v).join("&");
@@ -857,7 +859,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v2.3
+          Adventure Hub · v2.4
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3744,8 +3746,17 @@ export default function App() {
           if (!payload.days || payload.days.length === 0) payload = { ...payload, days: generateDays(payload.start, payload.end) };
           try {
             const result = await supa.insert("bookings", toDB.booking(payload));
-            if (result && result[0]?.code) console.error("Booking save error:", result[0]);
-          } catch(bookingErr) { console.error("ADD_BOOKING failed:", bookingErr); }
+            if (Array.isArray(result) && result[0]?.code) {
+              console.error("Booking save error:", result[0]);
+              alert("Booking could not be saved: " + (result[0].message || result[0].code));
+            } else if (result?.code) {
+              console.error("Booking save error:", result);
+              alert("Booking could not be saved: " + (result.message || result.code));
+            }
+          } catch(bookingErr) {
+            console.error("ADD_BOOKING failed:", bookingErr);
+            alert("Booking save failed: " + bookingErr.message);
+          }
           await logActivity("Added booking", `${payload.destination} (${payload.start} to ${payload.end})`);
           break;
         case "DEL_BOOKING": await supa.delete("bookings", { id });
