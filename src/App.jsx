@@ -113,7 +113,7 @@ const supa = {
 // Convert DB row format to app format and back
 const fromDB = {
   booking: b => b ? ({ id: b.id, familyId: b.family_id, start: b.start_date, end: b.end_date, destination: b.destination, notes: b.notes || "", status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "", guestName: b.guest_name || "", guestPin: b.guest_pin || "", createdBy: b.created_by || b.family_id }) : null,
-  place: p => p ? ({ id: p.id, name: p.name, familyId: p.family_id, category: p.category, lat: p.lat, lng: p.lng, overallRating: p.overall_rating || 0, reviews: [], notes: p.notes || "" }) : null,
+  place: p => p ? ({ id: p.id, name: p.name, familyId: p.family_id, category: p.category, lat: p.lat, lng: p.lng, overallRating: p.overall_rating || 0, reviews: [], notes: p.notes || "", guestName: p.guest_name || "" }) : null,
   review: r => r ? ({ familyId: r.family_id, rating: r.rating, text: r.review_text, date: r.review_date }) : null,
   itin: i => i ? ({ id: i.id, title: i.title, familyId: i.family_id, start: i.start_date || "", end: i.end_date || "", destination: i.destination || "", notes: i.notes || "", bookingId: i.booking_id || "", visibility: "private", days: i.days || [] }) : null,
   family: f => f ? ({ id: f.id, name: f.name, color: f.color, emoji: f.emoji, pin: f.pin, photo: f.photo || null }) : null,
@@ -130,7 +130,7 @@ const toDB = {
     if (b.createdBy !== undefined) row.created_by = b.createdBy || b.familyId;
     return row;
   },
-  place: p => ({ id: p.id, name: p.name, family_id: p.familyId, category: p.category, lat: p.lat, lng: p.lng, overall_rating: p.overallRating || 0, notes: p.notes || "" }),
+  place: p => ({ id: p.id, name: p.name, family_id: p.familyId, category: p.category, lat: p.lat, lng: p.lng, overall_rating: p.overallRating || 0, notes: p.notes || "", guest_name: p.guestName || "" }),
   review: (placeId, r) => ({ place_id: placeId, family_id: r.familyId, rating: r.rating, review_text: r.text, review_date: r.date }),
   itin: i => ({ id: i.id, title: i.title, family_id: i.familyId, start_date: i.start || null, end_date: i.end || null, destination: i.destination || "", notes: i.notes || "", booking_id: i.bookingId || null, visibility: i.visibility || "private", days: i.days || [] }),
   family: f => ({ id: f.id, name: f.name, color: f.color, emoji: f.emoji, pin: f.pin, photo: f.photo || null }),
@@ -764,7 +764,7 @@ function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, 
       {/* Content */}
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "14px 12px 110px" }}>
         {tab === "trip" && <GuestTripView />}
-        {tab === "places" && <PlacesPanel places={places} dispatch={dispatch} onPickItinerary={() => {}} families={[...allFamilies, guestFamily]} currentFamilyId={guestFamilyId} itineraries={[]} canDelete={pinActive} />}
+        {tab === "places" && <PlacesPanel places={places} dispatch={dispatch} onPickItinerary={() => {}} families={[...allFamilies, guestFamily]} currentFamilyId={guestFamilyId} itineraries={[]} canDelete={pinActive} guestName={guestName} />}
         {tab === "kit" && (
           <div>
             <div style={{ ...card({ padding: 12, marginBottom: 12, background: T.primary + "06", border: `1px solid ${T.primary}20` }) }}>
@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v4.3
+          Adventure Hub · v4.4
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1488,7 +1488,7 @@ function MyLocationButton({ onLocate }) {
 // ─── PLACES ───────────────────────────────────────────────────────────
 // Place management — add, view, review locations
 
-function AddPlaceModal({ dispatch, onClose, currentFamilyId }) {
+function AddPlaceModal({ dispatch, onClose, currentFamilyId, guestName = "" }) {
   const [step, setStep] = useState("search");
   const [picked, setPicked] = useState({ name: "", lat: "", lng: "" });
   const [pinCoords, setPinCoords] = useState(null);
@@ -1497,7 +1497,7 @@ function AddPlaceModal({ dispatch, onClose, currentFamilyId }) {
   const CATS = ["Campsite", "Beach", "Mountain", "Holiday Park", "Town", "Nature Reserve", "Other"];
   const submit = () => {
     if (!picked.name || !form.review) return;
-    dispatch({ type: "ADD_PLACE", payload: { id: "p" + Date.now(), name: picked.name, lat: parseFloat(picked.lat) || 0, lng: parseFloat(picked.lng) || 0, familyId: form.familyId, category: form.category, overallRating: form.rating, notes: form.notes || "", reviews: [{ familyId: form.familyId, rating: form.rating, text: form.review, date: fmt(TODAY) }] } });
+    dispatch({ type: "ADD_PLACE", payload: { id: "p" + Date.now(), name: picked.name, lat: parseFloat(picked.lat) || 0, lng: parseFloat(picked.lng) || 0, familyId: form.familyId, category: form.category, overallRating: form.rating, notes: form.notes || "", guestName, reviews: [{ familyId: form.familyId, rating: form.rating, text: form.review, date: fmt(TODAY) }] } });
     onClose();
   };
   return (
@@ -1626,11 +1626,11 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
   const fName = id => (families || []).find(f => f.id === id)?.name ?? "Unknown";
   const fEmoji = id => (families || []).find(f => f.id === id)?.emoji ?? "📍";
   const CATS = ["Campsite", "Beach", "Mountain", "Holiday Park", "Town", "Nature Reserve", "Other"];
-  // isOwner: can edit/delete this place
-  // - Family view (currentFamilyId set, canDelete=true): only their own places
-  // - Guest view (currentFamilyId set, canDelete=pinActive): only their own places  
-  // - No currentFamilyId: all places editable
-  const isOwner = !currentFamilyId || place.familyId === currentFamilyId;
+  // isOwner: own places, or family managing an orphaned guest place (booking deleted)
+  const isGuestPlace = (place.familyId || "").startsWith("guest_");
+  const isOwner = !currentFamilyId
+    || place.familyId === currentFamilyId
+    || (isGuestPlace && !currentFamilyId.startsWith("guest_")); // families can manage orphaned guest places
   return (
     <div style={{ ...card({ padding: 0, overflow: "hidden", marginBottom: 10 }) }}>
       <div onClick={() => setExpanded(!expanded)} style={{ padding: "11px 14px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
@@ -1646,7 +1646,7 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
             {place.familyId && (() => {
               const f = (families || []).find(fam => fam.id === place.familyId);
               if (f) return <span style={{ fontSize: 11, color: T.textDim }}>· {f.emoji} {f.name}</span>;
-              // Guest place — extract name from familyId format "guest_[bookingId]"
+              if (place.guestName) return <span style={{ fontSize: 11, color: T.textDim }}>· 🔑 {place.guestName}</span>;
               if (place.familyId.startsWith("guest_")) return <span style={{ fontSize: 11, color: T.textDim }}>· 🔑 Guest</span>;
               return null;
             })()}
@@ -1710,7 +1710,7 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
   );
 }
 
-function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamilyId, itineraries, canDelete = true }) {
+function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamilyId, itineraries, canDelete = true, guestName = "" }) {
   const [view, setView] = useState("list"); const [adding, setAdding] = useState(false); const [pickItin, setPickItin] = useState(null);
   const [pickDay, setPickDay] = useState(null); // {itin, place} — day selection step
   // Hide background map while modal is open so it doesn't bleed through
@@ -1728,7 +1728,7 @@ function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamil
       {view === "list" && (places.length === 0 ? <div style={{ ...card({ padding: 24, textAlign: "center" }) }}>
         <p style={{ color: T.textDim, margin: 0 }}>No places saved yet. Add your first family favourite!</p>
       </div> : places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} currentFamilyId={currentFamilyId} />))}
-      {adding && <AddPlaceModal dispatch={dispatch} onClose={() => setAdding(false)} currentFamilyId={currentFamilyId} />}
+      {adding && <AddPlaceModal dispatch={dispatch} onClose={() => setAdding(false)} currentFamilyId={currentFamilyId} guestName={guestName} />}
       {pickItin && !pickDay && (
         <Modal title="Add to Trip" onClose={() => setPickItin(null)} width={360}>
           <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 12 }}>Which trip to add <b>{pickItin.name}</b> to?</p>
