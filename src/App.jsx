@@ -463,7 +463,7 @@ function GuestPinEntry({ onSuccess }) {
         setErr("PIN not found or booking has expired."); setPin(""); setLoading(false); return;
       }
       const booking = bookings.sort((a, b) => (b.start_date || "").localeCompare(a.start_date || ""))[0];
-      onSuccess(booking);
+      onSuccess(fromDB.booking(booking));
     } catch (e) {
       console.error("Guest PIN error:", e);
       setErr("Error checking PIN — try again."); setPin("");
@@ -622,8 +622,8 @@ function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, 
   const [tab, setTab] = useState("trip");
   const [showReport, setShowReport] = useState(false);
   const guestFamilyId = "guest_" + booking.id;
-  const guestName = booking.guestName || booking.guests || "Guest";
-  const pinExpiry = new Date(new Date(booking.end).getTime() + 21 * 24 * 60 * 60 * 1000);
+  const guestName = booking.guestName || booking.guest_name || booking.guests || "Guest";
+  const pinExpiry = new Date(new Date(booking.end || booking.end_date).getTime() + 21 * 24 * 60 * 60 * 1000);
   const pinActive = new Date() <= pinExpiry;
 
   // Synthetic family entry so the guest's name/emoji appears on places and reviews
@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v4.2
+          Adventure Hub · v4.3
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
