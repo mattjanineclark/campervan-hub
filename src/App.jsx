@@ -113,7 +113,7 @@ const supa = {
 // Convert DB row format to app format and back
 const fromDB = {
   booking: b => b ? ({ id: b.id, familyId: b.family_id, start: b.start_date, end: b.end_date, destination: b.destination, notes: b.notes || "", status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "", guestName: b.guest_name || "", guestPin: b.guest_pin || "", createdBy: b.created_by || b.family_id }) : null,
-  place: p => p ? ({ id: p.id, name: p.name, familyId: p.family_id, category: p.category, lat: p.lat, lng: p.lng, overallRating: p.overall_rating || 0, reviews: [] }) : null,
+  place: p => p ? ({ id: p.id, name: p.name, familyId: p.family_id, category: p.category, lat: p.lat, lng: p.lng, overallRating: p.overall_rating || 0, reviews: [], notes: p.notes || "" }) : null,
   review: r => r ? ({ familyId: r.family_id, rating: r.rating, text: r.review_text, date: r.review_date }) : null,
   itin: i => i ? ({ id: i.id, title: i.title, familyId: i.family_id, start: i.start_date || "", end: i.end_date || "", destination: i.destination || "", notes: i.notes || "", bookingId: i.booking_id || "", visibility: "private", days: i.days || [] }) : null,
   family: f => f ? ({ id: f.id, name: f.name, color: f.color, emoji: f.emoji, pin: f.pin, photo: f.photo || null }) : null,
@@ -130,7 +130,7 @@ const toDB = {
     if (b.createdBy !== undefined) row.created_by = b.createdBy || b.familyId;
     return row;
   },
-  place: p => ({ id: p.id, name: p.name, family_id: p.familyId, category: p.category, lat: p.lat, lng: p.lng, overall_rating: p.overallRating || 0 }),
+  place: p => ({ id: p.id, name: p.name, family_id: p.familyId, category: p.category, lat: p.lat, lng: p.lng, overall_rating: p.overallRating || 0, notes: p.notes || "" }),
   review: (placeId, r) => ({ place_id: placeId, family_id: r.familyId, rating: r.rating, review_text: r.text, review_date: r.date }),
   itin: i => ({ id: i.id, title: i.title, family_id: i.familyId, start_date: i.start || null, end_date: i.end || null, destination: i.destination || "", notes: i.notes || "", booking_id: i.bookingId || null, visibility: i.visibility || "private", days: i.days || [] }),
   family: f => ({ id: f.id, name: f.name, color: f.color, emoji: f.emoji, pin: f.pin, photo: f.photo || null }),
@@ -618,15 +618,20 @@ function TripReport({ booking, places, vanName, guestName, onClose }) {
 
 // ─── GUEST APP ────────────────────────────────────────────────────────────────
 // Restricted view for guests — trip planning, places, kit, guides and rules only
-function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, vanName, dispatch, onSignOut }) {
+function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, vanName, dispatch, onSignOut, allFamilies = [] }) {
   const [tab, setTab] = useState("trip");
   const [showReport, setShowReport] = useState(false);
-  const guestId = "guest_" + booking.id;
+  const guestFamilyId = "guest_" + booking.id;
   const guestName = booking.guestName || booking.guests || "Guest";
+  const pinExpiry = new Date(new Date(booking.end).getTime() + 21 * 24 * 60 * 60 * 1000);
+  const pinActive = new Date() <= pinExpiry;
+
+  // Synthetic family entry so the guest's name/emoji appears on places and reviews
+  const guestFamily = { id: guestFamilyId, name: guestName, color: "#e07a28", emoji: "🔑", pin: booking.guestPin };
 
   // Guest-specific packing list
-  const myPacking = packingByFamily[guestId] || [];
-  const setMyPacking = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: guestId, items } });
+  const myPacking = packingByFamily[guestFamilyId] || [];
+  const setMyPacking = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: guestFamilyId, items } });
 
   const GUEST_TABS = [
     { id: "trip",   label: "My Trip",  icon: "🗺️" },
@@ -759,13 +764,13 @@ function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, 
       {/* Content */}
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "14px 12px 110px" }}>
         {tab === "trip" && <GuestTripView />}
-        {tab === "places" && <PlacesPanel places={places} dispatch={dispatch} onPickItinerary={() => {}} families={[]} currentFamilyId={guestId} itineraries={[]} canDelete={false} />}
+        {tab === "places" && <PlacesPanel places={places} dispatch={dispatch} onPickItinerary={() => {}} families={[...allFamilies, guestFamily]} currentFamilyId={guestFamilyId} itineraries={[]} canDelete={pinActive} />}
         {tab === "kit" && (
           <div>
             <div style={{ ...card({ padding: 12, marginBottom: 12, background: T.primary + "06", border: `1px solid ${T.primary}20` }) }}>
               <p style={{ margin: 0, fontSize: 12, color: T.textMuted }}>This is your personal packing list for the trip. Tick items as you pack them.</p>
             </div>
-            <KitPanel equipment={equipment} dispatch={dispatch} currentFamilyId={guestId} packingByFamily={packingByFamily} />
+            <KitPanel equipment={equipment} dispatch={dispatch} currentFamilyId={guestFamilyId} packingByFamily={packingByFamily} />
           </div>
         )}
         {tab === "howto" && <GuestGuidesView />}
@@ -861,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v3.7
+          Adventure Hub · v3.9
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1492,7 +1497,7 @@ function AddPlaceModal({ dispatch, onClose, currentFamilyId }) {
   const CATS = ["Campsite", "Beach", "Mountain", "Holiday Park", "Town", "Nature Reserve", "Other"];
   const submit = () => {
     if (!picked.name || !form.review) return;
-    dispatch({ type: "ADD_PLACE", payload: { id: "p" + Date.now(), name: picked.name, lat: parseFloat(picked.lat) || 0, lng: parseFloat(picked.lng) || 0, familyId: form.familyId, category: form.category, overallRating: form.rating, reviews: [{ familyId: form.familyId, rating: form.rating, text: form.review, date: fmt(TODAY) }] } });
+    dispatch({ type: "ADD_PLACE", payload: { id: "p" + Date.now(), name: picked.name, lat: parseFloat(picked.lat) || 0, lng: parseFloat(picked.lng) || 0, familyId: form.familyId, category: form.category, overallRating: form.rating, notes: form.notes || "", reviews: [{ familyId: form.familyId, rating: form.rating, text: form.review, date: fmt(TODAY) }] } });
     onClose();
   };
   return (
@@ -1557,6 +1562,8 @@ function AddPlaceModal({ dispatch, onClose, currentFamilyId }) {
           {picked.name && <div style={{ ...pill(T.primary + "15", T.primary), marginBottom: 12 }}>Pinned: {picked.name}</div>}
           <label style={lbl}>Place Name</label>
           <input style={inp} value={picked.name} onChange={e => setPicked(p => ({ ...p, name: e.target.value }))} placeholder="Place name *" />
+          <label style={lbl}>Description</label>
+          <textarea style={{ ...inp, height: 60, resize: "vertical" }} placeholder="What makes this place special? Tips, highlights..." value={form.notes || ""} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <label style={lbl}>Adding as</label>
@@ -1579,7 +1586,7 @@ function AddPlaceModal({ dispatch, onClose, currentFamilyId }) {
   );
 }
 
-function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = true }) {
+function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = true, currentFamilyId = null }) {
   const [expanded, setExpanded] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -1588,8 +1595,11 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
   const fName = id => families.find(f => f.id === id)?.name ?? "Unknown";
   const fEmoji = id => families.find(f => f.id === id)?.emoji ?? "";
   const CATS = ["Campsite", "Beach", "Mountain", "Holiday Park", "Town", "Nature Reserve", "Other"];
+  // Can edit/delete: either canDelete is true and it's their place, or admin (canDelete true, no currentFamilyId filter)
+  const isOwner = !currentFamilyId || place.familyId === currentFamilyId;
   const AddReview = ({ onClose }) => {
-    const [fam, setFam] = useState("f1"); const [rat, setRat] = useState(4); const [txt, setTxt] = useState("");
+    const [fam, setFam] = useState(currentFamilyId || (families[0]?.id) || "f1");
+    const [rat, setRat] = useState(4); const [txt, setTxt] = useState("");
     return (<Modal title={`Review: ${place.name}`} onClose={onClose} width={400}>
       <label style={lbl}>Family</label>
       <select style={inp} value={fam} onChange={e => setFam(e.target.value)}>{families.map(f => <option key={f.id} value={f.id}>{f.emoji} {f.name}</option>)}</select>
@@ -1614,6 +1624,10 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
             <StarRating value={place.overallRating} size={13} />
             <span style={{ color: T.textDim, fontSize: 12 }}>{place.reviews?.length || 0} review{place.reviews?.length !== 1 ? "s" : ""}</span>
+            {place.familyId && (() => {
+              const f = families.find(fam => fam.id === place.familyId);
+              return f ? <span style={{ fontSize: 11, color: T.textDim }}>· {f.emoji} {f.name}</span> : null;
+            })()}
           </div>
         </div>
         <div style={{ color: T.textDim, fontSize: 20, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>&#8250;</div>
@@ -1629,7 +1643,7 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
               Get Directions
             </a>
           </div>}
-          {(place.reviews || []).map((r, i) => (
+          {place.notes && <p style={{ margin: "12px 0 8px", fontSize: 13, color: T.textMuted, fontStyle: "italic", lineHeight: 1.6 }}>"{place.notes}"</p>}
             <div key={i} style={{ background: T.bg, borderRadius: T.radiusSm, padding: "10px 12px", marginBottom: 8, borderLeft: `3px solid ${fColor(r.familyId)}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{fEmoji(r.familyId)} {fName(r.familyId)}</span>
@@ -1641,9 +1655,9 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
             <button onClick={() => setShowReview(true)} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 12 }), border: `1px solid ${T.primary}30` }}>+ Review</button>
             <button onClick={() => onAddToItinerary(place)} style={{ ...btn(T.accent + "15", T.accent, { fontSize: 12 }), border: `1px solid ${T.accent}30` }}>Add to Trip</button>
-            {canDelete && <button onClick={() => { setEf({ name: place.name, category: place.category }); setEditing(true); }}
+            {canDelete && isOwner && <button onClick={() => { setEf({ name: place.name, category: place.category, notes: place.notes || "" }); setEditing(true); }}
               style={{ ...btn(T.bg, T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` }) }}>✏️ Edit</button>}
-            {canDelete && <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={() => dispatch({ type: "DEL_PLACE", id: place.id })} style={{ fontSize: 12 }} />}
+            {canDelete && isOwner && <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={() => dispatch({ type: "DEL_PLACE", id: place.id })} style={{ fontSize: 12 }} />}
           </div>
 
           {editing && (
@@ -1654,10 +1668,12 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
               <select style={inp} value={ef.category || ""} onChange={e => setEf(f => ({ ...f, category: e.target.value }))}>
                 {CATS.map(c => <option key={c}>{c}</option>)}
               </select>
+              <label style={lbl}>Description</label>
+              <textarea style={{ ...inp, height: 60, resize: "vertical" }} placeholder="What makes this place special?" value={ef.notes || ""} onChange={e => setEf(f => ({ ...f, notes: e.target.value }))} />
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <button onClick={() => {
                   if (!ef.name.trim()) return;
-                  dispatch({ type: "UPD_PLACE", payload: { ...place, name: ef.name, category: ef.category } });
+                  dispatch({ type: "UPD_PLACE", payload: { ...place, name: ef.name, category: ef.category, notes: ef.notes || "" } });
                   setEditing(false);
                 }} style={btn(T.primary, T.surface, { fontSize: 12 })}>Save</button>
                 <button onClick={() => setEditing(false)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` }) }}>Cancel</button>
@@ -1685,10 +1701,10 @@ function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamil
         </div>
         <button onClick={() => setAdding(true)} style={btn(T.primary, T.surface)}>+ Add Place</button>
       </div>
-      {showMap && <><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420} /></MapTouchWrapper><div style={{ marginTop: 14 }}>{places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} />)}</div></>}
+      {showMap && <><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420} /></MapTouchWrapper><div style={{ marginTop: 14 }}>{places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} currentFamilyId={currentFamilyId} />)}</div></>}
       {view === "list" && (places.length === 0 ? <div style={{ ...card({ padding: 24, textAlign: "center" }) }}>
         <p style={{ color: T.textDim, margin: 0 }}>No places saved yet. Add your first family favourite!</p>
-      </div> : places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} />))}
+      </div> : places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} currentFamilyId={currentFamilyId} />))}
       {adding && <AddPlaceModal dispatch={dispatch} onClose={() => setAdding(false)} currentFamilyId={currentFamilyId} />}
       {pickItin && !pickDay && (
         <Modal title="Add to Trip" onClose={() => setPickItin(null)} width={360}>
@@ -3924,7 +3940,7 @@ export default function App() {
           await supa.update("bookings", { status: "confirmed" }, { id });
           break;
                 case "ADD_PLACE": await supa.upsert("places", toDB.place(payload)); break;
-        case "UPD_PLACE": await supa.update("places", { name: payload.name, category: payload.category }, { id: payload.id }); break;
+        case "UPD_PLACE": await supa.update("places", { name: payload.name, category: payload.category, notes: payload.notes || "" }, { id: payload.id }); break;
         case "DEL_PLACE": await supa.delete("places", { id });
           {
             const pl = state.places.find(p => p.id === id);
@@ -4120,6 +4136,7 @@ export default function App() {
       packingByFamily={state.packingByFamily}
       vanName={state.vanName}
       dispatch={sbDispatch}
+      allFamilies={state.families}
       onSignOut={() => { setCurrentFamily(null); setGuestBooking(null); try { sessionStorage.removeItem("currentFamily"); } catch(e){} }}
     />
   );
