@@ -860,7 +860,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v2.9
+          Adventure Hub · v3.1
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1322,13 +1322,14 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
     try { sessionStorage.setItem("bookingDraft", JSON.stringify(f)); } catch (e) { }
   }, [f]);
   const doSave = () => {
-    dispatch({ type: "ADD_BOOKING", payload: { ...f, id: "b" + Date.now() } });
+    const newBooking = { ...f, id: "b" + Date.now() };
+    dispatch({ type: "ADD_BOOKING", payload: newBooking });
     try { sessionStorage.removeItem("bookingDraft"); } catch (e) { }
-    onClose();
+    onClose(newBooking.id);
   };
   const cancelForm = () => {
     try { sessionStorage.removeItem("bookingDraft"); } catch (e) { }
-    onClose();
+    onClose(null);
   };
   const submit = () => {
     if (!f.start || !f.end || !f.destination) { setErr("Fill in all required fields."); return; }
@@ -1364,11 +1365,8 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
       <label style={lbl}>Destination *</label>
       <input style={inp} placeholder="e.g. Blue Lake Campsite" value={f.destination} onChange={e => h("destination", e.target.value)} />
 
-      <label style={lbl}>Notes</label>
-      <textarea style={{ ...inp, height: 60, resize: "vertical" }} value={f.notes} onChange={e => h("notes", e.target.value)} />
-
-      <p style={{ fontSize: 11, color: T.textDim, margin: "8px 0 12px", lineHeight: 1.5 }}>
-        Saved as <b>tentative</b> — open the booking to confirm, add guests, lend the van, or mark as maintenance.
+      <p style={{ fontSize: 11, color: T.textDim, margin: "12px 0 12px", lineHeight: 1.5 }}>
+        Saved as <b>tentative</b> — you'll be taken straight to the booking to add more detail.
       </p>
       {err && (
         <div style={{ background: err.warning ? T.accent + "12" : T.red + "12", borderRadius: T.radiusSm, marginBottom: 12, border: `1px solid ${err.warning ? T.accent + "40" : T.red + "30"}`, overflow: "hidden" }}>
@@ -2184,12 +2182,12 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                     Mark this booking as a maintenance block — van unavailable, no trip plan needed.
                   </p>
                   {b.familyId === "maintenance" ? (
-                    <button onClick={() => { dispatch({ type: "UPD_BOOKING", payload: { id: b.id, familyId: currentFamilyId } }); setShowMaint(false); }}
+                    <button onClick={() => { dispatch({ type: "UPD_BOOKING", payload: { id: b.id, familyId: b.createdBy || currentFamilyId } }); setShowMaint(false); }}
                       style={btn(T.bg, T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` })}>
                       ✕ Remove Maintenance Flag
                     </button>
                   ) : (
-                    <button onClick={() => { dispatch({ type: "UPD_BOOKING", payload: { id: b.id, familyId: "maintenance" } }); setShowMaint(false); }}
+                    <button onClick={() => { dispatch({ type: "UPD_BOOKING", payload: { id: b.id, familyId: "maintenance", createdBy: currentFamilyId } }); setShowMaint(false); }}
                       style={btn("#888888", T.surface, { fontSize: 12 })}>
                       🔧 Mark as Maintenance
                     </button>
@@ -2488,7 +2486,7 @@ function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odo
   const myBookings = [...bookings]
     .filter(b => b.familyId === currentFamilyId
       || (b.collaborators || []).includes(currentFamilyId)
-      || (b.familyId === "maintenance" && (b.createdBy || "") === currentFamilyId))
+      || b.familyId === "maintenance")
     .sort((a, b) => a.start.localeCompare(b.start));
   const upcoming = myBookings.filter(b => b.end >= today);
   const past = myBookings.filter(b => b.end < today);
@@ -4195,7 +4193,13 @@ export default function App() {
         {tab === "rules" && <RulesPanel rules={state.rules} dispatch={sbDispatch} />}
         {tab === "settings" && <ErrorBoundary><SettingsPanel state={state} dispatch={sbDispatch} currentFamilyId={currentFamily} themeMode={themeMode} onToggleTheme={toggleTheme} /></ErrorBoundary>}
 
-        {showBook && <BookingForm bookings={state.bookings} dispatch={sbDispatch} onClose={() => setShowBook(false)} currentFamilyId={currentFamily} families={families} />}
+        {showBook && <BookingForm bookings={state.bookings} dispatch={sbDispatch} onClose={(newId) => {
+          setShowBook(false);
+          if (newId) {
+            setTab("trips");
+            setOpenItinId(newId);
+          }
+        }} currentFamilyId={currentFamily} families={families} />}
 
         {/* Safe zone fill — behind everything, same colour as bar */}
         <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: "env(safe-area-inset-bottom)", background: T.surface, zIndex: 499 }} />
