@@ -280,6 +280,7 @@ function reducer(state, { type, payload, id }) {
     case "UPD_BOOKING_COLLAB": return { ...state, bookings: state.bookings.map(b => b.id === payload.id ? { ...b, collaborators: payload.collaborators } : b) };
     case "UPD_BOOKING_DAYS": return { ...state, bookings: state.bookings.map(b => b.id === payload.id ? { ...b, days: payload.days, notes: payload.notes !== undefined ? payload.notes : b.notes } : b) };
     case "ADD_PLACE": return { ...state, places: [...state.places, payload] };
+    case "UPD_PLACE": return { ...state, places: state.places.map(p => p.id === payload.id ? { ...p, ...payload } : p) };
     case "DEL_PLACE": return { ...state, places: state.places.filter(p => p.id !== id) };
     case "ADD_REVIEW": return {
       ...state, places: state.places.map(p => {
@@ -758,7 +759,7 @@ function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, 
       {/* Content */}
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "14px 12px 110px" }}>
         {tab === "trip" && <GuestTripView />}
-        {tab === "places" && <PlacesPanel places={places} dispatch={dispatch} onPickItinerary={() => {}} families={[]} currentFamilyId={guestId} itineraries={[]} />}
+        {tab === "places" && <PlacesPanel places={places} dispatch={dispatch} onPickItinerary={() => {}} families={[]} currentFamilyId={guestId} itineraries={[]} canDelete={false} />}
         {tab === "kit" && (
           <div>
             <div style={{ ...card({ padding: 12, marginBottom: 12, background: T.primary + "06", border: `1px solid ${T.primary}20` }) }}>
@@ -860,7 +861,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v3.5
+          Adventure Hub · v3.7
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1578,12 +1579,15 @@ function AddPlaceModal({ dispatch, onClose, currentFamilyId }) {
   );
 }
 
-function PlaceCard({ place, dispatch, onAddToItinerary, families }) {
+function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = true }) {
   const [expanded, setExpanded] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [ef, setEf] = useState({});
   const fColor = id => families.find(f => f.id === id)?.color ?? T.primary;
   const fName = id => families.find(f => f.id === id)?.name ?? "Unknown";
   const fEmoji = id => families.find(f => f.id === id)?.emoji ?? "";
+  const CATS = ["Campsite", "Beach", "Mountain", "Holiday Park", "Town", "Nature Reserve", "Other"];
   const AddReview = ({ onClose }) => {
     const [fam, setFam] = useState("f1"); const [rat, setRat] = useState(4); const [txt, setTxt] = useState("");
     return (<Modal title={`Review: ${place.name}`} onClose={onClose} width={400}>
@@ -1637,8 +1641,29 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families }) {
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
             <button onClick={() => setShowReview(true)} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 12 }), border: `1px solid ${T.primary}30` }}>+ Review</button>
             <button onClick={() => onAddToItinerary(place)} style={{ ...btn(T.accent + "15", T.accent, { fontSize: 12 }), border: `1px solid ${T.accent}30` }}>Add to Trip</button>
-            <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={() => dispatch({ type: "DEL_PLACE", id: place.id })} style={{ fontSize: 12 }} />
+            {canDelete && <button onClick={() => { setEf({ name: place.name, category: place.category }); setEditing(true); }}
+              style={{ ...btn(T.bg, T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` }) }}>✏️ Edit</button>}
+            {canDelete && <DeleteButton label="Remove" message={`Remove "${place.name}"?`} onConfirm={() => dispatch({ type: "DEL_PLACE", id: place.id })} style={{ fontSize: 12 }} />}
           </div>
+
+          {editing && (
+            <div style={{ marginTop: 12, background: T.bg, borderRadius: T.radiusSm, padding: 14, border: `1px solid ${T.border}` }}>
+              <label style={lbl}>Place Name</label>
+              <input style={inp} value={ef.name || ""} onChange={e => setEf(f => ({ ...f, name: e.target.value }))} />
+              <label style={lbl}>Category</label>
+              <select style={inp} value={ef.category || ""} onChange={e => setEf(f => ({ ...f, category: e.target.value }))}>
+                {CATS.map(c => <option key={c}>{c}</option>)}
+              </select>
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button onClick={() => {
+                  if (!ef.name.trim()) return;
+                  dispatch({ type: "UPD_PLACE", payload: { ...place, name: ef.name, category: ef.category } });
+                  setEditing(false);
+                }} style={btn(T.primary, T.surface, { fontSize: 12 })}>Save</button>
+                <button onClick={() => setEditing(false)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` }) }}>Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {showReview && <AddReview onClose={() => setShowReview(false)} />}
@@ -1646,7 +1671,7 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families }) {
   );
 }
 
-function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamilyId, itineraries }) {
+function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamilyId, itineraries, canDelete = true }) {
   const [view, setView] = useState("list"); const [adding, setAdding] = useState(false); const [pickItin, setPickItin] = useState(null);
   const [pickDay, setPickDay] = useState(null); // {itin, place} — day selection step
   // Hide background map while modal is open so it doesn't bleed through
@@ -1660,10 +1685,10 @@ function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamil
         </div>
         <button onClick={() => setAdding(true)} style={btn(T.primary, T.surface)}>+ Add Place</button>
       </div>
-      {showMap && <><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420} /></MapTouchWrapper><div style={{ marginTop: 14 }}>{places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} />)}</div></>}
+      {showMap && <><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420} /></MapTouchWrapper><div style={{ marginTop: 14 }}>{places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} />)}</div></>}
       {view === "list" && (places.length === 0 ? <div style={{ ...card({ padding: 24, textAlign: "center" }) }}>
         <p style={{ color: T.textDim, margin: 0 }}>No places saved yet. Add your first family favourite!</p>
-      </div> : places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} />))}
+      </div> : places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} />))}
       {adding && <AddPlaceModal dispatch={dispatch} onClose={() => setAdding(false)} currentFamilyId={currentFamilyId} />}
       {pickItin && !pickDay && (
         <Modal title="Add to Trip" onClose={() => setPickItin(null)} width={360}>
@@ -3899,6 +3924,7 @@ export default function App() {
           await supa.update("bookings", { status: "confirmed" }, { id });
           break;
                 case "ADD_PLACE": await supa.upsert("places", toDB.place(payload)); break;
+        case "UPD_PLACE": await supa.update("places", { name: payload.name, category: payload.category }, { id: payload.id }); break;
         case "DEL_PLACE": await supa.delete("places", { id });
           {
             const pl = state.places.find(p => p.id === id);
