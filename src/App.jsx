@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v4.4
+          Adventure Hub · v1.15
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1818,7 +1818,13 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
   const save = () => {
     const otherId = data.bookingId || data.id;
     const clash = (bookings || []).filter(b => b.id !== otherId && b.status === "confirmed" && data.start <= b.end && data.end >= b.start);
-    if (clash.length) { h("_saveErr", "Cannot save - clashes with confirmed: " + clash.map(b => b.destination).join(", ")); return; }
+    if (clash.length) {
+      h("_saveErr", "Cannot save — clashes with confirmed booking: " + clash.map(b => {
+        const fam = (families || []).find(f => f.id === b.familyId);
+        return `${fam ? fam.emoji + " " + fam.name + " — " : ""}${b.destination}`;
+      }).join(", "));
+      return;
+    }
     const payload = { ...data };
     delete payload._unsaved; delete payload._tentClash; delete payload._saveErr;
     if (data._unsaved) dispatch({ type: "ADD_ITINERARY", payload });
@@ -1881,7 +1887,10 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
                 start <= b.end && end >= b.start
               );
               if (clash.length) {
-                alert("Cannot save — dates clash with a confirmed booking: " + clash.map(b => b.destination).join(", "));
+                alert("Cannot save — dates clash with a confirmed booking: " + clash.map(b => {
+                  const fam = (families || []).find(f => f.id === b.familyId);
+                  return `${fam ? fam.emoji + " " + fam.name + " — " : ""}${b.destination}`;
+                }).join(", "));
                 return;
               }
               const tentClash = (bookings || []).filter(b =>
@@ -1909,30 +1918,31 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
               <button onClick={() => addAct(di)} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 11, padding: "4px 12px" }), border: `1px solid ${T.primary}30` }}>+ Activity</button>
             </div>
             {(day.activities || []).map((act, ai) => (
-              <div key={act.id} style={{ ...card({ padding: 10, marginBottom: 8 }), border: `1px solid ${T.border}` }}>
-                <div style={{ display: "grid", gridTemplateColumns: "76px 1fr auto", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                  <input style={{ ...inp, padding: "6px 8px", fontSize: 12 }} placeholder="Time" value={act.time} onChange={e => updAct(di, ai, "time", e.target.value)} />
-                  <input style={{ ...inp, padding: "6px 8px", fontSize: 12 }} placeholder="Activity title" value={act.title} onChange={e => updAct(di, ai, "title", e.target.value)} />
-                  <button onClick={() => delAct(di, ai)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 18, padding: "0 4px", flexShrink: 0 }}>&times;</button>
+              <div key={act.id} style={{ ...card({ padding: 12, marginBottom: 8 }), border: `1px solid ${T.border}` }}>
+                {/* Row 1: time + title + delete */}
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                  <input style={{ ...inp, width: 72, flexShrink: 0, padding: "7px 8px", fontSize: 13 }} placeholder="Time" value={act.time} onChange={e => updAct(di, ai, "time", e.target.value)} />
+                  <input style={{ ...inp, flex: 1, padding: "7px 8px", fontSize: 13 }} placeholder="Activity title *" value={act.title} onChange={e => updAct(di, ai, "title", e.target.value)} />
+                  <button onClick={() => delAct(di, ai)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 20, padding: "0 2px", flexShrink: 0 }}>&times;</button>
                 </div>
-                <div style={{ marginBottom: 6 }}>
-                  {act.placeId ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.primary + "10", borderRadius: T.radiusSm, padding: "6px 10px", border: `1px solid ${T.primary}30` }}>
-                      <span style={{ fontSize: 13, color: T.primary, flex: 1, fontWeight: 600 }}>📍 {places.find(p => p.id === act.placeId)?.name || "Place"}</span>
-                      <button onClick={() => { setPickingPlaceFor({ di, ai }); }} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 11, padding: "3px 8px" }) }} >Change</button>
-                      <button onClick={() => updAct(di, ai, "placeId", "")} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 16 }}>&times;</button>
-                    </div>
-                  ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                      <button onClick={() => setPickingPlaceFor({ di, ai })}
-                        style={{ ...btn(T.bg, T.textMuted, { border: `1px solid ${T.border}`, fontSize: 12, padding: "7px 10px", textAlign: "left" }) }}>
-                        📍 Pick a saved place...
-                      </button>
-                      <input style={{ ...inp, padding: "6px 8px", fontSize: 12 }} placeholder="📌 Or type location..." value={act.location || ""} onChange={e => updAct(di, ai, "location", e.target.value)} />
-                    </div>
-                  )}
-                </div>
-                <textarea style={{ ...inp, padding: "6px 8px", fontSize: 12, height: 48, resize: "none" }} placeholder="Notes (optional)..." value={act.notes || ""} onChange={e => updAct(di, ai, "notes", e.target.value)} />
+                {/* Row 2: location */}
+                {act.placeId ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.primary + "10", borderRadius: T.radiusSm, padding: "8px 10px", border: `1px solid ${T.primary}30`, marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: T.primary, flex: 1, fontWeight: 600 }}>📍 {places.find(p => p.id === act.placeId)?.name || "Place"}</span>
+                    <button onClick={() => setPickingPlaceFor({ di, ai })} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 11, padding: "3px 8px" }) }}>Change</button>
+                    <button onClick={() => updAct(di, ai, "placeId", "")} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 16 }}>&times;</button>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 8 }}>
+                    <input style={{ ...inp, padding: "7px 8px", fontSize: 13, marginBottom: 6 }} placeholder="📌 Type a location..." value={act.location || ""} onChange={e => updAct(di, ai, "location", e.target.value)} />
+                    {places.length > 0 && <button onClick={() => setPickingPlaceFor({ di, ai })}
+                      style={{ ...btn(T.bg, T.textMuted, { border: `1px solid ${T.border}`, fontSize: 12, padding: "6px 12px", width: "100%", textAlign: "left" }) }}>
+                      📍 Or pick from saved places...
+                    </button>}
+                  </div>
+                )}
+                {/* Row 3: notes */}
+                <textarea style={{ ...inp, padding: "7px 8px", fontSize: 13, height: 52, resize: "none" }} placeholder="Notes (optional)" value={act.notes || ""} onChange={e => updAct(di, ai, "notes", e.target.value)} />
               </div>
             ))}
             {!(day.activities || []).length && <p style={{ color: T.textDim, fontSize: 12, margin: "4px 0" }}>No activities planned.</p>}
