@@ -857,7 +857,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v2.1
+          Adventure Hub · v2.2
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1341,14 +1341,9 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
   };
   return (
     <Modal title="New Booking" onClose={onClose}>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
-        <div style={{
-          flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
-          background: f.familyId === "maintenance" ? T.textDim + "15" : T.primary + "08",
-          borderRadius: T.radiusSm,
-          border: `1px solid ${f.familyId === "maintenance" ? T.textDim + "40" : T.primary + "20"}`
-        }}>
+      {/* Booking as family / maintenance toggle */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: f.familyId === "maintenance" ? T.textDim + "15" : T.primary + "08", borderRadius: T.radiusSm, border: `1px solid ${f.familyId === "maintenance" ? T.textDim + "40" : T.primary + "20"}` }}>
           <FamilyAvatar family={families.find(fam => fam.id === f.familyId)} size={32} fontSize={18} />
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>Booking as</div>
@@ -1357,71 +1352,28 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
             </div>
           </div>
         </div>
-        <button
-          onClick={() => h("familyId", f.familyId === "maintenance" ? currentFamilyId : "maintenance")}
-          style={{
-            ...btn(
-              f.familyId === "maintenance" ? T.textDim + "20" : "transparent",
-              f.familyId === "maintenance" ? T.textMuted : T.textDim,
-              { border: `1px solid ${T.border}`, fontSize: 11, padding: "8px 10px", flexShrink: 0 }
-            )
-          }}>
+        <button onClick={() => h("familyId", f.familyId === "maintenance" ? currentFamilyId : "maintenance")}
+          style={{ ...btn(f.familyId === "maintenance" ? T.textDim + "20" : "transparent", f.familyId === "maintenance" ? T.textMuted : T.textDim, { border: `1px solid ${T.border}`, fontSize: 11, padding: "8px 10px", flexShrink: 0 }) }}>
           {f.familyId === "maintenance" ? "🔧 Undo" : "🔧 Maint."}
         </button>
       </div>
-      <label style={lbl}>Type</label>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        {["confirmed", "tentative"].map(s => (
-          <button key={s} onClick={() => h("status", s)} style={{ padding: "10px", border: `2px solid ${f.status === s ? fColor(f.familyId) : T.border}`, borderRadius: T.radiusSm, cursor: "pointer", fontWeight: 700, fontSize: 13, background: f.status === s ? fColor(f.familyId) + "15" : T.surface, color: f.status === s ? fColor(f.familyId) : T.textMuted, transition: "all 0.15s" }}>
-            {s === "confirmed" ? "Confirmed" : "Tentative"}
-          </button>
-        ))}
-      </div>
+
       <label style={lbl}>Dates *</label>
       <DateRangePicker
         startDate={f.start} endDate={f.end}
         minDate={fmt(TODAY)}
         onChange={({ start, end }) => setF(p => ({ ...p, start, end }))}
-        bookings={bookings}
-        families={families}
+        bookings={bookings} families={families}
       />
+
       <label style={lbl}>Destination *</label>
       <input style={inp} placeholder="e.g. Blue Lake Campsite" value={f.destination} onChange={e => h("destination", e.target.value)} />
+
       <label style={lbl}>Notes</label>
       <textarea style={{ ...inp, height: 60, resize: "vertical" }} value={f.notes} onChange={e => h("notes", e.target.value)} />
-      <label style={lbl}>Invite Families to Collaborate</label>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-        {(families || []).filter(fam => fam.id !== currentFamilyId && fam.id !== "maintenance").map(fam => {
-          const sel = (f.collaborators || []).includes(fam.id);
-          return (
-            <button key={fam.id} type="button" onClick={() => setF(p => ({ ...p, collaborators: sel ? p.collaborators.filter(id => id !== fam.id) : [...(p.collaborators || []), fam.id] }))}
-              style={{
-                ...btn(sel ? fam.color + "20" : "transparent", sel ? fam.color : T.textMuted,
-                  { fontSize: 12, padding: "6px 12px", border: `2px solid ${sel ? fam.color : T.border}`, transition: "all 0.15s", display: "flex", alignItems: "center", gap: 4 })
-              }}>
-              <span>{fam.emoji}</span>
-              <span>{fam.name.split(" ")[0]}</span>
-              {sel && <span>✓</span>}
-            </button>
-          );
-        })}
-      </div>
-      <p style={{ fontSize: 11, color: T.textDim, margin: "0 0 8px" }}>Collaborators share the trip plan and can add activities.</p>
-      <label style={lbl}>Extra Guests</label>
-      <input style={inp} placeholder="e.g. Sarah, Tom & kids" value={f.guests || ""} onChange={e => setF(p => ({ ...p, guests: e.target.value }))} />
-      <p style={{ fontSize: 11, color: T.textDim, margin: "-4px 0 8px" }}>Just names — for your reference only.</p>
-      <label style={lbl}>Guest Access PIN</label>
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-        <div style={{ flex: 1 }}>
-          <input style={{ ...inp, letterSpacing: 6, fontSize: 15, fontWeight: 700 }} placeholder="e.g. 1234" maxLength={4}
-            value={f.guestPin || ""} onChange={e => setF(p => ({ ...p, guestPin: e.target.value.replace(/\D/g, "").slice(0, 4) }))} />
-          {f.guestPin && f.guestPin.length < 4 && <p style={{ color: T.accent, fontSize: 11, margin: "3px 0 0" }}>Enter 4 digits</p>}
-        </div>
-        <input style={{ ...inp, flex: 1.5 }} placeholder="Guest name e.g. The Hendersons"
-          value={f.guestName || ""} onChange={e => setF(p => ({ ...p, guestName: e.target.value }))} />
-      </div>
-      <p style={{ fontSize: 11, color: T.textDim, margin: "4px 0 8px", lineHeight: 1.5 }}>
-        Optional — share this PIN with your guests so they can sign in, plan their trip and get a trip report. Active for 3 weeks after the booking ends.
+
+      <p style={{ fontSize: 11, color: T.textDim, margin: "8px 0 12px", lineHeight: 1.5 }}>
+        Saved as <b>tentative</b> — open the booking afterwards to confirm, add collaborators, guests or a guest PIN.
       </p>
       {err && (
         <div style={{ background: err.warning ? T.accent + "12" : T.red + "12", borderRadius: T.radiusSm, marginBottom: 12, border: `1px solid ${err.warning ? T.accent + "40" : T.red + "30"}`, overflow: "hidden" }}>
