@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v3.9
+          Adventure Hub · v4.0
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1586,32 +1586,47 @@ function AddPlaceModal({ dispatch, onClose, currentFamilyId }) {
   );
 }
 
+// ─── ADD REVIEW MODAL ─────────────────────────────────────────────────────────
+function AddReviewModal({ place, families, currentFamilyId, dispatch, onClose }) {
+  const [fam, setFam] = useState(currentFamilyId || (families[0]?.id) || "");
+  const [rat, setRat] = useState(4);
+  const [txt, setTxt] = useState("");
+  return (
+    <Modal title={`Review: ${place.name}`} onClose={onClose} width={400}>
+      {families.length > 1 && (
+        <>
+          <label style={lbl}>Reviewer</label>
+          <select style={inp} value={fam} onChange={e => setFam(e.target.value)}>
+            {families.map(f => <option key={f.id} value={f.id}>{f.emoji} {f.name}</option>)}
+          </select>
+        </>
+      )}
+      <label style={lbl}>Rating</label>
+      <StarRating value={rat} onChange={setRat} size={26} />
+      <label style={lbl}>Review</label>
+      <textarea style={{ ...inp, height: 80 }} placeholder="Share your experience..." value={txt} onChange={e => setTxt(e.target.value)} />
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <button onClick={() => {
+          if (!txt.trim() || !fam) return;
+          dispatch({ type: "ADD_REVIEW", payload: { placeId: place.id, review: { familyId: fam, rating: rat, text: txt, date: fmt(TODAY) } } });
+          onClose();
+        }} style={btn(T.primary, T.surface)}>Post Review</button>
+        <button onClick={onClose} style={{ ...btn("transparent", T.textMuted, { border: `1px solid ${T.border}` }) }}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
 function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = true, currentFamilyId = null }) {
   const [expanded, setExpanded] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [editing, setEditing] = useState(false);
   const [ef, setEf] = useState({});
-  const fColor = id => families.find(f => f.id === id)?.color ?? T.primary;
-  const fName = id => families.find(f => f.id === id)?.name ?? "Unknown";
-  const fEmoji = id => families.find(f => f.id === id)?.emoji ?? "";
+  const fColor = id => (families || []).find(f => f.id === id)?.color ?? T.primary;
+  const fName = id => (families || []).find(f => f.id === id)?.name ?? "Unknown";
+  const fEmoji = id => (families || []).find(f => f.id === id)?.emoji ?? "📍";
   const CATS = ["Campsite", "Beach", "Mountain", "Holiday Park", "Town", "Nature Reserve", "Other"];
-  // Can edit/delete: either canDelete is true and it's their place, or admin (canDelete true, no currentFamilyId filter)
   const isOwner = !currentFamilyId || place.familyId === currentFamilyId;
-  const AddReview = ({ onClose }) => {
-    const [fam, setFam] = useState(currentFamilyId || (families[0]?.id) || "f1");
-    const [rat, setRat] = useState(4); const [txt, setTxt] = useState("");
-    return (<Modal title={`Review: ${place.name}`} onClose={onClose} width={400}>
-      <label style={lbl}>Family</label>
-      <select style={inp} value={fam} onChange={e => setFam(e.target.value)}>{families.map(f => <option key={f.id} value={f.id}>{f.emoji} {f.name}</option>)}</select>
-      <label style={lbl}>Rating</label><StarRating value={rat} onChange={setRat} size={26} />
-      <label style={lbl}>Review</label>
-      <textarea style={{ ...inp, height: 80 }} placeholder="Share your experience..." value={txt} onChange={e => setTxt(e.target.value)} />
-      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <button onClick={() => { if (!txt.trim()) return; dispatch({ type: "ADD_REVIEW", payload: { placeId: place.id, review: { familyId: fam, rating: rat, text: txt, date: fmt(TODAY) } } }); onClose(); }} style={btn(T.primary, T.surface)}>Post Review</button>
-        <button onClick={onClose} style={{ ...btn("transparent", T.textMuted, { border: `1px solid ${T.border}` }) }}>Cancel</button>
-      </div>
-    </Modal>);
-  };
   return (
     <div style={{ ...card({ padding: 0, overflow: "hidden", marginBottom: 10 }) }}>
       <div onClick={() => setExpanded(!expanded)} style={{ padding: "11px 14px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
@@ -1682,7 +1697,7 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
           )}
         </div>
       )}
-      {showReview && <AddReview onClose={() => setShowReview(false)} />}
+      {showReview && <AddReviewModal place={place} families={families} currentFamilyId={currentFamilyId} dispatch={dispatch} onClose={() => setShowReview(false)} />}
     </div>
   );
 }
