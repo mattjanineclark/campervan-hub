@@ -936,11 +936,25 @@ function DateRangePicker({ startDate, endDate, onChange, minDate, bookings = [],
 function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families }) {
   const fColor = id => families.find(f => f.id === id)?.color ?? T.primary;
   const fName = id => families.find(f => f.id === id)?.name ?? "Unknown";
-  const [f, setF] = useState({ familyId: currentFamilyId || "f1", start: "", end: "", destination: "", notes: "", status: "tentative", collaborators: [], guests: "" });
+  const [f, setF] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("bookingDraft");
+      if (saved) return JSON.parse(saved);
+    } catch (e) { }
+    return { familyId: currentFamilyId || "f1", start: "", end: "", destination: "", notes: "", status: "tentative", collaborators: [], guests: "" };
+  });
   const [err, setErr] = useState("");
   const h = (k, v) => { setF(p => ({ ...p, [k]: v })); if (k === "start" || k === "end") setErr(""); };
+  useEffect(() => {
+    try { sessionStorage.setItem("bookingDraft", JSON.stringify(f)); } catch (e) { }
+  }, [f]);
   const doSave = () => {
     dispatch({ type: "ADD_BOOKING", payload: { ...f, id: "b" + Date.now() } });
+    try { sessionStorage.removeItem("bookingDraft"); } catch (e) { }
+    onClose();
+  };
+  const cancelForm = () => {
+    try { sessionStorage.removeItem("bookingDraft"); } catch (e) { }
     onClose();
   };
   const submit = () => {
@@ -1045,7 +1059,7 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
         <button onClick={err && err.warning ? doSave : submit} style={btn(T.primary, T.surface)}>
           {err && err.warning ? "Book Anyway" : "Save Booking"}
         </button>
-        <button onClick={onClose} style={{ ...btn("transparent", T.textMuted, { border: `1px solid ${T.border}` }) }}>Cancel</button>
+        <button onClick={cancelForm} style={{ ...btn("transparent", T.textMuted, { border: `1px solid ${T.border}` }) }}>Cancel</button>
       </div>
     </Modal>
   );
@@ -3310,7 +3324,9 @@ export default function App() {
     setCurrentFamily(familyId);
     try { sessionStorage.setItem("currentFamily", familyId); } catch (e) { }
   };
-  const [showBook, setShowBook] = useState(false);
+  const [showBook, setShowBook] = useState(() => {
+    try { return sessionStorage.getItem("showBookingForm") === "1"; } catch (e) { return false; }
+  });
   const [currentFamily, setCurrentFamily] = useState(() => {
     try { return sessionStorage.getItem("currentFamily") || null; } catch (e) { return null; }
   });
@@ -3481,6 +3497,10 @@ export default function App() {
   };
 
   useEffect(() => { applyTheme(themeMode); }, []);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("showBookingForm", showBook ? "1" : "0"); } catch (e) { }
+  }, [showBook]);
 
   useEffect(() => {
     try { sessionStorage.setItem("currentTab", tab); } catch (e) { }
