@@ -3300,15 +3300,20 @@ export default function App() {
     if (!document.getElementById("no-zoom-style")) document.head.appendChild(style);
   }, []);
   useEffect(() => { applyTheme(themeMode); }, []);
-  const [tab, setTab] = useState("calendar");
+  const [tab, setTab] = useState(() => {
+    try { return sessionStorage.getItem("currentTab") || "calendar"; } catch (e) { return "calendar"; }
+  });
   // Set tab to family's homeTab when they sign in
   const handleLogin = (familyId) => {
     const fam = state.families.find(f => f.id === familyId);
     setTab(fam?.homeTab || "calendar");
     setCurrentFamily(familyId);
+    try { sessionStorage.setItem("currentFamily", familyId); } catch (e) { }
   };
   const [showBook, setShowBook] = useState(false);
-  const [currentFamily, setCurrentFamily] = useState(null);
+  const [currentFamily, setCurrentFamily] = useState(() => {
+    try { return sessionStorage.getItem("currentFamily") || null; } catch (e) { return null; }
+  });
   const [openItinId, setOpenItinId] = useState(null); // itinerary to auto-open in Trips tab
   const currentTab = TABS.find(t => t.id === tab) || TABS[0];
   const { families } = state;
@@ -3477,6 +3482,10 @@ export default function App() {
 
   useEffect(() => { applyTheme(themeMode); }, []);
 
+  useEffect(() => {
+    try { sessionStorage.setItem("currentTab", tab); } catch (e) { }
+  }, [tab]);
+
   // Called from calendar: open Trips tab and edit a specific itinerary (or create one linked to a booking)
   const handleOpenItinerary = (bookingId) => {
     setOpenItinId(bookingId || null);
@@ -3516,7 +3525,7 @@ export default function App() {
                   ? <img src={fam.photo} alt={fam.name} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover", verticalAlign: "middle" }} />
                   : <span>{fam.emoji}</span>} {fam.name.replace("The ", "").trim()}
               </div>
-              <button onClick={() => setCurrentFamily(null)} title="Sign out"
+              <button onClick={() => { setCurrentFamily(null); try { sessionStorage.removeItem("currentFamily"); } catch (e) { } }} title="Sign out"
                 style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: `1px solid ${T.border}`, borderRadius: T.radiusSm, cursor: "pointer", color: T.textMuted, fontSize: 14 }}>
                 ⏻
               </button>
