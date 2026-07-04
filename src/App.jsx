@@ -263,9 +263,6 @@ const INIT = {
   odoRate: 0.30, // cost per km in dollars
 };
 
-// ─── REDUCER ──────────────────────────────────────────────────────────
-// Central state machine — all state changes flow through here
-
 function reducer(state, { type, payload, id }) {
   switch (type) {
     case "ADD_BOOKING": return { ...state, bookings: [...state.bookings, payload] };
@@ -483,7 +480,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v2.0
+          Adventure Hub · v2.1
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -752,9 +749,6 @@ function UsageStats({ bookings, families }) {
 
 // ─── DATE RANGE PICKER ────────────────────────────────────────────────────────
 
-// ─── DATE RANGE PICKER ────────────────────────────────────────────────
-// Tap-to-select date range component used in booking form
-
 function DateRangePicker({ startDate, endDate, onChange, minDate, bookings = [], families = [] }) {
   const [month, setMonth] = useState(() => {
     const base = startDate ? new Date(startDate) : new Date();
@@ -928,8 +922,6 @@ function DateRangePicker({ startDate, endDate, onChange, minDate, bookings = [],
 }
 
 
-// BOOKING FORM
-
 // ─── BOOKING FORM ─────────────────────────────────────────────────────
 // Modal form for creating a new booking
 
@@ -1100,7 +1092,6 @@ function BookingCard({ b, families, onOpenItinerary, currentFamilyId, dispatch, 
           {b.notes && <div style={{ color: T.textDim, fontSize: 12, marginTop: 4, fontStyle: "italic" }}>"{b.notes}"</div>}
 
 
-
         </div>
       </div>
     </div>
@@ -1152,7 +1143,6 @@ function MyLocationButton({ onLocate }) {
   );
 }
 
-// PLACES
 
 // ─── PLACES ───────────────────────────────────────────────────────────
 // Place management — add, view, review locations
@@ -1374,7 +1364,6 @@ function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamil
   );
 }
 
-// TRIPS
 // ─── PLACE PICKER MODAL ───────────────────────────────────────────────────────
 function PlacePickerModal({ places, onSelect, onClose }) {
   const [search, setSearch] = useState("");
@@ -2475,8 +2464,6 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
 }
 
 
-// RULES
-
 // ─── RULES ────────────────────────────────────────────────────────────
 // Shared van rules — displayed and editable by all
 
@@ -2735,7 +2722,6 @@ function FamilyManager({ families, dispatch, currentFamilyId }) {
   );
 }
 
-// SETTINGS
 // ─── ERROR BOUNDARY ───────────────────────────────────────────────────────────
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -3162,8 +3148,6 @@ function BookingList({ bookings, dispatch, families, onOpenItinerary, currentFam
 }
 
 
-// ─── COLLAPSIBLE BOOKINGS ─────────────────────────────────────────────────────
-
 // ─── COLLAPSIBLE BOOKINGS ─────────────────────────────────────────────
 // Expandable bookings section in the calendar tab
 
@@ -3409,8 +3393,7 @@ export default function App() {
         case "CONFIRM_BOOKING":
           await supa.update("bookings", { status: "confirmed" }, { id });
           break;
-        // PLACES
-        case "ADD_PLACE": await supa.upsert("places", toDB.place(payload)); break;
+                case "ADD_PLACE": await supa.upsert("places", toDB.place(payload)); break;
         case "DEL_PLACE": await supa.delete("places", { id });
           {
             const pl = state.places.find(p => p.id === id);
@@ -3453,8 +3436,7 @@ export default function App() {
             const g = state.guides.find(g => g.id === id);
             await logActivity("Deleted guide", g?.title || id);
           } break;
-        // RULES
-        case "SET_RULES":
+                case "SET_RULES":
           for (const r of payload) await supa.upsert("rules", toDB.rule(r));
           break;
         case "ADD_ODO":
@@ -3513,7 +3495,6 @@ export default function App() {
     sbDispatch({ type: "UPD_BOOKING_DAYS", payload: { id: bookingId, days } });
   };
 
-  useEffect(() => { applyTheme(themeMode); }, []);
 
   useEffect(() => {
     try { sessionStorage.setItem("showBookingForm", showBook ? "1" : "0"); } catch (e) { }
@@ -3596,7 +3577,6 @@ export default function App() {
     </>
   );
 
-  if (!currentFamily) return <LoginScreen families={families} vanPhoto={state.vanPhoto} vanName={state.vanName} onLogin={handleLogin} />;
   const fam = families.find(f => f.id === currentFamily);
   // If families reloaded from DB and signed-in family not found, sign out
   if (!fam) { setCurrentFamily(null); return null; }
