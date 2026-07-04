@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v4.1
+          Adventure Hub · v4.2
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1626,6 +1626,10 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
   const fName = id => (families || []).find(f => f.id === id)?.name ?? "Unknown";
   const fEmoji = id => (families || []).find(f => f.id === id)?.emoji ?? "📍";
   const CATS = ["Campsite", "Beach", "Mountain", "Holiday Park", "Town", "Nature Reserve", "Other"];
+  // isOwner: can edit/delete this place
+  // - Family view (currentFamilyId set, canDelete=true): only their own places
+  // - Guest view (currentFamilyId set, canDelete=pinActive): only their own places  
+  // - No currentFamilyId: all places editable
   const isOwner = !currentFamilyId || place.familyId === currentFamilyId;
   return (
     <div style={{ ...card({ padding: 0, overflow: "hidden", marginBottom: 10 }) }}>
@@ -1640,8 +1644,11 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
             <StarRating value={place.overallRating} size={13} />
             <span style={{ color: T.textDim, fontSize: 12 }}>{place.reviews?.length || 0} review{place.reviews?.length !== 1 ? "s" : ""}</span>
             {place.familyId && (() => {
-              const f = families.find(fam => fam.id === place.familyId);
-              return f ? <span style={{ fontSize: 11, color: T.textDim }}>· {f.emoji} {f.name}</span> : null;
+              const f = (families || []).find(fam => fam.id === place.familyId);
+              if (f) return <span style={{ fontSize: 11, color: T.textDim }}>· {f.emoji} {f.name}</span>;
+              // Guest place — extract name from familyId format "guest_[bookingId]"
+              if (place.familyId.startsWith("guest_")) return <span style={{ fontSize: 11, color: T.textDim }}>· 🔑 Guest</span>;
+              return null;
             })()}
           </div>
         </div>
@@ -4218,7 +4225,9 @@ export default function App() {
           </>
         )}
         {tab === "trips" && <TripsPanel bookings={state.bookings} dispatch={sbDispatch} places={state.places} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={() => setOpenItinId(null)} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e => e._action === "MARK_PAID" ? sbDispatch({ type: "MARK_ODO_PAID", id: e.id }) : sbDispatch({ type: "ADD_ODO", payload: e })} />}
-        {tab === "places" && <PlacesPanel places={state.places} dispatch={sbDispatch} onPickItinerary={addPlaceToItinerary} families={families} currentFamilyId={currentFamily} itineraries={state.itineraries} />}
+        {tab === "places" && <PlacesPanel places={state.places} dispatch={sbDispatch} onPickItinerary={addPlaceToItinerary}
+          families={[...families, ...state.bookings.filter(b => b.guestName && b.guestPin).map(b => ({ id: "guest_" + b.id, name: b.guestName || "Guest", color: "#e07a28", emoji: "🔑" }))]}
+          currentFamilyId={currentFamily} itineraries={state.itineraries} />}
         {tab === "guides" && <GuidesPanel guides={state.guides} dispatch={sbDispatch} vanManual={state.vanManual} onSetManual={url => sbDispatch({ type: "SET_VAN_MANUAL", payload: url })} />}
         {tab === "kit" && <KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily} />}
         {tab === "odo" && <OdometerPanel odoLog={state.odoLog} odoRate={state.odoRate} dispatch={sbDispatch} families={families} bookings={state.bookings} currentFamilyId={currentFamily} />}
