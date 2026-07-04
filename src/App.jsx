@@ -112,7 +112,7 @@ const supa = {
 
 // Convert DB row format to app format and back
 const fromDB = {
-  booking: b => b ? ({ id: b.id, familyId: b.family_id, start: b.start_date, end: b.end_date, destination: b.destination, notes: b.notes || "", status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "", guestName: b.guest_name || "", guestPin: b.guest_pin || "" }) : null,
+  booking: b => b ? ({ id: b.id, familyId: b.family_id, start: b.start_date, end: b.end_date, destination: b.destination, notes: b.notes || "", status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "", guestName: b.guest_name || "", guestPin: b.guest_pin || "", createdBy: b.created_by || b.family_id }) : null,
   place: p => p ? ({ id: p.id, name: p.name, familyId: p.family_id, category: p.category, lat: p.lat, lng: p.lng, overallRating: p.overall_rating || 0, reviews: [] }) : null,
   review: r => r ? ({ familyId: r.family_id, rating: r.rating, text: r.review_text, date: r.review_date }) : null,
   itin: i => i ? ({ id: i.id, title: i.title, familyId: i.family_id, start: i.start_date || "", end: i.end_date || "", destination: i.destination || "", notes: i.notes || "", bookingId: i.booking_id || "", visibility: "private", days: i.days || [] }) : null,
@@ -127,6 +127,7 @@ const toDB = {
     const row = { id: b.id, family_id: b.familyId, start_date: b.start, end_date: b.end, destination: b.destination, notes: b.notes, status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "" };
     if (b.guestName !== undefined) row.guest_name = b.guestName || "";
     if (b.guestPin !== undefined) row.guest_pin = b.guestPin || "";
+    if (b.createdBy !== undefined) row.created_by = b.createdBy || b.familyId;
     return row;
   },
   place: p => ({ id: p.id, name: p.name, family_id: p.familyId, category: p.category, lat: p.lat, lng: p.lng, overall_rating: p.overallRating || 0 }),
@@ -859,7 +860,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v2.4
+          Adventure Hub · v2.8
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1343,21 +1344,13 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
   };
   return (
     <Modal title="New Booking" onClose={onClose}>
-      {/* Booking as family / maintenance toggle */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: f.familyId === "maintenance" ? T.textDim + "15" : T.primary + "08", borderRadius: T.radiusSm, border: `1px solid ${f.familyId === "maintenance" ? T.textDim + "40" : T.primary + "20"}` }}>
-          <FamilyAvatar family={families.find(fam => fam.id === f.familyId)} size={32} fontSize={18} />
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>Booking as</div>
-            <div style={{ fontWeight: 700, color: f.familyId === "maintenance" ? T.textMuted : T.primary, fontSize: 14 }}>
-              {families.find(fam => fam.id === f.familyId)?.name || "Unknown"}
-            </div>
-          </div>
+      {/* Booking family display */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", marginBottom: 14, background: T.primary + "08", borderRadius: T.radiusSm, border: `1px solid ${T.primary}20` }}>
+        <FamilyAvatar family={families.find(fam => fam.id === f.familyId)} size={32} fontSize={18} />
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>Booking as</div>
+          <div style={{ fontWeight: 700, color: T.primary, fontSize: 14 }}>{families.find(fam => fam.id === f.familyId)?.name || "Unknown"}</div>
         </div>
-        <button onClick={() => h("familyId", f.familyId === "maintenance" ? currentFamilyId : "maintenance")}
-          style={{ ...btn(f.familyId === "maintenance" ? T.textDim + "20" : "transparent", f.familyId === "maintenance" ? T.textMuted : T.textDim, { border: `1px solid ${T.border}`, fontSize: 11, padding: "8px 10px", flexShrink: 0 }) }}>
-          {f.familyId === "maintenance" ? "🔧 Undo" : "🔧 Maint."}
-        </button>
       </div>
 
       <label style={lbl}>Dates *</label>
@@ -1375,7 +1368,7 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
       <textarea style={{ ...inp, height: 60, resize: "vertical" }} value={f.notes} onChange={e => h("notes", e.target.value)} />
 
       <p style={{ fontSize: 11, color: T.textDim, margin: "8px 0 12px", lineHeight: 1.5 }}>
-        Saved as <b>tentative</b> — open the booking afterwards to confirm, add collaborators, guests or a guest PIN.
+        Saved as <b>tentative</b> — open the booking to confirm, add guests, lend the van, or mark as maintenance.
       </p>
       {err && (
         <div style={{ background: err.warning ? T.accent + "12" : T.red + "12", borderRadius: T.radiusSm, marginBottom: 12, border: `1px solid ${err.warning ? T.accent + "40" : T.red + "30"}`, overflow: "hidden" }}>
@@ -2003,13 +1996,16 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   const [odoForm, setOdoForm] = useState({ startKm: "", endKm: "", tolls: false, tollAmt: "", notes: "" });
   const [confirmWarn, setConfirmWarn] = useState(null);
   const [showReport, setShowReport] = useState(false);
+  const [showLend, setShowLend] = useState(false);
+  const [showGuests, setShowGuests] = useState(false);
+  const [showMaint, setShowMaint] = useState(false);
   useEffect(() => {
     if (openId === b.id) { setExpanded(true); if (setOpenId) setOpenId(null); setTimeout(() => cardRef.current && cardRef.current.scrollIntoView({ behavior: "smooth", block: "start" }), 150); }
   }, [openId]); // null | {type:"blocked"|"warn", msg:string}
 
   const odo = (odoLog || []).filter(e => e.bookingId === b.id);
   const isUpcoming = b.end >= today;
-  const isOwner = b.familyId === currentFamilyId;
+  const isOwner = b.familyId === currentFamilyId || (b.familyId === "maintenance" && (b.createdBy || b.familyId) === currentFamilyId);
   const nights_n = nights(b.start, b.end);
   const days = b.days || [];
 
@@ -2161,39 +2157,175 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
             </div>
           )}
 
-          {/* ── Guest Access — owner can set/change PIN ── */}
+          {/* ── Lend Van / Add Guests ── */}
           {isOwner && (
             <div style={{ padding: "10px 14px", borderTop: `1px solid ${T.borderLight}` }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>🔑 Guest Access</div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <input style={{ ...inp, width: 90, letterSpacing: 6, fontSize: 14, fontWeight: 700 }} placeholder="PIN" maxLength={4}
-                  value={b.guestPin || ""}
-                  onChange={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestPin: e.target.value.replace(/\D/g, "").slice(0, 4) } })}
-                  onBlur={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestPin: e.target.value.replace(/\D/g, "").slice(0, 4) } })} />
-                <input style={{ ...inp, flex: 1 }} placeholder="Guest name e.g. The Hendersons"
-                  value={b.guestName || ""}
-                  onChange={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestName: e.target.value } })}
-                  onBlur={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestName: e.target.value } })} />
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Lending & Guests</div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <button onClick={() => { setShowLend(!showLend); setShowGuests(false); setShowMaint(false); }}
+                  style={{ ...btn(T.primary + "15", T.primary, { flex: 1, fontSize: 12, border: `1px solid ${T.primary}30`, padding: "10px 8px" }) }}>
+                  🔑 Lend Van
+                </button>
+                <button onClick={() => { setShowGuests(!showGuests); setShowLend(false); setShowMaint(false); }}
+                  style={{ ...btn(T.accent + "15", T.accent, { flex: 1, fontSize: 12, border: `1px solid ${T.accent}30`, padding: "10px 8px" }) }}>
+                  👥 Add Guests
+                </button>
+                <button onClick={() => { setShowMaint(!showMaint); setShowLend(false); setShowGuests(false); }}
+                  style={{ ...btn(b.familyId === "maintenance" ? "#88888830" : T.bg, b.familyId === "maintenance" ? "#666" : T.textMuted, { flex: 1, fontSize: 12, border: `1px solid ${T.border}`, padding: "10px 8px" }) }}>
+                  🔧 Maint.
+                </button>
               </div>
-              {b.guestPin && b.guestPin.length === 4 && (
-                <p style={{ fontSize: 11, color: T.primary, margin: "6px 0 0", fontWeight: 600 }}>
-                  ✓ Guest PIN set — active until {fmt(new Date(new Date(b.end).getTime() + 21*24*60*60*1000))}
-                </p>
-              )}
-              <p style={{ fontSize: 11, color: T.textDim, margin: "4px 0 0", lineHeight: 1.5 }}>
-                Share this PIN with guests so they can sign in and plan their trip. Active for 3 weeks after the booking ends.
-              </p>
-            </div>
-          )}
 
-          {/* ── Guests — owner can edit ── */}
-          {isOwner && (
-            <div style={{ padding: "10px 14px", borderTop: `1px solid ${T.borderLight}` }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>👥 Extra Guests</div>
-              <input style={{ ...inp, fontSize: 12 }} placeholder="e.g. Sarah, Tom & kids" value={b.guests || ""}
-                onChange={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guests: e.target.value } })}
-                onBlur={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guests: e.target.value } })} />
-              <p style={{ fontSize: 11, color: T.textDim, margin: "4px 0 0" }}>Names only — for your reference.</p>
+              {/* Maintenance panel */}
+              {showMaint && (
+                <div style={{ background: "#88888810", border: "1px solid #88888830", borderRadius: T.radiusSm, padding: 14, marginBottom: 10 }}>
+                  <div style={{ fontWeight: 700, color: "#666", fontSize: 13, marginBottom: 8 }}>🔧 Maintenance Block</div>
+                  <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 12px", lineHeight: 1.5 }}>
+                    Mark this booking as a maintenance block — van unavailable, no trip plan needed.
+                  </p>
+                  {b.familyId === "maintenance" ? (
+                    <button onClick={() => { dispatch({ type: "UPD_BOOKING", payload: { id: b.id, familyId: currentFamilyId } }); setShowMaint(false); }}
+                      style={btn(T.bg, T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` })}>
+                      ✕ Remove Maintenance Flag
+                    </button>
+                  ) : (
+                    <button onClick={() => { dispatch({ type: "UPD_BOOKING", payload: { id: b.id, familyId: "maintenance" } }); setShowMaint(false); }}
+                      style={btn("#888888", T.surface, { fontSize: 12 })}>
+                      🔧 Mark as Maintenance
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Lend Van panel */}
+              {showLend && (
+                <div style={{ background: T.primary + "06", border: `1px solid ${T.primary}20`, borderRadius: T.radiusSm, padding: 14, marginBottom: 10 }}>
+                  <div style={{ fontWeight: 700, color: T.primary, fontSize: 13, marginBottom: 12 }}>🔑 Lend Van to Guests</div>
+                  <label style={lbl}>Guest / Group Name</label>
+                  <input style={inp} placeholder="e.g. The Hendersons"
+                    value={b.guestName || ""}
+                    onChange={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestName: e.target.value } })}
+                    onBlur={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestName: e.target.value } })} />
+                  <label style={lbl}>Access PIN</label>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ ...inp, flex: 1, letterSpacing: 8, fontSize: 18, fontWeight: 800, color: T.primary, textAlign: "center", background: T.primary + "08", border: `1.5px solid ${T.primary}30` }}>
+                      {b.guestPin || "----"}
+                    </div>
+                    <button onClick={() => {
+                      const pin = String(Math.floor(1000 + Math.random() * 9000));
+                      dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestPin: pin } });
+                    }} style={btn(T.primary, T.surface, { fontSize: 12, flexShrink: 0 })}>
+                      {b.guestPin ? "↺ New PIN" : "Generate PIN"}
+                    </button>
+                  </div>
+                  {b.guestPin && (
+                    <p style={{ fontSize: 11, color: T.primary, margin: "0 0 12px", fontWeight: 600 }}>
+                      ✓ Active until {fmt(new Date(new Date(b.end).getTime() + 21*24*60*60*1000))}
+                    </p>
+                  )}
+                  {b.guestPin && b.guestPin.length === 4 && (() => {
+                    const appUrl = "https://mattjanineclark.github.io/campervan-hub/";
+                    const gName = b.guestName || "there";
+                    const shareGuide = () => {
+                      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Adventure Hub — Guest Access</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 20px; color: #1a2e1a; background: #f0f4f0; }
+  .header { background: linear-gradient(135deg,#2d6a4f,#3a8a5f); color: white; border-radius: 16px; padding: 28px 24px; text-align: center; margin-bottom: 24px; }
+  .header h1 { margin: 0 0 4px; font-size: 22px; }
+  .header p { margin: 0; opacity: 0.85; font-size: 14px; }
+  .pin-box { background: white; border: 2px solid #2d6a4f30; border-radius: 12px; padding: 20px; margin: 20px 0; text-align: center; }
+  .pin { font-size: 42px; font-weight: 800; letter-spacing: 12px; color: #2d6a4f; margin: 8px 0; }
+  .pin-label { font-size: 12px; color: #8aab82; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+  .section { background: white; border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+  .section h3 { margin: 0 0 12px; font-size: 13px; color: #4a6741; text-transform: uppercase; letter-spacing: 1px; }
+  .step { display: flex; gap: 12px; margin-bottom: 10px; align-items: flex-start; }
+  .step-num { background: #2d6a4f; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .step p { margin: 0; font-size: 14px; line-height: 1.5; }
+  .link { background: #2d6a4f10; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #2d6a4f; font-weight: 600; word-break: break-all; margin-top: 8px; }
+  .feature { display: flex; gap: 10px; margin-bottom: 8px; font-size: 14px; }
+  .footer { text-align: center; color: #8aab82; font-size: 11px; margin-top: 24px; }
+  @media print { body { background: white; } }
+</style></head><body>
+<div class="header">
+  <div style="font-size:48px;margin-bottom:8px">🚐</div>
+  <h1>You're invited!</h1>
+  <p>Adventure Hub Guest Access</p>
+</div>
+<p style="font-size:15px;line-height:1.6">Hi ${gName}! We've set you up with access to our campervan app so you can plan your trip and get a trip report at the end.</p>
+<div class="pin-box">
+  <div class="pin-label">Your PIN</div>
+  <div class="pin">${b.guestPin}</div>
+  <div style="font-size:12px;color:#8aab82">Keep this safe — it's your key to the app</div>
+</div>
+<div class="section">
+  <h3>How to sign in</h3>
+  <div class="step"><div class="step-num">1</div><p>Open the app at the link below</p></div>
+  <div class="step"><div class="step-num">2</div><p>Tap <strong>Guest</strong> on the sign-in screen</p></div>
+  <div class="step"><div class="step-num">3</div><p>Enter your PIN: <strong style="letter-spacing:4px">${b.guestPin}</strong></p></div>
+  <div class="link">🔗 ${appUrl}</div>
+</div>
+<div class="section">
+  <h3>What you can do</h3>
+  <div class="feature"><span>🗺️</span><span>Plan your trip day by day with activities and locations</span></div>
+  <div class="feature"><span>📍</span><span>Browse and add favourite places</span></div>
+  <div class="feature"><span>🎒</span><span>Manage your personal packing list</span></div>
+  <div class="feature"><span>📖</span><span>Read the van how-to guides and rules</span></div>
+  <div class="feature"><span>📄</span><span>Generate a trip report at the end of your trip</span></div>
+</div>
+<div class="section">
+  <h3>Your trip</h3>
+  <p style="margin:0;font-size:14px"><strong>${b.destination}</strong></p>
+  <p style="margin:4px 0 0;font-size:13px;color:#4a6741">${b.start} → ${b.end}</p>
+</div>
+<div class="footer">Generated by Adventure Hub · Have an amazing trip! 🌿</div>
+</body></html>`;
+                      const blob = new Blob([html], { type: "text/html" });
+                      const url = URL.createObjectURL(blob);
+                      const win = window.open(url, "_blank");
+                      setTimeout(() => URL.revokeObjectURL(url), 30000);
+                      if (!win) {
+                        // Fallback — direct download
+                        const a = document.createElement("a");
+                        a.href = url; a.download = "guest-access.html"; a.click();
+                      }
+                    };
+                    return (
+                      <button onClick={shareGuide}
+                        style={btn(T.primary, T.surface, { width: "100%", fontSize: 13, marginTop: 4 })}>
+                        📤 Share Guest Access Guide
+                      </button>
+                    );
+                  })()}
+                  <button onClick={() => setShowLend(false)}
+                    style={{ ...btn("transparent", T.textDim, { fontSize: 11, marginTop: 10, border: `1px solid ${T.border}` }) }}>
+                    Done
+                  </button>
+                </div>
+              )}
+
+              {/* Add Guests panel */}
+              {showGuests && (
+                <div style={{ background: T.accent + "06", border: `1px solid ${T.accent}20`, borderRadius: T.radiusSm, padding: 14, marginBottom: 10 }}>
+                  <div style={{ fontWeight: 700, color: T.accent, fontSize: 13, marginBottom: 8 }}>👥 Extra Guests</div>
+                  <input style={inp} placeholder="e.g. Sarah, Tom & kids"
+                    value={b.guests || ""}
+                    onChange={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guests: e.target.value } })}
+                    onBlur={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guests: e.target.value } })} />
+                  <p style={{ fontSize: 11, color: T.textDim, margin: "6px 0 10px" }}>Names only — for your reference on the booking.</p>
+                  <button onClick={() => setShowGuests(false)}
+                    style={{ ...btn("transparent", T.textDim, { fontSize: 11, border: `1px solid ${T.border}` }) }}>
+                    Done
+                  </button>
+                </div>
+              )}
+
+              {/* Summary when set */}
+              {(b.guestPin || b.guests) && !showLend && !showGuests && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {b.guestPin && <span style={{ ...pill(T.primary + "15", T.primary), fontSize: 11 }}>🔑 {b.guestName || "Guest"} · PIN {b.guestPin}</span>}
+                  {b.guests && <span style={{ ...pill(T.accent + "15", T.accent), fontSize: 11 }}>👥 {b.guests}</span>}
+                </div>
+              )}
             </div>
           )}
 
@@ -2279,7 +2411,8 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
             )}
           </div>
 
-          {/* ── Trip Plan (days) ── */}
+          {/* ── Trip Plan (days) — not shown for maintenance ── */}
+          {b.familyId !== "maintenance" && (
           <div style={{ padding: "10px 14px", borderTop: `1px solid ${T.borderLight}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>🗺️ Trip Plan</span>
@@ -2328,6 +2461,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
               })
             )}
           </div>
+          )} {/* end maintenance check */}
 
         </div>
       )}
@@ -3744,6 +3878,7 @@ export default function App() {
         // BOOKINGS
         case "ADD_BOOKING":
           if (!payload.days || payload.days.length === 0) payload = { ...payload, days: generateDays(payload.start, payload.end) };
+          if (!payload.createdBy) payload = { ...payload, createdBy: payload.familyId };
           try {
             const result = await supa.insert("bookings", toDB.booking(payload));
             if (Array.isArray(result) && result[0]?.code) {
@@ -3778,6 +3913,8 @@ export default function App() {
           }
           await supa.update("bookings", {
             start_date: payload.start, end_date: payload.end,
+            ...(payload.familyId !== undefined ? { family_id: payload.familyId } : {}),
+            ...(payload.createdBy !== undefined ? { created_by: payload.createdBy } : {}),
             ...(payload.destination ? { destination: payload.destination } : {}),
             ...(payload.guests !== undefined ? { guests: payload.guests } : {}),
             ...(payload.guestPin !== undefined ? { guest_pin: payload.guestPin } : {}),
