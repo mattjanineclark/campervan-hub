@@ -110,7 +110,7 @@ const supa = {
 
 // Convert DB row format to app format and back
 const fromDB = {
-  booking: b => b ? ({ id: b.id, familyId: b.family_id, start: b.start_date, end: b.end_date, destination: b.destination, notes: b.notes || "", status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "" }) : null,
+  booking: b => b ? ({ id: b.id, familyId: b.family_id, start: b.start_date, end: b.end_date, destination: b.destination, notes: b.notes || "", status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "", guestName: b.guest_name || "", guestPin: b.guest_pin || "" }) : null,
   place: p => p ? ({ id: p.id, name: p.name, familyId: p.family_id, category: p.category, lat: p.lat, lng: p.lng, overallRating: p.overall_rating || 0, reviews: [] }) : null,
   review: r => r ? ({ familyId: r.family_id, rating: r.rating, text: r.review_text, date: r.review_date }) : null,
   itin: i => i ? ({ id: i.id, title: i.title, familyId: i.family_id, start: i.start_date || "", end: i.end_date || "", destination: i.destination || "", notes: i.notes || "", bookingId: i.booking_id || "", visibility: "private", days: i.days || [] }) : null,
@@ -121,7 +121,7 @@ const fromDB = {
   rule: r => r ? ({ id: r.id, icon: r.icon, rule: r.rule, detail: r.detail || "" }) : null,
 };
 const toDB = {
-  booking: b => ({ id: b.id, family_id: b.familyId, start_date: b.start, end_date: b.end, destination: b.destination, notes: b.notes, status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "" }),
+  booking: b => ({ id: b.id, family_id: b.familyId, start_date: b.start, end_date: b.end, destination: b.destination, notes: b.notes, status: b.status, days: b.days || [], collaborators: b.collaborators || [], guests: b.guests || "", guest_name: b.guestName || "", guest_pin: b.guestPin || "" }),
   place: p => ({ id: p.id, name: p.name, family_id: p.familyId, category: p.category, lat: p.lat, lng: p.lng, overall_rating: p.overallRating || 0 }),
   review: (placeId, r) => ({ place_id: placeId, family_id: r.familyId, rating: r.rating, review_text: r.text, review_date: r.date }),
   itin: i => ({ id: i.id, title: i.title, family_id: i.familyId, start_date: i.start || null, end_date: i.end || null, destination: i.destination || "", notes: i.notes || "", booking_id: i.bookingId || null, visibility: i.visibility || "private", days: i.days || [] }),
@@ -430,6 +430,351 @@ function PinPad({ familyId, families, onSuccess, onBack }) {
   );
 }
 
+// ─── GUEST PIN ENTRY ──────────────────────────────────────────────────────────
+// Lets a guest enter a booking PIN to access their restricted view
+function GuestPinEntry({ onSuccess }) {
+  const [pin, setPin] = useState(""); const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
+
+  const tryPin = async (p) => {
+    if (p.length !== 4) return;
+    setLoading(true); setErr("");
+    try {
+      // Search all bookings for a matching guest_pin
+      const today = fmt(new Date());
+      const cutoff = fmt(new Date(Date.now() - 21 * 24 * 60 * 60 * 1000)); // 3 weeks ago
+      const bookings = await supa.get("bookings", `guest_pin=eq.${p}&end_date=gte.${cutoff}`);
+      if (!bookings || bookings.length === 0) {
+        setErr("PIN not found or booking has expired."); setPin(""); setLoading(false); return;
+      }
+      // Find the most relevant (latest start) active or recent booking
+      const booking = bookings.sort((a, b) => b.start_date.localeCompare(a.start_date))[0];
+      onSuccess(booking);
+    } catch (e) {
+      setErr("Error checking PIN — try again."); setPin("");
+    }
+    setLoading(false);
+  };
+
+  const DIGITS = ["1","2","3","4","5","6","7","8","9","","0","<"];
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 8 }}>
+        {[0,1,2,3].map(i => (
+          <div key={i} style={{ width: 14, height: 14, borderRadius: 99, border: `2px solid ${pin.length > i ? T.primary : T.border}`, background: pin.length > i ? T.primary : "transparent", transition: "all 0.15s" }} />
+        ))}
+      </div>
+      {err && <p style={{ color: T.red, fontSize: 12, margin: "0 0 8px" }}>{err}</p>}
+      {loading && <p style={{ color: T.textDim, fontSize: 12, margin: "0 0 8px" }}>Checking...</p>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, maxWidth: 200, margin: "0 auto" }}>
+        {DIGITS.map((d, i) => (
+          d === "" ? <div key={i} />
+          : d === "<" ? <button key={i} onClick={() => { setPin(p => p.slice(0,-1)); setErr(""); }}
+              style={{ ...btn(T.bg, T.textMuted, { padding:"14px", fontSize:16, borderRadius:T.radius, border:`1px solid ${T.border}` }) }}>⌫</button>
+          : <button key={i} onClick={() => {
+              const next = pin + d; setPin(next); setErr("");
+              if (next.length === 4) tryPin(next);
+            }} style={{ ...btn(T.surface, T.text, { padding:"12px", fontSize:17, fontWeight:700, borderRadius:T.radius, border:`1px solid ${T.border}` }) }}>{d}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── TRIP REPORT ──────────────────────────────────────────────────────────────
+// Beautiful summary of a trip — accessible to guests and booking family
+function TripReport({ booking, places, vanName, guestName, onClose }) {
+  const days = booking.days || [];
+  const totalActs = days.reduce((s, d) => s + (d.activities || []).length, 0);
+  const placesVisited = [...new Set(
+    days.flatMap(d => (d.activities || []).map(a => a.placeId).filter(Boolean))
+  )].map(id => places.find(p => p.id === id)).filter(Boolean);
+
+  const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+  const printReport = () => {
+    window.print();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 900, overflowY: "auto", padding: "16px 12px" }}>
+      <div style={{ maxWidth: 580, margin: "0 auto", background: T.surface, borderRadius: T.radius, boxShadow: T.shadowLg, overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{ background: `linear-gradient(135deg, ${T.primary}, #3a8a5f)`, padding: "28px 24px 24px", color: "white", textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🚐</div>
+          <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 800 }}>{vanName || "Adventure Hub"}</h2>
+          <h3 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 600, opacity: 0.9 }}>{booking.destination}</h3>
+          {guestName && <div style={{ fontSize: 14, opacity: 0.85, marginBottom: 6 }}>{guestName}</div>}
+          <div style={{ fontSize: 13, opacity: 0.8 }}>
+            {booking.start} → {booking.end} &middot; {Math.max(0, Math.round((new Date(booking.end) - new Date(booking.start)) / 86400000))} nights
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 16 }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>{days.length}</div>
+              <div style={{ fontSize: 11, opacity: 0.8 }}>Days</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>{totalActs}</div>
+              <div style={{ fontSize: 11, opacity: 0.8 }}>Activities</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>{placesVisited.length}</div>
+              <div style={{ fontSize: 11, opacity: 0.8 }}>Places</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: "20px 20px 24px" }}>
+
+          {/* Notes */}
+          {booking.notes && (
+            <div style={{ background: T.primary + "08", borderRadius: T.radiusSm, padding: "12px 14px", marginBottom: 20, borderLeft: `3px solid ${T.primary}` }}>
+              <p style={{ margin: 0, fontSize: 13, color: T.textMuted, fontStyle: "italic", lineHeight: 1.6 }}>"{booking.notes}"</p>
+            </div>
+          )}
+
+          {/* Day by day */}
+          {days.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <h4 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 800, color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>📅 Itinerary</h4>
+              {days.map((day, di) => {
+                const d = new Date(day.date + "T12:00:00");
+                const dayName = DAY_NAMES[d.getDay()];
+                const acts = day.activities || [];
+                return (
+                  <div key={di} style={{ marginBottom: 14 }}>
+                    <div style={{ fontWeight: 700, color: T.primary, fontSize: 13, marginBottom: 6, paddingBottom: 4, borderBottom: `1px solid ${T.border}` }}>
+                      Day {di + 1} &middot; {dayName} {day.date}
+                    </div>
+                    {acts.length === 0
+                      ? <p style={{ color: T.textDim, fontSize: 12, margin: "4px 0", fontStyle: "italic" }}>Free day</p>
+                      : acts.map((act, ai) => {
+                        const lp = places.find(p => p.id === act.placeId);
+                        return (
+                          <div key={ai} style={{ display: "flex", gap: 10, padding: "5px 0", borderBottom: ai < acts.length - 1 ? `1px solid ${T.borderLight}` : "none" }}>
+                            {act.time && <span style={{ fontSize: 11, color: T.primary, fontWeight: 700, minWidth: 40, flexShrink: 0 }}>{act.time}</span>}
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{act.title || "Activity"}</div>
+                              {(lp || act.location) && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>📍 {lp ? lp.name : act.location}</div>}
+                              {act.notes && <div style={{ fontSize: 11, color: T.textDim, fontStyle: "italic", marginTop: 1 }}>{act.notes}</div>}
+                            </div>
+                          </div>
+                        );
+                      })
+                    }
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Places visited */}
+          {placesVisited.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <h4 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 800, color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>📍 Places</h4>
+              {placesVisited.map(p => (
+                <div key={p.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${T.borderLight}` }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{p.name}</div>
+                    {p.category && <div style={{ fontSize: 11, color: T.textDim }}>{p.category}</div>}
+                  </div>
+                  {p.overallRating > 0 && <div style={{ fontSize: 13, color: T.accent }}>{"★".repeat(p.overallRating)}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{ textAlign: "center", paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
+            <p style={{ color: T.textDim, fontSize: 11, margin: 0 }}>Generated by Adventure Hub &middot; {fmt(new Date())}</p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, padding: "12px 20px 20px", justifyContent: "center" }}>
+          <button onClick={printReport} style={btn(T.primary, T.surface, { fontSize: 13 })}>🖨️ Save / Print</button>
+          <button onClick={onClose} style={{ ...btn("transparent", T.textMuted, { border: `1px solid ${T.border}`, fontSize: 13 }) }}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── GUEST APP ────────────────────────────────────────────────────────────────
+// Restricted view for guests — trip planning, places, kit, guides and rules only
+function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, vanName, dispatch, onSignOut }) {
+  const [tab, setTab] = useState("trip");
+  const [showReport, setShowReport] = useState(false);
+  const guestId = "guest_" + booking.id;
+  const guestName = booking.guestName || booking.guests || "Guest";
+
+  // Guest-specific packing list
+  const myPacking = packingByFamily[guestId] || [];
+  const setMyPacking = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: guestId, items } });
+
+  const GUEST_TABS = [
+    { id: "trip",   label: "My Trip",  icon: "🗺️" },
+    { id: "places", label: "Places",   icon: "📍" },
+    { id: "kit",    label: "Kit",      icon: "🎒" },
+    { id: "howto",  label: "How-To",   icon: "📖" },
+    { id: "rules",  label: "Rules",    icon: "📜" },
+  ];
+
+  // Guest-only trip plan view — read/write activities, read-only dates
+  const GuestTripView = () => {
+    const [fullEdit, setFullEdit] = useState(false);
+    const days = booking.days || [];
+    const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    return (
+      <div>
+        <div style={{ ...card({ padding: 14, marginBottom: 12 }), borderLeft: `4px solid ${T.primary}` }}>
+          <div style={{ fontWeight: 800, fontSize: 18, color: T.text, marginBottom: 4 }}>{booking.destination}</div>
+          <div style={{ color: T.textMuted, fontSize: 13 }}>{booking.start} → {booking.end}</div>
+          {guestName && <div style={{ fontSize: 12, color: T.textDim, marginTop: 4 }}>👥 {guestName}</div>}
+          <button onClick={() => setShowReport(true)}
+            style={{ ...btn(T.primary + "15", T.primary, { fontSize: 12, marginTop: 10, border: `1px solid ${T.primary}30` }) }}>
+            📄 View Trip Report
+          </button>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <p style={{ ...sectionHead, margin: 0 }}>Trip Plan</p>
+          <button onClick={() => setFullEdit(true)}
+            style={btn(T.primary + "10", T.primary, { fontSize: 11, padding: "4px 10px", border: `1px solid ${T.primary}20` })}>
+            ✏️ Edit Plan
+          </button>
+        </div>
+
+        {days.length === 0
+          ? <div style={{ ...card({ padding: 24, textAlign: "center" }) }}>
+              <p style={{ color: T.textDim, margin: 0 }}>No days planned yet — tap Edit Plan to add activities.</p>
+            </div>
+          : days.map((day, di) => {
+            const d = new Date(day.date + "T12:00:00");
+            const dayName = DAY_NAMES[d.getDay()];
+            const acts = day.activities || [];
+            return (
+              <div key={di} style={{ ...card({ padding: 12, marginBottom: 8 }) }}>
+                <div style={{ fontWeight: 700, color: T.primary, fontSize: 13, marginBottom: 8 }}>
+                  Day {di + 1} &middot; {dayName} {day.date}
+                </div>
+                {acts.length === 0
+                  ? <p style={{ color: T.textDim, fontSize: 12, margin: 0, fontStyle: "italic" }}>Nothing planned — tap Edit Plan to add activities.</p>
+                  : acts.map((act, ai) => (
+                    <div key={ai} style={{ display: "flex", gap: 8, padding: "5px 0", borderBottom: ai < acts.length - 1 ? `1px solid ${T.borderLight}` : "none" }}>
+                      {act.time && <span style={{ fontSize: 11, color: T.primary, fontWeight: 700, minWidth: 36 }}>{act.time}</span>}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{act.title}</div>
+                        {act.notes && <div style={{ fontSize: 11, color: T.textDim, fontStyle: "italic" }}>{act.notes}</div>}
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            );
+          })
+        }
+
+        {fullEdit && (
+          <Modal title={"Plan: " + booking.destination} onClose={() => setFullEdit(false)}>
+            <ItineraryEditor
+              itin={{ id: booking.id, title: booking.destination, familyId: "guest", start: booking.start, end: booking.end, destination: booking.destination, notes: booking.notes || "", days: booking.days || [], bookingId: booking.id }}
+              dispatch={action => {
+                if (action.type === "SET_ITINERARY" || action.type === "UPDATE_ITINERARY") {
+                  dispatch({ type: "UPD_BOOKING_DAYS", payload: { id: booking.id, days: action.payload.days, notes: action.payload.notes } });
+                }
+              }}
+              places={places} bookings={[booking]} families={[]}
+              onClose={() => setFullEdit(false)} />
+          </Modal>
+        )}
+      </div>
+    );
+  };
+
+  // Read-only guides
+  const GuestGuidesView = () => {
+    const [open, setOpen] = useState(null);
+    return (
+      <div>
+        {(guides || []).map(g => (
+          <div key={g.id} style={{ ...card({ padding: 0, overflow: "hidden", marginBottom: 8 }) }}>
+            <button onClick={() => setOpen(open === g.id ? null : g.id)}
+              style={{ width: "100%", background: "transparent", border: "none", padding: "11px 14px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: 600, color: T.text, fontSize: 14 }}>{g.icon} {g.title}</span>
+              <span style={{ color: T.textDim, fontSize: 20, transform: open === g.id ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</span>
+            </button>
+            {open === g.id && (
+              <div style={{ padding: "0 18px 18px", borderTop: `1px solid ${T.border}` }}>
+                <pre style={{ margin: "14px 0 0", whiteSpace: "pre-wrap", fontSize: 13, color: T.textMuted, lineHeight: 1.8, fontFamily: "inherit" }}>{g.content}</pre>
+                <GuideAttList atts={g.attachments} />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "Inter,Segoe UI,system-ui,sans-serif", color: T.text }}>
+
+      {/* Header */}
+      <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, zIndex: 50, boxShadow: "0 1px 12px rgba(45,106,79,0.08)" }}>
+        <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0" }}>
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 2.5, color: T.textDim, textTransform: "uppercase", marginBottom: 1 }}>Guest Access</div>
+              <h1 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: T.primary, letterSpacing: -0.3 }}>🚐 {vanName || "Adventure Hub"}</h1>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ padding: "4px 12px", background: T.accent + "18", border: `1px solid ${T.accent}35`, borderRadius: 99, fontSize: 12, fontWeight: 700, color: T.accent }}>
+                🔑 {guestName}
+              </div>
+              <button onClick={onSignOut} title="Sign out"
+                style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: `1px solid ${T.border}`, borderRadius: T.radiusSm, cursor: "pointer", color: T.textMuted }}>
+                <svg width="16" height="16" viewBox="0 0 512 512"><g fill="none" fillRule="evenodd"><g fill="currentColor" transform="translate(85.333333, 42.666667)"><path d="M234.666667,-2.13162821e-14 L234.666667,85.3333333 L192.000667,85.333 L192,42.6666667 L42.6666667,42.6666667 L42.6666667,384 L192,384 L192.000667,341.333 L234.666667,341.333333 L234.666667,426.666667 L-4.26325641e-14,426.666667 L-4.26325641e-14,-2.13162821e-14 L234.666667,-2.13162821e-14 Z M292.418278,112.915055 L392.836556,213.333333 L292.418278,313.751611 L262.248389,283.581722 L311.163,234.666 L106.666667,234.666667 L106.666667,192 L311.163,192 L262.248389,143.084945 L292.418278,112.915055 Z" /></g></g></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: "14px 12px 110px" }}>
+        {tab === "trip" && <GuestTripView />}
+        {tab === "places" && <PlacesPanel places={places} dispatch={dispatch} onPickItinerary={() => {}} families={[]} currentFamilyId={guestId} itineraries={[]} />}
+        {tab === "kit" && (
+          <div>
+            <div style={{ ...card({ padding: 12, marginBottom: 12, background: T.primary + "06", border: `1px solid ${T.primary}20` }) }}>
+              <p style={{ margin: 0, fontSize: 12, color: T.textMuted }}>This is your personal packing list for the trip. Tick items as you pack them.</p>
+            </div>
+            <KitPanel equipment={equipment} dispatch={dispatch} currentFamilyId={guestId} packingByFamily={packingByFamily} />
+          </div>
+        )}
+        {tab === "howto" && <GuestGuidesView />}
+        {tab === "rules" && <RulesPanel rules={rules} dispatch={dispatch} />}
+      </div>
+
+      {/* Bottom tab bar */}
+      <div style={{ position: "fixed", bottom: "env(safe-area-inset-bottom)", left: 0, right: 0, zIndex: 500, background: T.surface, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)", borderTop: `1px solid ${T.border}` }}>
+        <div style={{ display: "flex", paddingTop: 8, paddingBottom: 10 }}>
+          {GUEST_TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", border: "none", background: tab === t.id ? T.primary + "20" : "transparent", cursor: "pointer", color: tab === t.id ? T.primary : T.textDim, padding: "6px 0", margin: "0 3px", borderRadius: T.radiusSm }}>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>{t.icon}</span>
+              <span style={{ fontSize: 9, fontWeight: tab === t.id ? 700 : 400, marginTop: 2 }}>{t.label}</span>
+            </button>
+          ))}
+        </div>
+        <div style={{ height: "env(safe-area-inset-bottom)", background: T.surface }} />
+      </div>
+
+      {showReport && <TripReport booking={booking} places={places} vanName={vanName} guestName={guestName} onClose={() => setShowReport(false)} />}
+    </div>
+  );
+}
+
 // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
 function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
   const [sel, setSel] = useState(null);
@@ -468,7 +813,27 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
                   <div style={{ fontWeight: 700, color: T.text, fontSize: 13 }}>{f.name}</div>
                 </button>
               ))}
+              {/* Guest tile — always shown as 6th slot */}
+              <button onClick={() => setSel("__guest__")}
+                style={{ ...card({ padding: 14, textAlign: "center", cursor: "pointer", border: `2px solid transparent`, boxShadow: T.shadow, transition: "all 0.2s" }), textAlign: "center" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = T.sand; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = T.shadowMd; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "transparent"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = T.shadow; }}>
+                <div style={{ width: 52, height: 52, borderRadius: 99, background: T.sand + "20", border: `2px solid ${T.sand}40`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
+                  <span style={{ fontSize: 28 }}>🔑</span>
+                </div>
+                <div style={{ fontWeight: 700, color: T.text, fontSize: 13 }}>Guest</div>
+              </button>
             </div>
+          </div>
+        ) : sel === "__guest__" ? (
+          <div style={{ ...card({ padding: 18 }) }}>
+            <button onClick={() => setSel(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 13, marginBottom: 16, padding: "6px 12px", border: `1px solid ${T.border}`, borderRadius: T.radiusSm }) }}>← Back</button>
+            <div style={{ textAlign: "center", marginBottom: 20 }}>
+              <div style={{ fontSize: 48, marginBottom: 8 }}>🔑</div>
+              <p style={{ fontWeight: 700, color: T.text, fontSize: 16, margin: "0 0 4px" }}>Guest Access</p>
+              <p style={{ color: T.textDim, fontSize: 13, margin: 0 }}>Enter the PIN shared with you by the booking family</p>
+            </div>
+            <GuestPinEntry onSuccess={booking => onLogin("__guest__", booking)} />
           </div>
         ) : (
           <div style={{ ...card({ padding: 18 }) }}>
@@ -933,7 +1298,7 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
       const saved = sessionStorage.getItem("bookingDraft");
       if (saved) return JSON.parse(saved);
     } catch (e) { }
-    return { familyId: currentFamilyId || "f1", start: "", end: "", destination: "", notes: "", status: "tentative", collaborators: [], guests: "" };
+    return { familyId: currentFamilyId || "f1", start: "", end: "", destination: "", notes: "", status: "tentative", collaborators: [], guests: "", guestName: "", guestPin: "" };
   });
   const [err, setErr] = useState("");
   const h = (k, v) => { setF(p => ({ ...p, [k]: v })); if (k === "start" || k === "end") setErr(""); };
@@ -1033,6 +1398,19 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
       <label style={lbl}>Extra Guests</label>
       <input style={inp} placeholder="e.g. Sarah, Tom & kids" value={f.guests || ""} onChange={e => setF(p => ({ ...p, guests: e.target.value }))} />
       <p style={{ fontSize: 11, color: T.textDim, margin: "-4px 0 8px" }}>Just names — for your reference only.</p>
+      <label style={lbl}>Guest Access PIN</label>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <div style={{ flex: 1 }}>
+          <input style={{ ...inp, letterSpacing: 6, fontSize: 15, fontWeight: 700 }} placeholder="e.g. 1234" maxLength={4}
+            value={f.guestPin || ""} onChange={e => setF(p => ({ ...p, guestPin: e.target.value.replace(/\D/g, "").slice(0, 4) }))} />
+          {f.guestPin && f.guestPin.length < 4 && <p style={{ color: T.accent, fontSize: 11, margin: "3px 0 0" }}>Enter 4 digits</p>}
+        </div>
+        <input style={{ ...inp, flex: 1.5 }} placeholder="Guest name e.g. The Hendersons"
+          value={f.guestName || ""} onChange={e => setF(p => ({ ...p, guestName: e.target.value }))} />
+      </div>
+      <p style={{ fontSize: 11, color: T.textDim, margin: "4px 0 8px", lineHeight: 1.5 }}>
+        Optional — share this PIN with your guests so they can sign in, plan their trip and get a trip report. Active for 3 weeks after the booking ends.
+      </p>
       {err && (
         <div style={{ background: err.warning ? T.accent + "12" : T.red + "12", borderRadius: T.radiusSm, marginBottom: 12, border: `1px solid ${err.warning ? T.accent + "40" : T.red + "30"}`, overflow: "hidden" }}>
           <div style={{ padding: "10px 14px", color: err.warning ? T.accent : T.red, fontSize: 13, fontWeight: 600 }}>{err.msg || err}</div>
@@ -1658,6 +2036,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   const [showOdoForm, setShowOdoForm] = useState(false);
   const [odoForm, setOdoForm] = useState({ startKm: "", endKm: "", tolls: false, tollAmt: "", notes: "" });
   const [confirmWarn, setConfirmWarn] = useState(null);
+  const [showReport, setShowReport] = useState(false);
   useEffect(() => {
     if (openId === b.id) { setExpanded(true); if (setOpenId) setOpenId(null); setTimeout(() => cardRef.current && cardRef.current.scrollIntoView({ behavior: "smooth", block: "start" }), 150); }
   }, [openId]); // null | {type:"blocked"|"warn", msg:string}
@@ -1693,6 +2072,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
 
   return (
     <div ref={cardRef} style={{ ...card({ padding: 0, marginBottom: 16 }), borderLeft: "4px solid " + (fam?.color || T.primary), overflow: "visible" }}>
+      {showReport && <TripReport booking={b} places={places} vanName={null} guestName={b.guestName || b.guests || ""} onClose={() => setShowReport(false)} />}
       {/* Full editor modal */}
       {fullEdit && (
         <Modal title={"Plan: " + b.destination} onClose={() => setFullEdit(false)}>
@@ -1815,6 +2195,31 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
             </div>
           )}
 
+          {/* ── Guest Access — owner can set/change PIN ── */}
+          {isOwner && (
+            <div style={{ padding: "10px 14px", borderTop: `1px solid ${T.borderLight}` }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>🔑 Guest Access</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <input style={{ ...inp, width: 90, letterSpacing: 6, fontSize: 14, fontWeight: 700 }} placeholder="PIN" maxLength={4}
+                  value={b.guestPin || ""}
+                  onChange={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestPin: e.target.value.replace(/\D/g, "").slice(0, 4) } })}
+                  onBlur={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestPin: e.target.value.replace(/\D/g, "").slice(0, 4) } })} />
+                <input style={{ ...inp, flex: 1 }} placeholder="Guest name e.g. The Hendersons"
+                  value={b.guestName || ""}
+                  onChange={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestName: e.target.value } })}
+                  onBlur={e => dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestName: e.target.value } })} />
+              </div>
+              {b.guestPin && b.guestPin.length === 4 && (
+                <p style={{ fontSize: 11, color: T.primary, margin: "6px 0 0", fontWeight: 600 }}>
+                  ✓ Guest PIN set — active until {fmt(new Date(new Date(b.end).getTime() + 21*24*60*60*1000))}
+                </p>
+              )}
+              <p style={{ fontSize: 11, color: T.textDim, margin: "4px 0 0", lineHeight: 1.5 }}>
+                Share this PIN with guests so they can sign in and plan their trip. Active for 3 weeks after the booking ends.
+              </p>
+            </div>
+          )}
+
           {/* ── Guests — owner can edit ── */}
           {isOwner && (
             <div style={{ padding: "10px 14px", borderTop: `1px solid ${T.borderLight}` }}>
@@ -1910,12 +2315,18 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
 
           {/* ── Trip Plan (days) ── */}
           <div style={{ padding: "10px 14px", borderTop: `1px solid ${T.borderLight}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>🗺️ Trip Plan</span>
-              <button onClick={() => setFullEdit(true)}
-                style={btn(T.primary + "10", T.primary, { fontSize: 10, padding: "3px 8px", border: `1px solid ${T.primary}20` })}>
-                ✏️ Edit Plan
-              </button>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => setShowReport(true)}
+                  style={btn(T.accent + "10", T.accent, { fontSize: 10, padding: "3px 8px", border: `1px solid ${T.accent}20` })}>
+                  📄 Report
+                </button>
+                <button onClick={() => setFullEdit(true)}
+                  style={btn(T.primary + "10", T.primary, { fontSize: 10, padding: "3px 8px", border: `1px solid ${T.primary}20` })}>
+                  ✏️ Edit Plan
+                </button>
+              </div>
             </div>
             {days.length === 0 ? (
               <p style={{ fontSize: 11, color: T.textDim, fontStyle: "italic", margin: 0 }}>No plan yet — tap Edit Plan to add activities.</p>
@@ -3307,14 +3718,19 @@ export default function App() {
     try { return sessionStorage.getItem("currentTab") || "calendar"; } catch (e) { return "calendar"; }
   });
   // Set tab to family's homeTab when they sign in
-  const handleLogin = (familyId) => {
+  const [guestBooking, setGuestBooking] = useState(null);
+
+  const handleLogin = (familyId, booking = null) => {
+    if (familyId === "__guest__") {
+      setGuestBooking(booking);
+      setCurrentFamily("__guest__");
+      try { sessionStorage.setItem("currentFamily", "__guest__"); sessionStorage.setItem("lastActive", String(Date.now())); } catch (e) {}
+      return;
+    }
     const fam = state.families.find(f => f.id === familyId);
     setTab(fam?.homeTab || "calendar");
     setCurrentFamily(familyId);
-    try {
-      sessionStorage.setItem("currentFamily", familyId);
-      sessionStorage.setItem("lastActive", String(Date.now()));
-    } catch (e) { }
+    try { sessionStorage.setItem("currentFamily", familyId); sessionStorage.setItem("lastActive", String(Date.now())); } catch (e) {}
   };
   const [showBook, setShowBook] = useState(() => {
     try { return sessionStorage.getItem("showBookingForm") === "1"; } catch (e) { return false; }
@@ -3386,7 +3802,9 @@ export default function App() {
           await supa.update("bookings", {
             start_date: payload.start, end_date: payload.end,
             ...(payload.destination ? { destination: payload.destination } : {}),
-            ...(payload.guests !== undefined ? { guests: payload.guests } : {})
+            ...(payload.guests !== undefined ? { guests: payload.guests } : {}),
+            ...(payload.guestPin !== undefined ? { guest_pin: payload.guestPin } : {}),
+            ...(payload.guestName !== undefined ? { guest_name: payload.guestName } : {})
           }, { id: payload.id });
           break;
         }
@@ -3578,6 +3996,20 @@ export default function App() {
   );
 
   const fam = families.find(f => f.id === currentFamily);
+  // Guest user — show restricted GuestApp
+  if (currentFamily === "__guest__" && guestBooking) return (
+    <GuestApp
+      booking={guestBooking}
+      places={state.places}
+      equipment={state.equipment}
+      guides={state.guides}
+      rules={state.rules}
+      packingByFamily={state.packingByFamily}
+      vanName={state.vanName}
+      dispatch={sbDispatch}
+      onSignOut={() => { setCurrentFamily(null); setGuestBooking(null); try { sessionStorage.removeItem("currentFamily"); } catch(e){} }}
+    />
+  );
   // If families reloaded from DB and signed-in family not found, sign out
   if (!fam) { setCurrentFamily(null); return null; }
 
