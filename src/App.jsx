@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.16
+          Adventure Hub · v1.17
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -955,7 +955,27 @@ function LeafletMap({ places, onPinDrop, pickMode, center, height = 360 }) {
 
 function PlaceSearch({ onSelect }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [loading, setLoading] = useState(false);
-  const search = async () => { if (!q.trim()) return; setLoading(true); try { const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=8&countrycodes=nz&addressdetails=1`, { headers: { "Accept-Language": "en" } }); setResults(await r.json()); } catch (e) { } setLoading(false); };
+  const search = async () => {
+    if (!q.trim()) return;
+    setLoading(true);
+    try {
+      // Run multiple searches in parallel — base query plus common NZ camping/accommodation suffixes
+      const queries = [q, `${q} holiday park`, `${q} campsite`, `${q} camping`];
+      const responses = await Promise.all(queries.map(term =>
+        fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(term)}&format=json&limit=5&countrycodes=nz&addressdetails=1`, { headers: { "Accept-Language": "en" } })
+          .then(r => r.json()).catch(() => [])
+      ));
+      // Flatten, deduplicate by place_id, keep order (first occurrence wins)
+      const seen = new Set();
+      const all = responses.flat().filter(r => {
+        if (seen.has(r.place_id)) return false;
+        seen.add(r.place_id);
+        return true;
+      });
+      setResults(all.slice(0, 10));
+    } catch (e) { }
+    setLoading(false);
+  };
   return (
     <div>
       <div style={{ display: "flex", gap: 8 }}>
