@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.18
+          Adventure Hub · v1.19
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -894,8 +894,8 @@ function MapTouchWrapper({ children, height, radius = T.radius }) {
 }
 
 // ─── LEAFLET MAP ──────────────────────────────────────────────────────────────
-function LeafletMap({ places, onPinDrop, pickMode, center, height = 360 }) {
-  const ref = useRef(null); const mapRef = useRef(null); const markersRef = useRef([]);
+function LeafletMap({ places, onPinDrop, pickMode, center, height = 360, radiusKm = null }) {
+  const ref = useRef(null); const mapRef = useRef(null); const markersRef = useRef([]); const circleRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
@@ -933,19 +933,37 @@ function LeafletMap({ places, onPinDrop, pickMode, center, height = 360 }) {
     };
   }, []);
 
-  // Pan map to new center when pin is moved — without remounting
+  // Pan/zoom and draw radius circle when center or radius changes
   useEffect(() => {
-    if (mapRef.current && center && mapReady) {
-      mapRef.current.panTo(center, { animate: true });
+    const map = mapRef.current;
+    if (!map || !window.L || !mapReady) return;
+    // Remove old circle
+    if (circleRef.current) { circleRef.current.remove(); circleRef.current = null; }
+    if (center) {
+      if (radiusKm) {
+        // Draw radius circle and fit map to it
+        const circle = window.L.circle(center, {
+          radius: radiusKm * 1000,
+          color: T.primary, fillColor: T.primary, fillOpacity: 0.06,
+          weight: 2, dashArray: "6 4"
+        }).addTo(map);
+        circleRef.current = circle;
+        map.fitBounds(circle.getBounds(), { padding: [20, 20] });
+      } else {
+        map.panTo(center, { animate: true });
+      }
     }
-  }, [center, mapReady]);
+  }, [center, radiusKm, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current; if (!map || !window.L || !mapReady) return;
     markersRef.current.forEach(m => m.remove()); markersRef.current = [];
     places.filter(p => p.lat && p.lng).forEach(p => {
-      const ic = window.L.divIcon({ className: "", html: `<div style="background:${p.familyColor || T.primary};color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:14px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.2);">📍</div>`, iconSize: [32, 32], iconAnchor: [16, 32] });
-      const m = window.L.marker([p.lat, p.lng], { icon: ic }).addTo(map).bindPopup(`<b>${p.name}</b><br><em style="font-size:12px">${p.reviews?.[0]?.text || ""}</em>`);
+      const color = p.familyColor || T.primary;
+      const ic = window.L.divIcon({ className: "", html: `<div style="background:${color};color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:15px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);">📍</div>`, iconSize: [32, 32], iconAnchor: [16, 32] });
+      const stars = p.overallRating ? "★".repeat(p.overallRating) : "";
+      const popup = `<div style="font-family:-apple-system,sans-serif;min-width:140px"><b style="font-size:13px">${p.name}</b>${p.category ? `<br><span style="font-size:11px;color:#888">${p.category}</span>` : ""}${stars ? `<br><span style="color:#e07a28;font-size:13px">${stars}</span>` : ""}${p.notes ? `<br><em style="font-size:11px;color:#666">${p.notes}</em>` : ""}</div>`;
+      const m = window.L.marker([p.lat, p.lng], { icon: ic }).addTo(map).bindPopup(popup);
       markersRef.current.push(m);
     });
   }, [places, mapReady]);
@@ -1825,7 +1843,7 @@ function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamil
       {showMap && (
         <>
           <MapTouchWrapper height={380} radius={T.radius}>
-            <LeafletMap places={displayPlaces} height={380} center={radiusCenter ? [radiusCenter.lat, radiusCenter.lng] : null} />
+            <LeafletMap places={displayPlaces} height={380} center={radiusCenter ? [radiusCenter.lat, radiusCenter.lng] : null} radiusKm={radiusCenter ? parseFloat(radiusKm) : null} />
           </MapTouchWrapper>
           <div style={{ marginTop: 14 }}>
             {displayPlaces.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} currentFamilyId={currentFamilyId} />)}
