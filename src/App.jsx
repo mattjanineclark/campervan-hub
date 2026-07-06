@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.17
+          Adventure Hub · v1.18
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4083,7 +4083,18 @@ export default function App() {
         case "CONFIRM_BOOKING":
           await supa.update("bookings", { status: "confirmed" }, { id });
           break;
-                case "ADD_PLACE": await supa.upsert("places", toDB.place(payload)); break;
+                case "ADD_PLACE":
+          try {
+            const result = await supa.insert("places", toDB.place(payload));
+            if (result && result[0]?.code) {
+              console.error("Place save error:", result[0]);
+              alert("Place could not be saved: " + (result[0].message || result[0].code));
+            }
+          } catch(e) {
+            console.error("ADD_PLACE failed:", e);
+            alert("Place save failed: " + e.message);
+          }
+          break;
         case "UPD_PLACE": await supa.update("places", { name: payload.name, category: payload.category, notes: payload.notes || "" }, { id: payload.id }); break;
         case "DEL_PLACE": await supa.delete("places", { id });
           {
