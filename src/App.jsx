@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.15
+          Adventure Hub · v1.16
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -955,7 +955,7 @@ function LeafletMap({ places, onPinDrop, pickMode, center, height = 360 }) {
 
 function PlaceSearch({ onSelect }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [loading, setLoading] = useState(false);
-  const search = async () => { if (!q.trim()) return; setLoading(true); try { const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`, { headers: { "Accept-Language": "en" } }); setResults(await r.json()); } catch (e) { } setLoading(false); };
+  const search = async () => { if (!q.trim()) return; setLoading(true); try { const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=8&countrycodes=nz&addressdetails=1`, { headers: { "Accept-Language": "en" } }); setResults(await r.json()); } catch (e) { } setLoading(false); };
   return (
     <div>
       <div style={{ display: "flex", gap: 8 }}>
@@ -1711,23 +1711,114 @@ function PlaceCard({ place, dispatch, onAddToItinerary, families, canDelete = tr
 }
 
 function PlacesPanel({ places, dispatch, onPickItinerary, families, currentFamilyId, itineraries, canDelete = true, guestName = "" }) {
-  const [view, setView] = useState("list"); const [adding, setAdding] = useState(false); const [pickItin, setPickItin] = useState(null);
-  const [pickDay, setPickDay] = useState(null); // {itin, place} — day selection step
-  // Hide background map while modal is open so it doesn't bleed through
+  const [view, setView] = useState("list");
+  const [adding, setAdding] = useState(false);
+  const [pickItin, setPickItin] = useState(null);
+  const [pickDay, setPickDay] = useState(null);
+  const [search, setSearch] = useState("");
+  const [radiusCity, setRadiusCity] = useState("");
+  const [radiusKm, setRadiusKm] = useState("50");
+  const [radiusCenter, setRadiusCenter] = useState(null); // {lat, lng, name}
+  const [radiusLoading, setRadiusLoading] = useState(false);
+
   const showMap = view === "map" && !adding && !pickItin && !pickDay;
   const handleAdd = place => { if (itineraries.length === 0) { alert("Create a trip first in the Trips tab."); return; } setPickItin(place); };
+
+  // Text filter
+  const textFiltered = places.filter(p =>
+    !search || p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.category?.toLowerCase().includes(search.toLowerCase()) ||
+    p.notes?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Radius filter
+  const getDistKm = (lat1, lng1, lat2, lng2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+  const radiusFiltered = radiusCenter
+    ? places.filter(p => p.lat && p.lng && getDistKm(radiusCenter.lat, radiusCenter.lng, p.lat, p.lng) <= parseFloat(radiusKm || 50))
+    : null;
+
+  const searchRadius = async () => {
+    if (!radiusCity.trim()) return;
+    setRadiusLoading(true);
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(radiusCity)}&format=json&limit=1&countrycodes=nz`, { headers: { "Accept-Language": "en" } });
+      const data = await r.json();
+      if (data[0]) {
+        setRadiusCenter({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), name: data[0].display_name.split(",")[0] });
+        setView("map");
+      } else { alert("Location not found in NZ — try a different city or town name."); }
+    } catch(e) { alert("Search failed — check your connection."); }
+    setRadiusLoading(false);
+  };
+
+  const displayPlaces = radiusFiltered || textFiltered;
+
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, justifyContent: "space-between", flexWrap: "wrap" }}>
+      {/* ── Controls row ── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 4, background: T.bg, padding: 4, borderRadius: T.radiusSm, border: `1px solid ${T.border}` }}>
-          {[["list", "List"], ["map", "Map"]].map(([v, l]) => <button key={v} onClick={() => setView(v)} style={{ padding: "7px 16px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 500, background: view === v ? T.surface : T.bg, color: view === v ? T.primary : T.textMuted, boxShadow: view === v ? T.shadow : "none" }}>{l}</button>)}
+          {[["list","List"],["map","Map"]].map(([v,l]) => <button key={v} onClick={() => { setView(v); if(v==="list") setRadiusCenter(null); }} style={{ padding: "7px 16px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 500, background: view===v?T.surface:T.bg, color: view===v?T.primary:T.textMuted, boxShadow: view===v?T.shadow:"none" }}>{l}</button>)}
         </div>
         <button onClick={() => setAdding(true)} style={btn(T.primary, T.surface)}>+ Add Place</button>
       </div>
-      {showMap && <><MapTouchWrapper height={420} radius={T.radius}><LeafletMap places={places} height={420} /></MapTouchWrapper><div style={{ marginTop: 14 }}>{places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} currentFamilyId={currentFamilyId} />)}</div></>}
-      {view === "list" && (places.length === 0 ? <div style={{ ...card({ padding: 24, textAlign: "center" }) }}>
-        <p style={{ color: T.textDim, margin: 0 }}>No places saved yet. Add your first family favourite!</p>
-      </div> : places.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} currentFamilyId={currentFamilyId} />))}
+
+      {/* ── Text search ── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <input style={{ ...inp, flex: 1 }} placeholder="Search places..." value={search} onChange={e => { setSearch(e.target.value); setRadiusCenter(null); }} />
+        {search && <button onClick={() => setSearch("")} style={{ ...btn("transparent", T.textMuted, { border: `1px solid ${T.border}`, padding: "8px 12px", fontSize: 12 }) }}>✕</button>}
+      </div>
+
+      {/* ── Radius search ── */}
+      <div style={{ ...card({ padding: 12, marginBottom: 12 }), background: T.primary + "05", border: `1px solid ${T.primary}15` }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>📍 Find places near a location</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input style={{ ...inp, flex: 2, minWidth: 120 }} placeholder="City or town (NZ)" value={radiusCity}
+            onChange={e => setRadiusCity(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && searchRadius()} />
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 80 }}>
+            <input style={{ ...inp, width: 60 }} type="number" value={radiusKm} onChange={e => setRadiusKm(e.target.value)} placeholder="km" />
+            <span style={{ fontSize: 12, color: T.textMuted, flexShrink: 0 }}>km</span>
+          </div>
+          <button onClick={searchRadius} disabled={radiusLoading}
+            style={btn(T.primary, T.surface, { fontSize: 12, flexShrink: 0, opacity: radiusLoading ? 0.6 : 1 })}>
+            {radiusLoading ? "..." : "Search"}
+          </button>
+        </div>
+        {radiusCenter && (
+          <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: T.primary, fontWeight: 600 }}>
+              📍 {radiusCenter.name} · {radiusFiltered?.length || 0} place{radiusFiltered?.length !== 1 ? "s" : ""} within {radiusKm}km
+            </span>
+            <button onClick={() => { setRadiusCenter(null); setView("list"); }}
+              style={{ ...btn("transparent", T.textMuted, { fontSize: 11, border: `1px solid ${T.border}`, padding: "3px 8px" }) }}>Clear</button>
+          </div>
+        )}
+      </div>
+
+      {showMap && (
+        <>
+          <MapTouchWrapper height={380} radius={T.radius}>
+            <LeafletMap places={displayPlaces} height={380} center={radiusCenter ? [radiusCenter.lat, radiusCenter.lng] : null} />
+          </MapTouchWrapper>
+          <div style={{ marginTop: 14 }}>
+            {displayPlaces.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} currentFamilyId={currentFamilyId} />)}
+          </div>
+        </>
+      )}
+      {view === "list" && (
+        displayPlaces.length === 0
+          ? <div style={{ ...card({ padding: 24, textAlign: "center" }) }}>
+              <p style={{ color: T.textDim, margin: 0 }}>{search ? `No places match "${search}"` : "No places saved yet. Add your first family favourite!"}</p>
+            </div>
+          : displayPlaces.map(p => <PlaceCard key={p.id} place={p} dispatch={dispatch} onAddToItinerary={handleAdd} families={families} canDelete={canDelete} currentFamilyId={currentFamilyId} />)
+      )}
       {adding && <AddPlaceModal dispatch={dispatch} onClose={() => setAdding(false)} currentFamilyId={currentFamilyId} guestName={guestName} />}
       {pickItin && !pickDay && (
         <Modal title="Add to Trip" onClose={() => setPickItin(null)} width={360}>
