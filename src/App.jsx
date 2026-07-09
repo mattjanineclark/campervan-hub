@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.19
+          Adventure Hub · v1.21
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2887,6 +2887,96 @@ const catIcon = cat => CAT_ICONS[cat] || "📦";
 // Shared van equipment and per-family packing lists
 
 function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
+  const [panelTab, setPanelTab] = useState("kit"); // kit | packing | setup | packdown
+
+  const PANEL_TABS = [
+    { id: "kit",      label: "Kit & Pack", icon: "🎒" },
+    { id: "setup",    label: "Set Up",     icon: "✅" },
+    { id: "packdown", label: "Pack Down",  icon: "📦" },
+  ];
+
+  // Shared setup/packdown checklists stored in packingByFamily with special keys
+  const setupKey   = "__setup__";
+  const packdownKey = "__packdown__";
+
+  const SETUP_DEFAULTS = [
+    { id: "su1", item: "Level the van", done: false },
+    { id: "su2", item: "Connect mains power", done: false },
+    { id: "su3", item: "Turn on water pump", done: false },
+    { id: "su4", item: "Set up awning", done: false },
+    { id: "su5", item: "Put out camp chairs & table", done: false },
+    { id: "su6", item: "Connect gas", done: false },
+    { id: "su7", item: "Open windows & vents", done: false },
+  ];
+  const PACKDOWN_DEFAULTS = [
+    { id: "pd1", item: "Empty grey water tank", done: false },
+    { id: "pd2", item: "Fill fresh water tank", done: false },
+    { id: "pd3", item: "Turn off gas at bottle", done: false },
+    { id: "pd4", item: "Pack away awning", done: false },
+    { id: "pd5", item: "Disconnect mains power", done: false },
+    { id: "pd6", item: "Close all windows & vents", done: false },
+    { id: "pd7", item: "Remove all personal items", done: false },
+    { id: "pd8", item: "Clean interior", done: false },
+    { id: "pd9", item: "Lock all external hatches", done: false },
+    { id: "pd10", item: "Full fuel before return", done: false },
+  ];
+
+  const setupList    = packingByFamily[setupKey]    || SETUP_DEFAULTS;
+  const packdownList = packingByFamily[packdownKey] || PACKDOWN_DEFAULTS;
+  const setSetup    = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: setupKey,    items } });
+  const setPackdown = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: packdownKey, items } });
+
+  const Checklist = ({ items, setItems, accent, emptyLabel }) => {
+    const [newItem, setNewItem] = useState("");
+    const toggle = id => setItems(items.map(i => i.id === id ? { ...i, done: !i.done } : i));
+    const remove = id => setItems(items.filter(i => i.id !== id));
+    const add = () => {
+      if (!newItem.trim()) return;
+      setItems([...items, { id: "c" + Date.now(), item: newItem.trim(), done: false }]);
+      setNewItem("");
+    };
+    const doneCount = items.filter(i => i.done).length;
+    const pct = items.length ? Math.round((doneCount / items.length) * 100) : 0;
+    return (
+      <div>
+        {/* Progress */}
+        <div style={{ ...card({ padding: 12, marginBottom: 12 }) }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontWeight: 700, color: T.text, fontSize: 14 }}>{doneCount}/{items.length} done</span>
+            <span style={{ fontWeight: 700, color: pct === 100 ? T.green : T.textMuted, fontSize: 14 }}>{pct}%</span>
+          </div>
+          <div style={{ background: T.bg, borderRadius: 99, height: 8, overflow: "hidden", border: `1px solid ${T.border}` }}>
+            <div style={{ width: `${pct}%`, background: pct === 100 ? T.green : accent, height: "100%", borderRadius: 99, transition: "width 0.4s" }} />
+          </div>
+          {pct === 100 && <p style={{ margin: "8px 0 0", color: T.green, fontSize: 12, fontWeight: 600, textAlign: "center" }}>All done! 🎉</p>}
+          {doneCount > 0 && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <DeleteButton label="Reset" message="Reset all ticked items?" detail="All items will go back to unticked."
+                onConfirm={() => setItems(items.map(i => ({ ...i, done: false })))} style={{ fontSize: 11, padding: "4px 10px" }} />
+            </div>
+          )}
+        </div>
+        {/* Items */}
+        {items.map(item => (
+          <div key={item.id} style={{ ...card({ padding: "10px 12px", marginBottom: 6 }), display: "flex", gap: 12, alignItems: "center", opacity: item.done ? 0.6 : 1, borderLeft: `3px solid ${item.done ? T.green : accent}` }}>
+            <button onClick={() => toggle(item.id)} style={{ width: 24, height: 24, borderRadius: 6, background: item.done ? T.green + "25" : "transparent", border: `2px solid ${item.done ? T.green : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", padding: 0 }}>
+              {item.done && <span style={{ color: T.green, fontSize: 14, fontWeight: 800 }}>✓</span>}
+            </button>
+            <span onClick={() => toggle(item.id)} style={{ flex: 1, fontSize: 13, color: T.text, textDecoration: item.done ? "line-through" : "none", cursor: "pointer" }}>{item.item}</span>
+            <button onClick={() => remove(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red + "80", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>&times;</button>
+          </div>
+        ))}
+        {/* Add item */}
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <input style={{ ...inp, flex: 1 }} placeholder="Add an item..." value={newItem}
+            onChange={e => setNewItem(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && add()} />
+          <button onClick={add} style={btn(accent, T.surface, { flexShrink: 0 })}>+ Add</button>
+        </div>
+      </div>
+    );
+  };
+
   const STATUS_TABS = [
     { id: "all", label: "All", color: T.primary },
     { id: "invan", label: "In Van", color: T.green },
@@ -2965,7 +3055,41 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
 
   return (
     <div>
-      {/* Packing progress bar — only shown when not filtering to "all invan" */}
+      {/* ── Panel tab switcher ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, background: T.bg, padding: 4, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, marginBottom: 14 }}>
+        {PANEL_TABS.map(t => (
+          <button key={t.id} onClick={() => setPanelTab(t.id)}
+            style={{ padding: "8px 4px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: panelTab === t.id ? 700 : 500, background: panelTab === t.id ? T.surface : T.bg, color: panelTab === t.id ? T.primary : T.textMuted, boxShadow: panelTab === t.id ? T.shadow : "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+            <span style={{ fontSize: 16 }}>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Setup checklist ── */}
+      {panelTab === "setup" && (
+        <div>
+          <div style={{ ...card({ padding: 12, marginBottom: 12, background: T.green + "08", border: `1px solid ${T.green}20` }) }}>
+            <p style={{ margin: 0, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>✅ Tick off each item as you set up at your camp spot. Shared across all families.</p>
+          </div>
+          <Checklist items={setupList} setItems={setSetup} accent={T.green} />
+        </div>
+      )}
+
+      {/* ── Pack down checklist ── */}
+      {panelTab === "packdown" && (
+        <div>
+          <div style={{ ...card({ padding: 12, marginBottom: 12, background: T.accent + "08", border: `1px solid ${T.accent}20` }) }}>
+            <p style={{ margin: 0, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>📦 Tick off each item before you leave. Shared across all families.</p>
+          </div>
+          <Checklist items={packdownList} setItems={setPackdown} accent={T.accent} />
+        </div>
+      )}
+
+      {/* ── Van Kit & My Packing — existing content ── */}
+      {panelTab === "kit" && (<div>
+
+      {/* Packing progress bar */}
       {packItems.length > 0 && (
         <div style={{ ...card({ padding: 12, marginBottom: 12 }) }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -3146,6 +3270,7 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
           Add Item
         </button>
       </div>
+      </div>)} {/* end kit panelTab */}
     </div>
   );
 }
