@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.24
+          Adventure Hub · v1.25
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2933,12 +2933,19 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
     { id: "rv10", item: "Lock all external hatches", done: false },
   ];
 
-  const setupList    = packingByFamily[setupKey]    || SETUP_DEFAULTS;
-  const packdownList = packingByFamily[packdownKey] || PACKDOWN_DEFAULTS;
-  const returnList   = packingByFamily[returnKey]   || RETURN_DEFAULTS;
-  const setSetup    = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: setupKey,    items } });
-  const setPackdown = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: packdownKey, items } });
-  const setReturn   = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: returnKey,   items } });
+  const setSetup    = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: setupKey,    items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
+  const setPackdown = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: packdownKey, items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
+  const setReturn   = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: returnKey,   items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
+
+  // Re-map from DB format (status field) back to checklist format (done field)
+  const toChecklist = (raw, defaults) => {
+    if (!raw || raw.length === 0) return defaults;
+    return raw.map(i => ({ ...i, done: i.status === "done" }));
+  };
+
+  const setupList    = toChecklist(packingByFamily[setupKey],    SETUP_DEFAULTS);
+  const packdownList = toChecklist(packingByFamily[packdownKey], PACKDOWN_DEFAULTS);
+  const returnList   = toChecklist(packingByFamily[returnKey],   RETURN_DEFAULTS);
 
   const Checklist = ({ items, setItems, accent }) => {
     const [newItem, setNewItem] = useState("");
