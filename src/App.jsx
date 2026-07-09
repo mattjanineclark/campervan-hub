@@ -267,6 +267,7 @@ const INIT = {
   guides: [], rules: [], itineraries: [],
   families: DEFAULT_FAMILIES, vanPhoto: null, vanName: "The Family Campervan", vanManual: null,
   packingByFamily: {}, // { familyId: [{id,category,item,status}] }
+  checklists: {}, // { __setup__: [...], __packdown__: [...], __return__: [...] }
   odoLog: [], // [{id,familyId,date,startKm,endKm,notes,bookingId}]
   odoRate: 0.30, // cost per km in dollars
 };
@@ -300,6 +301,8 @@ function reducer(state, { type, payload, id }) {
     case "DEL_ITINERARY": return { ...state, itineraries: state.itineraries.filter(i => i.id !== id) };
     case "ADD_FAMILY": return { ...state, families: [...state.families, payload] };
     case "SET_FAMILY_PACKING": return { ...state, packingByFamily: { ...state.packingByFamily, [payload.familyId]: payload.items } };
+    case "SET_CHECKLIST":      return { ...state, checklists: { ...state.checklists, [payload.key]: payload.items } };
+    case "RESET_CHECKLISTS":   return { ...state, checklists: payload };
     case "UPDATE_FAMILY": return { ...state, families: state.families.map(f => f.id === payload.id ? payload : f) };
     case "DEL_FAMILY": return { ...state, families: state.families.filter(f => f.id !== id) };
     case "SET_VAN_PHOTO": return { ...state, vanPhoto: payload };
@@ -866,7 +869,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.25
+          Adventure Hub · v1.26
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2886,7 +2889,7 @@ const catIcon = cat => CAT_ICONS[cat] || "📦";
 // ─── KIT & PACKING ────────────────────────────────────────────────────
 // Shared van equipment and per-family packing lists
 
-function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
+function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, checklists = {} }) {
   const [panelTab, setPanelTab] = useState("kit"); // kit | packing | setup | packdown
 
   const PANEL_TABS = [
@@ -2933,19 +2936,18 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
     { id: "rv10", item: "Lock all external hatches", done: false },
   ];
 
-  const setSetup    = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: setupKey,    items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
-  const setPackdown = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: packdownKey, items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
-  const setReturn   = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: returnKey,   items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
+  const setSetup    = items => dispatch({ type: "SET_CHECKLIST", payload: { key: setupKey,    items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
+  const setPackdown = items => dispatch({ type: "SET_CHECKLIST", payload: { key: packdownKey, items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
+  const setReturn   = items => dispatch({ type: "SET_CHECKLIST", payload: { key: returnKey,   items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
 
-  // Re-map from DB format (status field) back to checklist format (done field)
   const toChecklist = (raw, defaults) => {
     if (!raw || raw.length === 0) return defaults;
     return raw.map(i => ({ ...i, done: i.status === "done" }));
   };
 
-  const setupList    = toChecklist(packingByFamily[setupKey],    SETUP_DEFAULTS);
-  const packdownList = toChecklist(packingByFamily[packdownKey], PACKDOWN_DEFAULTS);
-  const returnList   = toChecklist(packingByFamily[returnKey],   RETURN_DEFAULTS);
+  const setupList    = toChecklist(checklists[setupKey],    SETUP_DEFAULTS);
+  const packdownList = toChecklist(checklists[packdownKey], PACKDOWN_DEFAULTS);
+  const returnList   = toChecklist(checklists[returnKey],   RETURN_DEFAULTS);
 
   const Checklist = ({ items, setItems, accent }) => {
     const [newItem, setNewItem] = useState("");
@@ -3260,7 +3262,7 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
                           {e.item}
                         </span>
                         <button onClick={() => { setEditId(e.id); setEditVal({ item: e.item, category: e.category, status: e.status }); }}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 12, padding: "0 2px", flexShrink: 0 }}>edit</button>
+                          style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 2px", flexShrink: 0 }}>✏️</button>
                         <button onClick={() => { if (e.status === "invan") setVanKit(equipment.filter(x => x.id !== e.id)); else setMyPacking(myPacking.filter(x => x.id !== e.id)); }}
                           style={{ background: "none", border: "none", cursor: "pointer", color: T.red + "80", fontSize: 14, padding: "0 2px", flexShrink: 0 }}>&times;</button>
                       </>
@@ -4076,6 +4078,12 @@ export default function App() {
           if (vans[0].van_photo) dispatch({ type: "SET_VAN_PHOTO", payload: vans[0].van_photo });
           if (vans[0].van_manual) dispatch({ type: "SET_VAN_MANUAL", payload: vans[0].van_manual });
           if (vans[0].odo_rate) dispatch({ type: "SET_ODO_RATE", payload: vans[0].odo_rate });
+          // Load checklists
+          dispatch({ type: "RESET_CHECKLISTS", payload: {
+            __setup__:    vans[0].checklist_setup    || null,
+            __packdown__: vans[0].checklist_packdown || null,
+            __return__:   vans[0].checklist_return   || null,
+          }});
         }
 
         dispatch({ type: "RESET_BOOKINGS", payload: (bookings || []).map(fromDB.booking).filter(Boolean) });
@@ -4379,7 +4387,11 @@ export default function App() {
             await logActivity("Removed family", f?.name || id);
           } break;
         // VAN SETTINGS
-        case "SET_VAN_NAME": await supa.update("van_settings", { van_name: payload }, { id: 1 }); break;
+        case "SET_CHECKLIST": {
+          const col = payload.key === "__setup__" ? "checklist_setup" : payload.key === "__packdown__" ? "checklist_packdown" : "checklist_return";
+          await supa.update("van_settings", { [col]: payload.items }, { id: 1 });
+          break;
+        }
         case "SET_VAN_PHOTO": await supa.update("van_settings", { van_photo: payload }, { id: 1 }); break;
         case "SET_VAN_MANUAL": await supa.update("van_settings", { van_manual: payload }, { id: 1 }); break;
         default: break;
@@ -4560,7 +4572,7 @@ export default function App() {
           families={[...families, ...state.bookings.filter(b => b.guestName && b.guestPin).map(b => ({ id: "guest_" + b.id, name: b.guestName || "Guest", color: "#e07a28", emoji: "🔑" }))]}
           currentFamilyId={currentFamily} itineraries={state.itineraries} />}
         {tab === "guides" && <GuidesPanel guides={state.guides} dispatch={sbDispatch} vanManual={state.vanManual} onSetManual={url => sbDispatch({ type: "SET_VAN_MANUAL", payload: url })} />}
-        {tab === "kit" && <KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily} />}
+        {tab === "kit" && <KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily} checklists={state.checklists} />}
         {tab === "odo" && <OdometerPanel odoLog={state.odoLog} odoRate={state.odoRate} dispatch={sbDispatch} families={families} bookings={state.bookings} currentFamilyId={currentFamily} />}
         {tab === "rules" && <RulesPanel rules={state.rules} dispatch={sbDispatch} />}
         {tab === "settings" && <ErrorBoundary><SettingsPanel state={state} dispatch={sbDispatch} currentFamilyId={currentFamily} themeMode={themeMode} onToggleTheme={toggleTheme} /></ErrorBoundary>}
