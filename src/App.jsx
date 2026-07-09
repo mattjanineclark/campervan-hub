@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.21
+          Adventure Hub · v1.22
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2892,12 +2892,13 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
   const PANEL_TABS = [
     { id: "kit",      label: "Kit & Pack", icon: "🎒" },
     { id: "setup",    label: "Set Up",     icon: "✅" },
-    { id: "packdown", label: "Pack Down",  icon: "📦" },
+    { id: "packdown", label: "Pack Down",  icon: "🚐" },
+    { id: "return",   label: "Return Van", icon: "🔑" },
   ];
 
-  // Shared setup/packdown checklists stored in packingByFamily with special keys
-  const setupKey   = "__setup__";
+  const setupKey    = "__setup__";
   const packdownKey = "__packdown__";
+  const returnKey   = "__return__";
 
   const SETUP_DEFAULTS = [
     { id: "su1", item: "Level the van", done: false },
@@ -2909,22 +2910,35 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
     { id: "su7", item: "Open windows & vents", done: false },
   ];
   const PACKDOWN_DEFAULTS = [
-    { id: "pd1", item: "Empty grey water tank", done: false },
-    { id: "pd2", item: "Fill fresh water tank", done: false },
-    { id: "pd3", item: "Turn off gas at bottle", done: false },
+    { id: "pd1", item: "Stow all loose items inside", done: false },
+    { id: "pd2", item: "Close all vents & roof hatches", done: false },
+    { id: "pd3", item: "Retract satellite dish", done: false },
     { id: "pd4", item: "Pack away awning", done: false },
     { id: "pd5", item: "Disconnect mains power", done: false },
-    { id: "pd6", item: "Close all windows & vents", done: false },
-    { id: "pd7", item: "Remove all personal items", done: false },
-    { id: "pd8", item: "Clean interior", done: false },
-    { id: "pd9", item: "Lock all external hatches", done: false },
-    { id: "pd10", item: "Full fuel before return", done: false },
+    { id: "pd6", item: "Disconnect water if connected", done: false },
+    { id: "pd7", item: "Check nothing left outside", done: false },
+    { id: "pd8", item: "Lock all external hatches", done: false },
+    { id: "pd9", item: "Mirrors adjusted", done: false },
+  ];
+  const RETURN_DEFAULTS = [
+    { id: "rv1", item: "Empty grey water tank", done: false },
+    { id: "rv2", item: "Fill fresh water tank", done: false },
+    { id: "rv3", item: "Turn off gas at bottle", done: false },
+    { id: "rv4", item: "Full fuel before return", done: false },
+    { id: "rv5", item: "Clean interior", done: false },
+    { id: "rv6", item: "Remove all personal items", done: false },
+    { id: "rv7", item: "Empty rubbish", done: false },
+    { id: "rv8", item: "Wipe down surfaces", done: false },
+    { id: "rv9", item: "Close all windows & vents", done: false },
+    { id: "rv10", item: "Lock all external hatches", done: false },
   ];
 
   const setupList    = packingByFamily[setupKey]    || SETUP_DEFAULTS;
   const packdownList = packingByFamily[packdownKey] || PACKDOWN_DEFAULTS;
+  const returnList   = packingByFamily[returnKey]   || RETURN_DEFAULTS;
   const setSetup    = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: setupKey,    items } });
   const setPackdown = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: packdownKey, items } });
+  const setReturn   = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: returnKey,   items } });
 
   const Checklist = ({ items, setItems, accent, emptyLabel }) => {
     const [newItem, setNewItem] = useState("");
@@ -3056,7 +3070,7 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
   return (
     <div>
       {/* ── Panel tab switcher ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, background: T.bg, padding: 4, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, marginBottom: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4, background: T.bg, padding: 4, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, marginBottom: 14 }}>
         {PANEL_TABS.map(t => (
           <button key={t.id} onClick={() => setPanelTab(t.id)}
             style={{ padding: "8px 4px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: panelTab === t.id ? 700 : 500, background: panelTab === t.id ? T.surface : T.bg, color: panelTab === t.id ? T.primary : T.textMuted, boxShadow: panelTab === t.id ? T.shadow : "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -3083,6 +3097,16 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
             <p style={{ margin: 0, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>📦 Tick off each item before you leave. Shared across all families.</p>
           </div>
           <Checklist items={packdownList} setItems={setPackdown} accent={T.accent} />
+        </div>
+      )}
+
+      {/* ── Return Van checklist ── */}
+      {panelTab === "return" && (
+        <div>
+          <div style={{ ...card({ padding: 12, marginBottom: 12, background: T.sky + "08", border: `1px solid ${T.sky}20` }) }}>
+            <p style={{ margin: 0, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>🔑 Full handover checklist — complete before returning the van. Shared across all families.</p>
+          </div>
+          <Checklist items={returnList} setItems={setReturn} accent={T.sky} />
         </div>
       )}
 
