@@ -866,7 +866,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.22
+          Adventure Hub · v1.24
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2940,14 +2940,22 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
   const setPackdown = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: packdownKey, items } });
   const setReturn   = items => dispatch({ type: "SET_FAMILY_PACKING", payload: { familyId: returnKey,   items } });
 
-  const Checklist = ({ items, setItems, accent, emptyLabel }) => {
+  const Checklist = ({ items, setItems, accent }) => {
     const [newItem, setNewItem] = useState("");
+    const [editId, setEditId] = useState(null);
+    const [editVal, setEditVal] = useState("");
+    const [confirmDel, setConfirmDel] = useState(null);
     const toggle = id => setItems(items.map(i => i.id === id ? { ...i, done: !i.done } : i));
     const remove = id => setItems(items.filter(i => i.id !== id));
     const add = () => {
       if (!newItem.trim()) return;
       setItems([...items, { id: "c" + Date.now(), item: newItem.trim(), done: false }]);
       setNewItem("");
+    };
+    const saveEdit = id => {
+      if (!editVal.trim()) return;
+      setItems(items.map(i => i.id === id ? { ...i, item: editVal.trim() } : i));
+      setEditId(null);
     };
     const doneCount = items.filter(i => i.done).length;
     const pct = items.length ? Math.round((doneCount / items.length) * 100) : 0;
@@ -2963,21 +2971,38 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily }) {
             <div style={{ width: `${pct}%`, background: pct === 100 ? T.green : accent, height: "100%", borderRadius: 99, transition: "width 0.4s" }} />
           </div>
           {pct === 100 && <p style={{ margin: "8px 0 0", color: T.green, fontSize: 12, fontWeight: 600, textAlign: "center" }}>All done! 🎉</p>}
-          {doneCount > 0 && (
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-              <DeleteButton label="Reset" message="Reset all ticked items?" detail="All items will go back to unticked."
-                onConfirm={() => setItems(items.map(i => ({ ...i, done: false })))} style={{ fontSize: 11, padding: "4px 10px" }} />
-            </div>
-          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+            <DeleteButton label="Clear All" message="Clear all ticks?" detail="Items go back to unticked — nothing is deleted."
+              onConfirm={() => setItems(items.map(i => ({ ...i, done: false })))} style={{ fontSize: 11, padding: "4px 10px" }} />
+          </div>
         </div>
         {/* Items */}
         {items.map(item => (
-          <div key={item.id} style={{ ...card({ padding: "10px 12px", marginBottom: 6 }), display: "flex", gap: 12, alignItems: "center", opacity: item.done ? 0.6 : 1, borderLeft: `3px solid ${item.done ? T.green : accent}` }}>
-            <button onClick={() => toggle(item.id)} style={{ width: 24, height: 24, borderRadius: 6, background: item.done ? T.green + "25" : "transparent", border: `2px solid ${item.done ? T.green : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", padding: 0 }}>
-              {item.done && <span style={{ color: T.green, fontSize: 14, fontWeight: 800 }}>✓</span>}
-            </button>
-            <span onClick={() => toggle(item.id)} style={{ flex: 1, fontSize: 13, color: T.text, textDecoration: item.done ? "line-through" : "none", cursor: "pointer" }}>{item.item}</span>
-            <button onClick={() => remove(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red + "80", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>&times;</button>
+          <div key={item.id} style={{ ...card({ padding: "10px 12px", marginBottom: 6 }), borderLeft: `3px solid ${item.done ? T.green : accent}`, opacity: item.done ? 0.65 : 1 }}>
+            {editId === item.id ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input autoFocus style={{ ...inp, flex: 1, padding: "6px 8px", fontSize: 13 }} value={editVal}
+                  onChange={e => setEditVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") saveEdit(item.id); if (e.key === "Escape") setEditId(null); }} />
+                <button onClick={() => saveEdit(item.id)} style={btn(accent, T.surface, { fontSize: 12, padding: "5px 10px", flexShrink: 0 })}>Save</button>
+                <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 16 }}>&times;</button>
+              </div>
+            ) : confirmDel === item.id ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ flex: 1, fontSize: 13, color: T.red }}>Remove "{item.item}"?</span>
+                <button onClick={() => { remove(item.id); setConfirmDel(null); }} style={btn(T.red, T.surface, { fontSize: 12, padding: "5px 10px", flexShrink: 0 })}>Remove</button>
+                <button onClick={() => setConfirmDel(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, padding: "5px 10px", border: `1px solid ${T.border}`, flexShrink: 0 }) }}>Cancel</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button onClick={() => toggle(item.id)} style={{ width: 24, height: 24, borderRadius: 6, background: item.done ? T.green + "25" : "transparent", border: `2px solid ${item.done ? T.green : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", padding: 0 }}>
+                  {item.done && <span style={{ color: T.green, fontSize: 14, fontWeight: 800 }}>✓</span>}
+                </button>
+                <span onClick={() => toggle(item.id)} style={{ flex: 1, fontSize: 13, color: T.text, textDecoration: item.done ? "line-through" : "none", cursor: "pointer" }}>{item.item}</span>
+                <button onClick={() => { setEditId(item.id); setEditVal(item.item); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px", flexShrink: 0 }}>✏️</button>
+                <button onClick={() => setConfirmDel(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red + "60", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>&times;</button>
+              </div>
+            )}
           </div>
         ))}
         {/* Add item */}
