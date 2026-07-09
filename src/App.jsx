@@ -639,7 +639,7 @@ function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, 
   const GUEST_TABS = [
     { id: "trip",   label: "My Trip",  icon: "🗺️" },
     { id: "places", label: "Places",   icon: "📍" },
-    { id: "kit",    label: "Kit",      icon: "🎒" },
+    { id: "kit",    label: "Checklists", icon: "✅" },
     { id: "howto",  label: "How-To",   icon: "📖" },
     { id: "rules",  label: "Rules",    icon: "📜" },
   ];
@@ -869,7 +869,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.26
+          Adventure Hub · v1.29
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2942,7 +2942,7 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
 
   const toChecklist = (raw, defaults) => {
     if (!raw || raw.length === 0) return defaults;
-    return raw.map(i => ({ ...i, done: i.status === "done" }));
+    return raw.map(i => ({ ...i, done: i.status === "done", tickedAt: i.tickedAt || null }));
   };
 
   const setupList    = toChecklist(checklists[setupKey],    SETUP_DEFAULTS);
@@ -2954,7 +2954,12 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
     const [editId, setEditId] = useState(null);
     const [editVal, setEditVal] = useState("");
     const [confirmDel, setConfirmDel] = useState(null);
-    const toggle = id => setItems(items.map(i => i.id === id ? { ...i, done: !i.done } : i));
+    const toggle = id => setItems(items.map(i => {
+      if (i.id !== id) return i;
+      const nowDone = !i.done;
+      const ts = nowDone ? new Date().toISOString() : null;
+      return { ...i, done: nowDone, tickedAt: ts };
+    }));
     const remove = id => setItems(items.filter(i => i.id !== id));
     const add = () => {
       if (!newItem.trim()) return;
@@ -3008,6 +3013,19 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
                   {item.done && <span style={{ color: T.green, fontSize: 14, fontWeight: 800 }}>✓</span>}
                 </button>
                 <span onClick={() => toggle(item.id)} style={{ flex: 1, fontSize: 13, color: T.text, textDecoration: item.done ? "line-through" : "none", cursor: "pointer" }}>{item.item}</span>
+                {item.done && item.tickedAt && (() => {
+                  const d = new Date(item.tickedAt);
+                  const stale = (Date.now() - d.getTime()) > 24 * 60 * 60 * 1000;
+                  const day = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()];
+                  const date = `${d.getDate()}/${d.getMonth()+1}`;
+                  const time = d.toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit" });
+                  return (
+                    <span style={{ fontSize: 10, color: stale ? T.red : T.textDim, flexShrink: 0, marginRight: 4, whiteSpace: "nowrap", fontWeight: stale ? 700 : 400 }}
+                      title={stale ? "Ticked more than 24 hours ago — check if still valid" : ""}>
+                      {stale ? "⚠️ " : ""}{day} {date} {time}
+                    </span>
+                  );
+                })()}
                 <button onClick={() => { setEditId(item.id); setEditVal(item.item); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px", flexShrink: 0 }}>✏️</button>
                 <button onClick={() => setConfirmDel(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red + "60", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>&times;</button>
               </div>
@@ -3263,8 +3281,7 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
                         </span>
                         <button onClick={() => { setEditId(e.id); setEditVal({ item: e.item, category: e.category, status: e.status }); }}
                           style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 2px", flexShrink: 0 }}>✏️</button>
-                        <button onClick={() => { if (e.status === "invan") setVanKit(equipment.filter(x => x.id !== e.id)); else setMyPacking(myPacking.filter(x => x.id !== e.id)); }}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: T.red + "80", fontSize: 14, padding: "0 2px", flexShrink: 0 }}>&times;</button>
+                        <DeleteButton label="✕" message={`Remove "${e.item}"?`} onConfirm={() => { if (e.status === "invan") setVanKit(equipment.filter(x => x.id !== e.id)); else setMyPacking(myPacking.filter(x => x.id !== e.id)); }} style={{ fontSize: 13, padding: "0 4px", background: "none", border: "none", color: T.red + "80" }} />
                       </>
                     )}
                   </div>
@@ -3836,7 +3853,7 @@ const TABS = [
   { id: "calendar", label: "Bookings", icon: "📅" },
   { id: "trips", label: "Our Trips", icon: "🗺️" },
   { id: "places", label: "Places", icon: "📍" },
-  { id: "kit", label: "Kit & Pack", icon: "🎒" },
+  { id: "kit", label: "Checklists", icon: "✅" },
   { id: "guides", label: "How-To", icon: "📖" },
   { id: "odo", label: "Odometer", icon: "🔢" },
   { id: "rules", label: "Rules", icon: "📜" },
