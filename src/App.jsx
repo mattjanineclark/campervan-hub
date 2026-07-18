@@ -184,11 +184,11 @@ function applyTheme(mode) {
 const ADMIN_PIN = "9999"; // Admin passcode required to remove a family
 
 const DEFAULT_FAMILIES = [
-  { id: "f1", name: "Steve & Lyn", color: "#2d6a4f", emoji: "🏔️", pin: "0000", homeTab: "calendar" },
-  { id: "f2", name: "Em & Dave", color: "#e07a28", emoji: "🌊", pin: "0000", homeTab: "calendar" },
-  { id: "f3", name: "Matt & Janine", color: "#4a90c4", emoji: "🌿", pin: "0000", homeTab: "calendar" },
-  { id: "f4", name: "Jonny & Steph", color: "#c9a96e", emoji: "🦅", pin: "0000", homeTab: "calendar" },
-  { id: "f5", name: "Sophie", color: "#e2619f", emoji: "🦋", pin: "0000", homeTab: "calendar" },
+  { id: "f1", name: "Steve & Lyn", color: "#2d6a4f", emoji: "🏔️", pin: "0000" },
+  { id: "f2", name: "Em & Dave", color: "#e07a28", emoji: "🌊", pin: "0000" },
+  { id: "f3", name: "Matt & Janine", color: "#4a90c4", emoji: "🌿", pin: "0000" },
+  { id: "f4", name: "Jonny & Steph", color: "#c9a96e", emoji: "🦅", pin: "0000" },
+  { id: "f5", name: "Sophie", color: "#e2619f", emoji: "🦋", pin: "0000" },
   { id: "maintenance", name: "Maintenance", color: "#888888", emoji: "🔧", pin: "9999" },
 ];
 
@@ -887,7 +887,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.47
+          Adventure Hub · v1.48
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3526,7 +3526,7 @@ function FamilyManager({ families, dispatch, currentFamilyId }) {
   const save = () => {
     if (!form.name.trim()) return;
     const pinToSave = form.pinInput.length === 4 ? form.pinInput : form.pin;
-    const saved = { ...form, pin: pinToSave, homeTab: form.homeTab || "calendar" };
+    const saved = { ...form, pin: pinToSave };
     delete saved.pinInput;
     if (editing === "new") dispatch({ type: "ADD_FAMILY", payload: saved });
     else dispatch({ type: "UPDATE_FAMILY", payload: saved });
@@ -3582,14 +3582,6 @@ function FamilyManager({ families, dispatch, currentFamilyId }) {
               {/* Name */}
               <label style={lbl}>Family Name</label>
               <input style={inp} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. The Smiths" />
-
-              {/* Home tab */}
-              <div>
-                <label style={lbl}>Home Screen</label>
-                <select style={inp} value={form.homeTab || "calendar"} onChange={e => setForm(f => ({ ...f, homeTab: e.target.value }))}>
-                  {TABS.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
-                </select>
-              </div>
 
               {/* PIN — only editable for own family or new */}
               {(editing === "new" || isOwn(editing)) && (
@@ -4926,7 +4918,7 @@ function AppInner() {
   const [tab, setTab] = useState(() => {
     try { return sessionStorage.getItem("currentTab") || "calendar"; } catch (e) { return "calendar"; }
   });
-  // Set tab to family's homeTab when they sign in
+  // Everyone starts on the Home tab when they sign in
   const [guestBooking, setGuestBooking] = useState(null);
 
   const handleLogin = (familyId, booking = null) => {
@@ -4937,7 +4929,7 @@ function AppInner() {
       return;
     }
     const fam = state.families.find(f => f.id === familyId);
-    setTab(fam?.homeTab || "trips");
+    setTab("trips");
     setCurrentFamily(familyId);
     try { sessionStorage.setItem("currentFamily", familyId); sessionStorage.setItem("lastActive", String(Date.now())); } catch (e) {}
   };
