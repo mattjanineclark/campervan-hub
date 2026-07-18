@@ -887,7 +887,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.40
+          Adventure Hub · v1.42
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2803,7 +2803,6 @@ function GuidesPanel({ guides, dispatch, vanManual, onSetManual }) {
   const [search, setSearch] = useState("");
   const filtered = guides.filter(g => !search || g.title.toLowerCase().includes(search.toLowerCase()) || g.content.toLowerCase().includes(search.toLowerCase()) || g.links?.some(l => l.label?.toLowerCase().includes(search.toLowerCase())));
   const [uploading, setUploading] = useState(false);
-  const [viewReceipt, setViewReceipt] = useState(null);
   const handleFile = async (e, isNew) => {
     const file = e.target.files[0]; if (!file) return;
     if (file.size > 5 * 1024 * 1024) { alert("File too large — max 5MB."); return; }
@@ -3946,7 +3945,7 @@ function Skeleton() {
 // ═══════════════════════════════════════════════════════════════════════════════
 const TABS = [
   { id: "calendar", label: "Bookings", icon: "📅" },
-  { id: "trips", label: "Our Trips", icon: "🗺️" },
+  { id: "trips", label: "Home", icon: "🏠" },
   { id: "places", label: "Places", icon: "📍" },
   { id: "kit", label: "Checklists", icon: "✅" },
   { id: "guides", label: "How-To", icon: "📖" },
@@ -4140,6 +4139,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
   const [mSearch, setMSearch] = useState("");
   const [nextDue, setNextDue] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [viewReceipt, setViewReceipt] = useState(null);
   const latestKm = odoLog.length > 0 ? Math.max(...odoLog.map(e => e.endKm)) : 0;
   const myFamilyName = (families || []).find(f => f.id === currentFamilyId)?.name || "";
   const emptyMForm = { workStatus: "planned", date: fmt(new Date()), dateEnd: "", description: "", linkedId: "", cost: "", arrangedBy: myFamilyName, notes: "", currentKm: String(latestKm || ""), receipt: "", company: "", location: "", blockDates: true };
@@ -4582,11 +4582,11 @@ function OdometerPanel({ odoLog, odoRate, dispatch, families, bookings, currentF
 // ─── BOOKING LIST ─────────────────────────────────────────────────────
 // List view of bookings used inside the calendar tab
 
-function BookingList({ bookings, dispatch, families, onOpenItinerary, currentFamilyId, odoLog, odoRate, onAddOdo }) {
+function BookingList({ bookings, dispatch, families, onOpenItinerary, currentFamilyId, odoLog, odoRate, onAddOdo, onOpenMaint }) {
   const sorted = [...bookings].sort((a, b) => a.start.localeCompare(b.start));
   const upcoming = sorted.filter(b => b.end >= fmt(TODAY));
   const past = sorted.filter(b => b.end < fmt(TODAY));
-  const cardProps = { families, onOpenItinerary, currentFamilyId, dispatch, odoLog, odoRate, onAddOdo };
+  const cardProps = { families, onOpenItinerary, currentFamilyId, dispatch, odoLog, odoRate, onAddOdo, onOpenMaint };
   return (
     <div>
       <p style={sectionHead}>Upcoming ({upcoming.length})</p>
@@ -4634,6 +4634,10 @@ function CollapsibleBookings(props) {
 
 
 export default function App() {
+  return <ErrorBoundary><AppInner /></ErrorBoundary>;
+}
+
+function AppInner() {
   const timeoutMinutes = 5; // Auto-logout after 5 minutes of inactivity
   const AUTO_LOGOUT_MS = timeoutMinutes * 60 * 1000; // {timeoutMinutes} minutes — change as you like
   const [state, dispatch] = useReducer(reducer, INIT);
@@ -4788,7 +4792,7 @@ export default function App() {
       return;
     }
     const fam = state.families.find(f => f.id === familyId);
-    setTab(fam?.homeTab || "calendar");
+    setTab(fam?.homeTab || "trips");
     setCurrentFamily(familyId);
     try { sessionStorage.setItem("currentFamily", familyId); sessionStorage.setItem("lastActive", String(Date.now())); } catch (e) {}
   };
@@ -5277,7 +5281,21 @@ export default function App() {
 
       {/* CONTENT */}
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "14px 12px 100px" }}>
-        {tab === "calendar" && (() => {
+        
+        {tab === "calendar" && (
+          <>
+            <div style={card({ padding: 14, marginBottom: 12 })}>
+              <CalendarView bookings={state.bookings} families={families} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily} onOpenMaint={openMaintEntry} />
+            </div>
+            <CollapsibleBookings
+              bookings={state.bookings} dispatch={sbDispatch} families={families}
+              onOpenItinerary={handleOpenItinerary} onOpenMaint={openMaintEntry}
+              currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate}
+              onAddOdo={e => e._action === "MARK_PAID" ? sbDispatch({ type: "MARK_ODO_PAID", id: e.id }) : sbDispatch({ type: "ADD_ODO", payload: e })}
+            />
+          </>
+        )}
+        {tab === "trips" && (() => {
           const todayStr = fmt(new Date());
           const HeroBtn = ({ label, onTap }) => (
             <button onClick={e => { e.stopPropagation(); onTap(); }}
@@ -5333,19 +5351,6 @@ export default function App() {
             ]} />;
           return null;
         })()}
-        {tab === "calendar" && (
-          <>
-            <div style={card({ padding: 14, marginBottom: 12 })}>
-              <CalendarView bookings={state.bookings} families={families} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily} onOpenMaint={openMaintEntry} />
-            </div>
-            <CollapsibleBookings
-              bookings={state.bookings} dispatch={sbDispatch} families={families}
-              onOpenItinerary={handleOpenItinerary}
-              currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate}
-              onAddOdo={e => e._action === "MARK_PAID" ? sbDispatch({ type: "MARK_ODO_PAID", id: e.id }) : sbDispatch({ type: "ADD_ODO", payload: e })}
-            />
-          </>
-        )}
         {tab === "trips" && !phase2Done && <Skeleton />}
         {tab === "trips" && phase2Done && <TripsPanel bookings={state.bookings} dispatch={sbDispatch} places={state.places} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={() => setOpenItinId(null)} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e => e._action === "MARK_PAID" ? sbDispatch({ type: "MARK_ODO_PAID", id: e.id }) : sbDispatch({ type: "ADD_ODO", payload: e })} onOpenMaint={openMaintEntry} />}
         {tab === "places" && !phase2Done && <Skeleton />}
