@@ -881,7 +881,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.31
+          Adventure Hub · v1.32
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1048,11 +1048,25 @@ function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId }) 
   const bkDay = d => { if (!d) return []; const ds = fmt(new Date(y, m, d)); return bookings.filter(b => ds >= b.start && ds <= b.end); };
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const DayModal = ({ date, onClose }) => {
-    const ds = fmt(date); const bks = bookings.filter(b => ds >= b.start && ds <= b.end);
-    // find any linked itinerary for a booking
+    const ds = fmt(date);
+    const bks = bookings.filter(b => ds >= b.start && ds <= b.end);
+    const maintBks = bks.filter(b => b.familyId === "maintenance");
+    const familyBks = bks.filter(b => b.familyId !== "maintenance");
 
     return (<Modal title={date.toLocaleDateString("en-NZ", { weekday: "long", day: "numeric", month: "long" })} onClose={onClose} width={420}>
-      {bks.length === 0 ? <p style={{ color: T.textMuted }}>No bookings on this day.</p> : bks.map(b => {
+      {/* MAINT blocks */}
+      {maintBks.map(b => (
+        <div key={b.id} style={{ ...card({ padding: 12, marginBottom: 10 }), borderLeft: "4px solid #888888", background: "#88888810" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 18 }}>🔧</span>
+            <div>
+              <div style={{ fontWeight: 700, color: T.textMuted, fontSize: 13 }}>{b.destination}</div>
+              <div style={{ fontSize: 11, color: T.textDim }}>{b.start} → {b.end}</div>
+            </div>
+          </div>
+        </div>
+      ))}
+      {familyBks.length === 0 && maintBks.length === 0 ? <p style={{ color: T.textMuted }}>No bookings on this day.</p> : familyBks.map(b => {
         const totalActs = (b.days || []).reduce((s, d) => s + (d.activities || []).length, 0);
         return (
           <div key={b.id} onClick={() => { onClose(); onOpenItinerary(b.id); }}
@@ -1116,7 +1130,7 @@ function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId }) 
               onMouseEnter={e => { if (d) { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.background = T.cardHover; } }}
               onMouseLeave={e => { if (d) { e.currentTarget.style.borderColor = isToday ? T.primary : bks.length ? T.border : "transparent"; e.currentTarget.style.background = T.surface; } }}>
               {d && <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 500, color: isToday ? T.primary : T.textMuted, marginBottom: 2 }}>{d}</div>}
-              {bks.slice(0, 2).map(b => (
+              {bks.filter(b => b.familyId !== "maintenance").slice(0, 2).map(b => (
                 <div key={b.id} style={{
                   borderRadius: 4, fontSize: 8, fontWeight: 600, color: "white", padding: "2px 4px", marginBottom: 2,
                   background: b.status === "tentative" ? `repeating-linear-gradient(45deg,${fColor(b.familyId)}99 0,${fColor(b.familyId)}99 3px,${fColor(b.familyId)}44 3px,${fColor(b.familyId)}44 6px)` : fColor(b.familyId),
@@ -1129,6 +1143,9 @@ function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId }) 
                   })}
                 </div>
               ))}
+              {bks.some(b => b.familyId === "maintenance") && (
+                <div style={{ fontSize: 9, color: "#888", marginTop: 1, lineHeight: 1 }}>🔧</div>
+              )}
             </div>
           );
         })}
@@ -1393,9 +1410,14 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
   const submit = () => {
     if (!f.start || !f.end || !f.destination) { setErr("Fill in all required fields."); return; }
     if (f.end <= f.start) { setErr("End must be after start."); return; }
-    const clash = (bookings || []).filter(b => b.status === "confirmed" && b.end >= f.start && b.start <= f.end);
-    if (clash.length) { setErr({ msg: "Your dates clash with existing confirmed bookings:", clashes: clash }); return; }
-    const tentativeClash = (bookings || []).filter(b => b.status === "tentative" && b.end >= f.start && b.start <= f.end);
+    const confirmedClash = (bookings || []).filter(b => b.familyId !== "maintenance" && b.status === "confirmed" && b.end >= f.start && b.start <= f.end);
+    if (confirmedClash.length) { setErr({ msg: "Your dates clash with existing confirmed bookings:", clashes: confirmedClash }); return; }
+    const maintClash = (bookings || []).filter(b => b.familyId === "maintenance" && b.end >= f.start && b.start <= f.end);
+    if (maintClash.length) {
+      setErr({ msg: "⚠️ These dates overlap a maintenance block — is that okay?", clashes: maintClash, warning: true, isMaint: true });
+      return;
+    }
+    const tentativeClash = (bookings || []).filter(b => b.familyId !== "maintenance" && b.status === "tentative" && b.end >= f.start && b.start <= f.end);
     if (tentativeClash.length) {
       setErr({ msg: "⚠️ These dates overlap a tentative booking — check with the others first. Book anyway?", clashes: tentativeClash, warning: true });
       return;
@@ -1432,12 +1454,13 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
           <div style={{ padding: "10px 14px", color: err.warning ? T.accent : T.red, fontSize: 13, fontWeight: 600 }}>{err.msg || err}</div>
           {err.clashes && err.clashes.map((b, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderTop: `1px solid ${err.warning ? T.accent : T.red}20`, background: err.warning ? T.accent + "08" : T.red + "08" }}>
-              <FamilyAvatar family={families.find(f => f.id === b.familyId)} size={28} fontSize={16} />
+              {b.familyId === "maintenance"
+                ? <span style={{ fontSize: 20 }}>🔧</span>
+                : <FamilyAvatar family={families.find(f => f.id === b.familyId)} size={28} fontSize={16} />}
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, color: T.text, fontSize: 13 }}>{fName(b.familyId)}</div>
-                <div style={{ color: T.textMuted, fontSize: 12 }}>{b.destination} &middot; {b.start} to {b.end} &middot; {nights(b.start, b.end)} nights</div>
+                <div style={{ fontWeight: 700, color: T.text, fontSize: 13 }}>{b.familyId === "maintenance" ? "Maintenance Block" : fName(b.familyId)}</div>
+                <div style={{ color: T.textMuted, fontSize: 12 }}>{b.destination} &middot; {b.start} to {b.end}</div>
               </div>
-              <span style={{ ...pill(b.status === "tentative" ? T.accent + "20" : T.primary + "15", b.status === "tentative" ? T.accent : T.primary), fontSize: 10 }}>{b.status}</span>
             </div>
           ))}
         </div>
@@ -1468,7 +1491,10 @@ function BookingCard({ b, families, onOpenItinerary, currentFamilyId, dispatch, 
   const [odoForm, setOdoForm] = useState({ startKm: "", endKm: "", tolls: "", notes: "" });
 
   return (
-    <div style={{ ...card({ padding: 12, marginBottom: 8 }), borderLeft: "4px solid " + fColor(b.familyId) }}>
+    <div onClick={() => isOwn && onOpenItinerary && onOpenItinerary(b.id)}
+      style={{ ...card({ padding: 12, marginBottom: 8 }), borderLeft: "4px solid " + fColor(b.familyId), cursor: isOwn ? "pointer" : "default", transition: "box-shadow 0.15s" }}
+      onMouseEnter={e => { if (isOwn) e.currentTarget.style.boxShadow = T.shadowMd; }}
+      onMouseLeave={e => { e.currentTarget.style.boxShadow = T.shadow; }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
@@ -1484,9 +1510,8 @@ function BookingCard({ b, families, onOpenItinerary, currentFamilyId, dispatch, 
           <div style={{ color: T.textMuted, fontSize: 13, fontWeight: 500 }}>{b.destination}</div>
           <div style={{ color: T.textDim, fontSize: 12, marginTop: 3 }}>{b.start} to {b.end} &middot; {nights(b.start, b.end)} nights</div>
           {b.notes && <div style={{ color: T.textDim, fontSize: 12, marginTop: 4, fontStyle: "italic" }}>"{b.notes}"</div>}
-
-
         </div>
+        {isOwn && <span style={{ color: T.primary, fontSize: 18, flexShrink: 0 }}>›</span>}
       </div>
     </div>
   );
@@ -2382,36 +2407,11 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                   style={{ ...btn(T.primary + "15", T.primary, { flex: 1, fontSize: 12, border: `1px solid ${T.primary}30`, padding: "10px 8px" }) }}>
                   🔑 Lend Van
                 </button>
-                <button onClick={() => { setShowGuests(!showGuests); setShowLend(false); setShowMaint(false); }}
+                <button onClick={() => { setShowGuests(!showGuests); setShowLend(false); }}
                   style={{ ...btn(T.accent + "15", T.accent, { flex: 1, fontSize: 12, border: `1px solid ${T.accent}30`, padding: "10px 8px" }) }}>
                   👥 Add Guests
                 </button>
-                <button onClick={() => { setShowMaint(!showMaint); setShowLend(false); setShowGuests(false); }}
-                  style={{ ...btn(b.familyId === "maintenance" ? "#88888830" : T.bg, b.familyId === "maintenance" ? "#666" : T.textMuted, { flex: 1, fontSize: 12, border: `1px solid ${T.border}`, padding: "10px 8px" }) }}>
-                  🔧 Maint.
-                </button>
               </div>
-
-              {/* Maintenance panel */}
-              {showMaint && (
-                <div style={{ background: "#88888810", border: "1px solid #88888830", borderRadius: T.radiusSm, padding: 14, marginBottom: 10 }}>
-                  <div style={{ fontWeight: 700, color: "#666", fontSize: 13, marginBottom: 8 }}>🔧 Maintenance Block</div>
-                  <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 12px", lineHeight: 1.5 }}>
-                    Mark this booking as a maintenance block — van unavailable, no trip plan needed.
-                  </p>
-                  {b.familyId === "maintenance" ? (
-                    <button onClick={() => { dispatch({ type: "UPD_BOOKING", payload: { id: b.id, familyId: b.createdBy || currentFamilyId } }); setShowMaint(false); }}
-                      style={btn(T.bg, T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` })}>
-                      ✕ Remove Maintenance Flag
-                    </button>
-                  ) : (
-                    <button onClick={() => { dispatch({ type: "UPD_BOOKING", payload: { id: b.id, familyId: "maintenance", createdBy: currentFamilyId } }); setShowMaint(false); }}
-                      style={btn("#888888", T.surface, { fontSize: 12 })}>
-                      🔧 Mark as Maintenance
-                    </button>
-                  )}
-                </div>
-              )}
 
               {/* Lend Van panel */}
               {showLend && (
@@ -3949,21 +3949,15 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
         <label style={lbl}>Item Name *</label>
         <input style={inp} list="due-suggestions" placeholder="e.g. WOF, Service" value={form.label} onChange={h("label")} />
         <datalist id="due-suggestions">{DEFAULT_TYPES.map(t => <option key={t} value={t} />)}</datalist>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
-          <div>
-            <label style={lbl}>Due Date</label>
-            <input style={inp} type="date" value={form.dueDate} onChange={h("dueDate")} />
-          </div>
-          <div>
-            <label style={lbl}>Due Odometer (km)</label>
-            <input style={inp} type="number" placeholder="e.g. 145000" value={form.dueKm} onChange={h("dueKm")} />
-          </div>
-        </div>
-        <p style={{ fontSize: 11, color: T.textDim, margin: "6px 0 2px" }}>Repeat cycle — set either or both:</p>
+        <label style={lbl}>Due Date</label>
+        <input style={inp} type="date" value={form.dueDate} onChange={h("dueDate")} />
+        <label style={lbl}>Due Odometer (km)</label>
+        <input style={inp} type="number" placeholder="e.g. 145000" value={form.dueKm} onChange={h("dueKm")} />
+        <p style={{ fontSize: 11, color: T.textDim, margin: "8px 0 2px" }}>Repeat cycle — set either or both:</p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <div>
             <label style={lbl}>Every (days)</label>
-            <input style={inp} type="number" placeholder="e.g. 365 = yearly" value={form.cycleDays} onChange={h("cycleDays")} />
+            <input style={inp} type="number" placeholder="e.g. 365" value={form.cycleDays} onChange={h("cycleDays")} />
           </div>
           <div>
             <label style={lbl}>Every (km)</label>
@@ -4028,15 +4022,33 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
     const [adding, setAdding] = useState(false);
     const [editing, setEditing] = useState(null);
     const [nextDue, setNextDue] = useState(null); // {item, next} — prompt after logging
-    const emptyForm = { date: fmt(new Date()), description: "", linkedId: "", cost: "", arrangedBy: "", notes: "", currentKm: String(latestKm || "") };
+    const emptyForm = { date: fmt(new Date()), description: "", linkedId: "", cost: "", arrangedBy: "", notes: "", currentKm: String(latestKm || ""), blockDates: false, blockStart: "", blockEnd: "" };
     const [form, setForm] = useState(emptyForm);
     const h = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
     const linkedItem = dueDates.find(d => d.id === form.linkedId);
 
     const doAdd = () => {
       if (!form.description) return;
+      // Check for overlap if blocking dates
+      if (form.blockDates && form.blockStart && form.blockEnd) {
+        const overlapping = bookings.filter(b =>
+          b.familyId !== "maintenance" &&
+          b.start <= form.blockEnd && b.end >= form.blockStart
+        );
+        if (overlapping.length > 0) {
+          const names = overlapping.map(b => {
+            const fam = families.find(f => f.id === b.familyId);
+            return (fam ? fam.emoji + " " + fam.name + " — " : "") + b.destination;
+          }).join(", ");
+          if (!window.confirm("⚠️ These dates overlap existing bookings: " + names + "\n\nBlock anyway?")) return;
+        }
+      }
       const payload = { id: "m" + Date.now(), date: form.date, description: form.description, linkedId: form.linkedId || null, cost: parseFloat(form.cost) || 0, arrangedBy: form.arrangedBy, notes: form.notes, currentKm: form.currentKm ? parseInt(form.currentKm) : null };
       dispatch({ type: "ADD_MAINT", payload });
+      // Create calendar block if requested
+      if (form.blockDates && form.blockStart && form.blockEnd) {
+        dispatch({ type: "ADD_BOOKING", payload: { id: "b" + Date.now(), familyId: "maintenance", createdBy: currentFamilyId, start: form.blockStart, end: form.blockEnd, destination: form.description || "Maintenance", notes: form.notes, status: "confirmed", days: [], collaborators: [], guests: "", guestName: "", guestPin: "" } });
+      }
       // If linked to a due date item with a cycle, calculate next
       if (linkedItem && (linkedItem.cycleDays || linkedItem.cycleKm)) {
         const next = calcNext(linkedItem, form.date);
@@ -4066,6 +4078,19 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
         </div>
         <label style={lbl}>Notes</label>
         <textarea style={{ ...inp, height: 52, resize: "vertical" }} placeholder="Additional details" value={form.notes} onChange={h("notes")} />
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, cursor: "pointer", fontSize: 13, color: T.text }}>
+          <input type="checkbox" checked={form.blockDates} onChange={e => setForm(f => ({ ...f, blockDates: e.target.checked }))} />
+          🔧 Block calendar dates for this maintenance
+        </label>
+        {form.blockDates && (
+          <div style={{ marginTop: 8, padding: 12, background: T.bg, borderRadius: T.radiusSm, border: "1px solid " + T.border }}>
+            <p style={{ fontSize: 11, color: T.textDim, margin: "0 0 8px" }}>Dates will show as 🔧 maintenance on the calendar. Bookings can still be made over them — a warning will show.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div><label style={lbl}>From</label><input style={inp} type="date" value={form.blockStart} onChange={e => setForm(f => ({ ...f, blockStart: e.target.value }))} /></div>
+              <div><label style={lbl}>To</label><input style={inp} type="date" value={form.blockEnd} onChange={e => setForm(f => ({ ...f, blockEnd: e.target.value }))} /></div>
+            </div>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
           <button onClick={onSave} disabled={!form.description} style={{ ...btn(T.primary, T.surface), opacity: !form.description ? 0.5 : 1 }}>Save</button>
           <button onClick={onCancel} style={{ ...btn("transparent", T.textMuted, { border: "1px solid " + T.border }) }}>Cancel</button>
