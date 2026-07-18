@@ -40,8 +40,11 @@ const supa = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data)
     });
-    const json = await res.json();
-    if (!res.ok) { console.error(`Supabase INSERT ${table} failed:`, res.status, json); }
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      console.error(`Supabase INSERT ${table} failed:`, res.status, json);
+      throw new Error((json && (json.message || json.hint)) || ("insert failed (" + res.status + ")"));
+    }
     return json;
   },
   update: async (table, data, match) => {
@@ -887,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.52
+          Adventure Hub · v1.53
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -5269,11 +5272,12 @@ function AppInner() {
         case "DEL_DUE_DATE": await supa.delete("van_due_dates", { id }); break;
         // MAINTENANCE LOG
         case "ADD_MAINT": {
-          const r = await supa.insert("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" });
+          const lid = payload.linkedId && /^\d+$/.test(String(payload.linkedId)) ? payload.linkedId : null;
+          const r = await supa.insert("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: lid, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" });
           if (Array.isArray(r) && r[0]?.id) dispatch({ type: "REPLACE_ID", payload: { list: "maintLog", oldId: payload.id, newId: r[0].id } });
           break;
         }
-        case "UPD_MAINT": await supa.update("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }, { id: payload.id }); break;
+        case "UPD_MAINT": await supa.update("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: (payload.linkedId && /^\d+$/.test(String(payload.linkedId)) ? payload.linkedId : null), cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }, { id: payload.id }); break;
         case "DEL_MAINT": await supa.delete("van_maintenance_log", { id }); break;
         // VAN SETTINGS
         case "SET_CHECKLIST": {
