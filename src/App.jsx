@@ -343,6 +343,7 @@ const card = (x = {}) => ({ background: T.surface, borderRadius: T.radius, borde
 const pill = (bg, color) => ({ background: bg, color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99, display: "inline-flex", alignItems: "center", gap: 4 });
 const btn = (bg, color, x = {}) => ({ background: bg, color, border: "none", borderRadius: T.radiusSm, padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13, transition: "all 0.15s", ...x });
 const inp = { width: "100%", boxSizing: "border-box", background: "#f8faf8", border: `1.5px solid ${T.border}`, borderRadius: T.radiusSm, padding: "8px 11px", fontSize: 13, color: T.text, outline: "none", fontFamily: "inherit" };
+const dateInp = { ...inp, minWidth: 0, maxWidth: "100%", WebkitAppearance: "none", appearance: "none" };
 const lbl = { display: "block", fontSize: 10, fontWeight: 700, color: T.textMuted, marginBottom: 4, marginTop: 10, textTransform: "uppercase", letterSpacing: "0.5px" };
 const sectionHead = { fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: T.textDim, margin: "0 0 10px" };
 
@@ -881,7 +882,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.33
+          Adventure Hub · v1.35
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3884,7 +3885,7 @@ function DueDateForm({ form, setForm, onSave, onCancel, onDel }) {
       <input style={inp} list="due-suggestions" placeholder="e.g. WOF, Service" value={form.label} onChange={h("label")} />
       <datalist id="due-suggestions">{DEFAULT_TYPES.map(t => <option key={t} value={t} />)}</datalist>
       <label style={lbl}>Due Date</label>
-      <input style={inp} type="date" value={form.dueDate} onChange={h("dueDate")} />
+      <input style={dateInp} type="date" value={form.dueDate} onChange={h("dueDate")} />
       <label style={lbl}>Due Odometer (km)</label>
       <input style={inp} type="number" placeholder="e.g. 145000" value={form.dueKm} onChange={h("dueKm")} />
       <p style={{ fontSize: 11, color: T.textDim, margin: "8px 0 2px" }}>Repeat cycle — set either or both:</p>
@@ -3905,6 +3906,45 @@ function DueDateForm({ form, setForm, onSave, onCancel, onDel }) {
         <button onClick={onCancel} style={{ ...btn("transparent", T.textMuted, { border: "1px solid " + T.border }) }}>Cancel</button>
         {onDel && <DeleteButton label="Delete" message={"Delete " + form.label + "?"} onConfirm={onDel} style={{ fontSize: 12 }} />}
       </div>
+    </div>
+  );
+}
+
+// ─── COMPANY SEARCH ───────────────────────────────────────────────────────────
+// NZ business/place search that fills company name + location together
+function CompanySearch({ value, location, onPick, onChange, onLocationChange }) {
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const search = async () => {
+    if (!value || !value.trim()) return;
+    setLoading(true);
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&limit=5&countrycodes=nz`, { headers: { "Accept-Language": "en" } });
+      setResults(await r.json());
+    } catch (e) { }
+    setLoading(false);
+  };
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input style={{ ...inp, flex: 1 }} placeholder="e.g. XYZ Auto Hamilton" value={value || ""} onChange={e => onChange(e.target.value)} onKeyDown={e => e.key === "Enter" && search()} />
+        <button onClick={search} style={{ ...btn(T.bg, T.textMuted, { fontSize: 12, border: "1px solid " + T.border, flexShrink: 0 }) }}>{loading ? "..." : "🔍 Find"}</button>
+      </div>
+      {results.length > 0 && (
+        <div style={{ border: "1px solid " + T.border, borderRadius: T.radiusSm, marginTop: 4, overflow: "hidden" }}>
+          {results.map(r => (
+            <button key={r.place_id} onClick={() => {
+              const parts = (r.display_name || "").split(",");
+              onPick(parts[0].trim(), parts.slice(1, 4).join(",").trim());
+              setResults([]);
+            }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", background: T.surface, border: "none", borderBottom: "1px solid " + T.borderLight, cursor: "pointer", fontSize: 12, color: T.text }}>
+              {r.display_name}
+            </button>
+          ))}
+        </div>
+      )}
+      <label style={lbl}>Where</label>
+      <input style={inp} placeholder="Location / address" value={location || ""} onChange={e => onLocationChange(e.target.value)} />
     </div>
   );
 }
@@ -3934,10 +3974,33 @@ function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCanc
       {linkedItem && !isPlanned && <div style={{ fontSize: 11, color: T.primary, margin: "4px 0", fontWeight: 600 }}>↻ Next due date will auto-calculate after saving</div>}
       <label style={lbl}>Description *</label>
       <input style={inp} placeholder="e.g. Full service, oil change, new WOF" value={form.description} onChange={h("description")} />
-      <label style={lbl}>{isPlanned ? "Planned Date" : "Date Completed"}</label>
-      <input style={inp} type="date" value={form.date} onChange={h("date")} />
+      {isPlanned ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <label style={lbl}>From</label>
+            <input style={dateInp} type="date" value={form.date} onChange={h("date")} />
+          </div>
+          <div>
+            <label style={lbl}>To</label>
+            <input style={dateInp} type="date" value={form.dateEnd || form.date} onChange={h("dateEnd")} />
+          </div>
+        </div>
+      ) : (
+        <>
+          <label style={lbl}>Date Completed</label>
+          <input style={dateInp} type="date" value={form.date} onChange={h("date")} />
+        </>
+      )}
       <label style={lbl}>Arranged By</label>
-      <input style={inp} placeholder="e.g. Matt, XYZ Auto" value={form.arrangedBy} onChange={h("arrangedBy")} />
+      <select style={inp} value={form.arrangedBy} onChange={h("arrangedBy")}>
+        <option value="">—</option>
+        {(families || []).filter(f => f.id !== "maintenance").map(f => <option key={f.id} value={f.name}>{f.emoji} {f.name}</option>)}
+      </select>
+      <label style={lbl}>Company / Who's Doing the Work</label>
+      <CompanySearch value={form.company} location={form.location}
+        onPick={(company, location) => setForm(f => ({ ...f, company, location }))}
+        onChange={v => setForm(f => ({ ...f, company: v }))}
+        onLocationChange={v => setForm(f => ({ ...f, location: v }))} />
       {!isPlanned && (
         <>
           <label style={lbl}>Cost ($)</label>
@@ -3966,13 +4029,7 @@ function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCanc
             🔧 Show on calendar
           </label>
           {form.blockDates && (
-            <div style={{ marginTop: 8, padding: 12, background: T.bg, borderRadius: T.radiusSm, border: "1px solid " + T.border }}>
-              <p style={{ fontSize: 11, color: T.textDim, margin: "0 0 8px" }}>Shows as 🔧 on the calendar. Families can still book over it (with a warning).</p>
-              <label style={lbl}>From</label>
-              <input style={inp} type="date" value={form.blockStart} onChange={h("blockStart")} />
-              <label style={lbl}>To</label>
-              <input style={inp} type="date" value={form.blockEnd} onChange={h("blockEnd")} />
-            </div>
+            <p style={{ fontSize: 11, color: T.textDim, margin: "6px 0 0" }}>The From/To dates above will show as 🔧 on the calendar. Families can still book over them — a warning shows both ways.</p>
           )}
         </>
       )}
@@ -4002,7 +4059,8 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
   const [nextDue, setNextDue] = useState(null);
   const [uploading, setUploading] = useState(false);
   const latestKm = odoLog.length > 0 ? Math.max(...odoLog.map(e => e.endKm)) : 0;
-  const emptyMForm = { workStatus: "done", date: fmt(new Date()), description: "", linkedId: "", cost: "", arrangedBy: "", notes: "", currentKm: String(latestKm || ""), receipt: "", blockDates: false, blockStart: "", blockEnd: "" };
+  const myFamilyName = (families || []).find(f => f.id === currentFamilyId)?.name || "";
+  const emptyMForm = { workStatus: "planned", date: fmt(new Date()), dateEnd: "", description: "", linkedId: "", cost: "", arrangedBy: myFamilyName, notes: "", currentKm: String(latestKm || ""), receipt: "", company: "", location: "", blockDates: false };
   const [mForm, setMForm] = useState(emptyMForm);
 
   const VAN_TABS = [
@@ -4070,20 +4128,22 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
   // Save maint entry (add mode)
   const saveMaint = () => {
     if (!mForm.description) return;
-    if (mForm.workStatus === "planned" && mForm.blockDates && mForm.blockStart && mForm.blockEnd) {
-      const overlapping = bookings.filter(b => b.familyId !== "maintenance" && b.start <= mForm.blockEnd && b.end >= mForm.blockStart);
+    const blockStart = mForm.date;
+    const blockEnd = mForm.dateEnd || mForm.date;
+    if (mForm.workStatus === "planned" && mForm.blockDates && blockStart) {
+      const overlapping = bookings.filter(b => b.familyId !== "maintenance" && b.start <= blockEnd && b.end >= blockStart);
       if (overlapping.length > 0) {
         const names = overlapping.map(b => {
           const fam = families.find(f => f.id === b.familyId);
           return (fam ? fam.emoji + " " + fam.name + " — " : "") + b.destination;
         }).join(", ");
-        if (!window.confirm("⚠️ These dates overlap existing bookings: " + names + "\n\nShow maintenance anyway?")) return;
+        if (!window.confirm("⚠️ These dates overlap existing bookings: " + names + "\n\nShow maintenance anyway? (Both can coexist — the family just sees the 🔧 on those days.)")) return;
       }
     }
-    const payload = { id: "m" + Date.now(), workStatus: mForm.workStatus, date: mForm.date, description: mForm.description, linkedId: mForm.linkedId || null, cost: parseFloat(mForm.cost) || 0, arrangedBy: mForm.arrangedBy, notes: mForm.notes, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null, receipt: mForm.receipt || "" };
+    const payload = { id: "m" + Date.now(), workStatus: mForm.workStatus, date: mForm.date, dateEnd: mForm.dateEnd || "", description: mForm.description, linkedId: mForm.linkedId || null, cost: parseFloat(mForm.cost) || 0, arrangedBy: mForm.arrangedBy, notes: mForm.notes, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null, receipt: mForm.receipt || "", company: mForm.company || "", location: mForm.location || "" };
     dispatch({ type: "ADD_MAINT", payload });
-    if (mForm.workStatus === "planned" && mForm.blockDates && mForm.blockStart && mForm.blockEnd) {
-      dispatch({ type: "ADD_BOOKING", payload: { id: "b" + Date.now(), familyId: "maintenance", createdBy: currentFamilyId, start: mForm.blockStart, end: mForm.blockEnd, destination: mForm.description || "Maintenance", notes: mForm.notes, status: "confirmed", days: [], collaborators: [], guests: "", guestName: "", guestPin: "" } });
+    if (mForm.workStatus === "planned" && mForm.blockDates && blockStart) {
+      dispatch({ type: "ADD_BOOKING", payload: { id: "b" + Date.now(), familyId: "maintenance", createdBy: currentFamilyId, start: blockStart, end: blockEnd, destination: mForm.description || "Maintenance", notes: mForm.notes, status: "confirmed", days: [], collaborators: [], guests: "", guestName: "", guestPin: "" } });
     }
     const linkedItem = dueDates.find(d => d.id === mForm.linkedId);
     if (mForm.workStatus === "done" && linkedItem && (linkedItem.cycleDays || linkedItem.cycleKm)) {
@@ -4095,7 +4155,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
 
   // Mark a planned entry as done — opens edit form pre-set to done
   const markDone = m => {
-    setMForm({ workStatus: "done", date: fmt(new Date()), description: m.description, linkedId: m.linkedId || "", cost: "", arrangedBy: m.arrangedBy || "", notes: m.notes || "", currentKm: String(latestKm || ""), receipt: "", blockDates: false, blockStart: "", blockEnd: "" });
+    setMForm({ workStatus: "done", date: fmt(new Date()), dateEnd: "", description: m.description, linkedId: m.linkedId || "", cost: "", arrangedBy: m.arrangedBy || myFamilyName, notes: m.notes || "", currentKm: String(latestKm || ""), receipt: "", company: m.company || "", location: m.location || "", blockDates: false });
     setMEditing(m.id);
     setMAdding(false);
   };
@@ -4125,16 +4185,19 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
             </div>
             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
               {m.date ? new Date(m.date + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" }) : ""}
+              {isPlanned && m.dateEnd && m.dateEnd !== m.date ? " → " + new Date(m.dateEnd + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short" }) : ""}
               {m.arrangedBy ? " · " + m.arrangedBy : ""}
+              {m.company ? " · 🏢 " + m.company : ""}
               {!isPlanned && m.cost > 0 ? " · $" + Number(m.cost).toFixed(2) : ""}
               {!isPlanned && m.currentKm ? " · " + Number(m.currentKm).toLocaleString() + " km" : ""}
             </div>
+            {m.location && <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>📍 {m.location}</div>}
             {m.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, fontStyle: "italic" }}>{m.notes}</div>}
             {m.receipt && <button onClick={() => window.open(m.receipt, "_blank")} style={{ marginTop: 4, fontSize: 11, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: 0 }}>🧾 View receipt</button>}
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
             {isPlanned && <button onClick={() => markDone(m)} style={btn(T.green + "15", T.green, { fontSize: 11, padding: "4px 8px", border: "1px solid " + T.green + "30" })}>✓ Done</button>}
-            <button onClick={() => { setMForm({ workStatus: m.workStatus || "done", date: m.date, description: m.description, linkedId: m.linkedId || "", cost: String(m.cost || ""), arrangedBy: m.arrangedBy || "", notes: m.notes || "", currentKm: m.currentKm ? String(m.currentKm) : "", receipt: m.receipt || "", blockDates: false, blockStart: "", blockEnd: "" }); setMEditing(m.id); setMAdding(false); }}
+            <button onClick={() => { setMForm({ workStatus: m.workStatus || "done", date: m.date, dateEnd: m.dateEnd || "", description: m.description, linkedId: m.linkedId || "", cost: String(m.cost || ""), arrangedBy: m.arrangedBy || "", notes: m.notes || "", currentKm: m.currentKm ? String(m.currentKm) : "", receipt: m.receipt || "", company: m.company || "", location: m.location || "", blockDates: false }); setMEditing(m.id); setMAdding(false); }}
               style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px" }}>✏️</button>
           </div>
         </div>
@@ -4188,6 +4251,8 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
                     {item.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>{item.notes}</div>}
                   </div>
                   {ul && <span style={{ ...pill(col + "15", col), fontSize: 10, flexShrink: 0, alignSelf: "flex-start" }}>{ul}</span>}
+                  <button onClick={() => { setMForm({ ...emptyMForm, workStatus: "planned", linkedId: item.id, description: item.label }); setMAdding(true); setMEditing(null); setTab("log"); }}
+                    style={{ ...btn(T.accent + "15", T.accent, { fontSize: 11, padding: "4px 8px", border: "1px solid " + T.accent + "30", flexShrink: 0 }) }}>🔧 Plan</button>
                   <button onClick={() => { setDueForm({ label: item.label, dueDate: item.dueDate || "", dueKm: item.dueKm ? String(item.dueKm) : "", cycleDays: item.cycleDays ? String(item.cycleDays) : "", cycleKm: item.cycleKm ? String(item.cycleKm) : "", notes: item.notes || "" }); setDueEditing(item.id); setDueAdding(false); }}
                     style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px", flexShrink: 0 }}>✏️</button>
                 </div>
@@ -4541,7 +4606,7 @@ export default function App() {
         }
 
         if (dueDates && dueDates.length > 0) dispatch({ type: "RESET_DUE_DATES", payload: dueDates.map(d => ({ id: d.id, label: d.label, dueDate: d.due_date || null, dueKm: d.due_km || null, cycleDays: d.cycle_days || null, cycleKm: d.cycle_km || null, notes: d.notes || "" })) });
-        if (maintLog && maintLog.length > 0) dispatch({ type: "RESET_MAINT", payload: maintLog.map(m => ({ id: m.id, date: m.date, description: m.description, linkedId: m.linked_id || null, cost: m.cost || 0, arrangedBy: m.arranged_by || "", notes: m.notes || "", currentKm: m.current_km || null, workStatus: m.work_status || "done", receipt: m.receipt || "" })) });
+        if (maintLog && maintLog.length > 0) dispatch({ type: "RESET_MAINT", payload: maintLog.map(m => ({ id: m.id, date: m.date, dateEnd: m.date_end || "", description: m.description, linkedId: m.linked_id || null, cost: m.cost || 0, arrangedBy: m.arranged_by || "", company: m.company || "", location: m.location || "", notes: m.notes || "", currentKm: m.current_km || null, workStatus: m.work_status || "done", receipt: m.receipt || "" })) });
         if (odoLog && odoLog.length > 0) dispatch({
           type: "RESET_ODO", payload: odoLog.map(e => ({
             id: e.id, familyId: e.family_id, date: e.date,
@@ -4799,8 +4864,8 @@ export default function App() {
         case "UPD_DUE_DATE": await supa.update("van_due_dates", { label: payload.label, due_date: payload.dueDate || null, due_km: payload.dueKm || null, cycle_days: payload.cycleDays || null, cycle_km: payload.cycleKm || null, notes: payload.notes || "" }, { id: payload.id }); break;
         case "DEL_DUE_DATE": await supa.delete("van_due_dates", { id }); break;
         // MAINTENANCE LOG
-        case "ADD_MAINT": await supa.insert("van_maintenance_log", { date: payload.date, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }); break;
-        case "UPD_MAINT": await supa.update("van_maintenance_log", { date: payload.date, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }, { id: payload.id }); break;
+        case "ADD_MAINT": await supa.insert("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }); break;
+        case "UPD_MAINT": await supa.update("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }, { id: payload.id }); break;
         case "DEL_MAINT": await supa.delete("van_maintenance_log", { id }); break;
         // VAN SETTINGS
         case "SET_CHECKLIST": {
