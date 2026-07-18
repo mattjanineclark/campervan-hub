@@ -887,7 +887,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.48
+          Adventure Hub · v1.49
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4341,6 +4341,18 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
     if (item.cycleKm && latestKm > 0) next.dueKm = latestKm + parseInt(item.cycleKm);
     return next;
   };
+  // Open the editable "update next due" prompt. Cycled items get auto-calculated
+  // proposals; items without a cycle (e.g. RUC limits) prefill current values
+  // for manual adjustment.
+  const openNextDue = (linkedItem, serviceDate) => {
+    const nx = calcNext(linkedItem, serviceDate);
+    setNextDue({
+      item: linkedItem,
+      hasCycle: !!(linkedItem.cycleDays || linkedItem.cycleKm),
+      dueDate: nx.dueDate || "",
+      dueKm: nx.dueKm != null && nx.dueKm !== undefined ? String(nx.dueKm) : "",
+    });
+  };
 
   // Receipt upload handler
   const handleReceipt = async e => {
@@ -4382,9 +4394,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
       dispatch({ type: "ADD_BOOKING", payload: { id: "b" + Date.now(), familyId: "maintenance", createdBy: currentFamilyId, start: blockStart, end: blockEnd, destination: mForm.description || "Maintenance", notes: mForm.notes, status: "confirmed", days: [], collaborators: [], guests: "", guestName: "", guestPin: "" } });
     }
     const linkedItem = dueDates.find(d => d.id === mForm.linkedId);
-    if (mForm.workStatus === "done" && linkedItem && (linkedItem.cycleDays || linkedItem.cycleKm)) {
-      setNextDue({ item: linkedItem, next: calcNext(linkedItem, mForm.date) });
-    }
+    if (mForm.workStatus === "done" && linkedItem) openNextDue(linkedItem, mForm.date);
     setMAdding(false);
     setMForm(emptyMForm);
   };
@@ -4504,11 +4514,27 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
           {/* Next due prompt */}
           {nextDue && (
             <div style={{ ...card({ padding: 16, marginBottom: 12 }), background: T.primary + "08", border: "1px solid " + T.primary + "30" }}>
-              <div style={{ fontWeight: 700, color: T.primary, fontSize: 14, marginBottom: 8 }}>📅 Update next due for {nextDue.item.label}?</div>
-              {nextDue.next.dueDate && <div style={{ fontSize: 13, color: T.text, marginBottom: 4 }}>📅 Next date: <b>{new Date(nextDue.next.dueDate + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" })}</b></div>}
-              {nextDue.next.dueKm && <div style={{ fontSize: 13, color: T.text, marginBottom: 8 }}>🔢 Next km: <b>{nextDue.next.dueKm.toLocaleString()} km</b></div>}
+              <div style={{ fontWeight: 700, color: T.primary, fontSize: 14, marginBottom: 4 }}>📅 Update next due for {nextDue.item.label}?</div>
+              <p style={{ fontSize: 11, color: T.textDim, margin: "0 0 10px" }}>
+                {nextDue.hasCycle
+                  ? "Calculated from the repeat cycle — adjust if needed."
+                  : "No repeat cycle set — enter the new date or limit (e.g. RUC: your new paid-up-to km)."}
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                <div>
+                  <label style={lbl}>Next Due Date</label>
+                  <input style={dateInp} type="date" value={nextDue.dueDate} onChange={e => setNextDue(p => ({ ...p, dueDate: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={lbl}>Next Due (km)</label>
+                  <input style={{ ...inp, minWidth: 0 }} type="number" placeholder="e.g. 155000" value={nextDue.dueKm} onChange={e => setNextDue(p => ({ ...p, dueKm: e.target.value }))} />
+                </div>
+              </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => { dispatch({ type: "UPD_DUE_DATE", payload: nextDue.next }); setNextDue(null); }} style={btn(T.primary, T.surface, { fontSize: 12 })}>✓ Update</button>
+                <button onClick={() => {
+                  dispatch({ type: "UPD_DUE_DATE", payload: { ...nextDue.item, dueDate: nextDue.dueDate || null, dueKm: nextDue.dueKm ? parseInt(nextDue.dueKm) : null } });
+                  setNextDue(null);
+                }} style={btn(T.primary, T.surface, { fontSize: 12 })}>✓ Update</button>
                 <button onClick={() => setNextDue(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, border: "1px solid " + T.border }) }}>Skip</button>
               </div>
             </div>
@@ -4537,9 +4563,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
               onSave={() => {
                 dispatch({ type: "UPD_MAINT", payload: { ...m, ...mForm, cost: parseFloat(mForm.cost) || 0, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null } });
                 const linkedItem = dueDates.find(d => d.id === mForm.linkedId);
-                if (mForm.workStatus === "done" && m.workStatus === "planned" && linkedItem && (linkedItem.cycleDays || linkedItem.cycleKm)) {
-                  setNextDue({ item: linkedItem, next: calcNext(linkedItem, mForm.date) });
-                }
+                if (mForm.workStatus === "done" && m.workStatus === "planned" && linkedItem) openNextDue(linkedItem, mForm.date);
                 setMEditing(null);
               }}
               onCancel={() => setMEditing(null)}
