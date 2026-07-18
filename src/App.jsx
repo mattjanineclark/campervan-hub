@@ -887,7 +887,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.51
+          Adventure Hub · v1.52
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4299,7 +4299,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
       setTab("log");
       const m = maintLog.find(x => x.workStatus === "planned" && x.description === maintFocus.description)
         || maintLog.find(x => x.description === maintFocus.description);
-      if (m) setMSearch(m.description);
+      setMSearch(m ? m.description : "");
     }
     onMaintFocusHandled && onMaintFocusHandled();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4570,7 +4570,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
           )}
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             <input style={{ ...inp, flex: 1 }} placeholder="Search log..." value={mSearch} onChange={e => setMSearch(e.target.value)} />
-            <button onClick={() => { setMForm(emptyMForm); setMAdding(true); setMEditing(null); }} style={btn(T.primary, T.surface, { flexShrink: 0 })}>+ Plan / Log</button>
+            <button onClick={() => { setMForm(emptyMForm); setMAdding(true); setMEditing(null); setMSearch(""); }} style={btn(T.primary, T.surface, { flexShrink: 0 })}>+ Plan / Log</button>
           </div>
           {overlapWarn && (
             <div style={{ ...card({ padding: 14, marginBottom: 10 }), background: T.accent + "0c", border: "1px solid " + T.accent + "40" }}>
@@ -4585,7 +4585,19 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
           )}
           {mAdding && <MaintForm form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
             onSave={() => saveMaint(false)} onCancel={() => { setMAdding(false); setOverlapWarn(null); }} />}
+          {mSearch && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <span style={{ ...pill(T.accent + "15", T.accent), fontSize: 11 }}>Filtering: "{mSearch}"</span>
+              <button onClick={() => setMSearch("")} style={{ background: "none", border: "none", color: T.primary, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>✕ Clear filter</button>
+            </div>
+          )}
           {maintLog.length === 0 && !mAdding && <div style={{ ...card({ padding: 24, textAlign: "center" }) }}><p style={{ color: T.textDim, margin: 0 }}>Nothing planned or logged yet.</p></div>}
+          {maintLog.length > 0 && filtered.length === 0 && !mAdding && (
+            <div style={{ ...card({ padding: 24, textAlign: "center" }) }}>
+              <p style={{ color: T.textDim, margin: "0 0 8px" }}>No entries match "{mSearch}".</p>
+              <button onClick={() => setMSearch("")} style={btn(T.primary, T.surface, { fontSize: 12 })}>Show all {maintLog.length} entries</button>
+            </div>
+          )}
           {plannedEntries.length > 0 && <p style={{ ...sectionHead, margin: "4px 0 8px" }}>📅 Planned</p>}
           {plannedEntries.map(m => mEditing === m.id ? (
             <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
