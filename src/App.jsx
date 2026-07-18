@@ -887,7 +887,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.49
+          Adventure Hub · v1.50
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4103,7 +4103,15 @@ function DueDateForm({ form, setForm, onSave, onCancel, onDel }) {
       <input style={inp} list="due-suggestions" placeholder="e.g. WOF, Service" value={form.label} onChange={h("label")} />
       <datalist id="due-suggestions">{DEFAULT_TYPES.map(t => <option key={t} value={t} />)}</datalist>
       <label style={lbl}>Due Date</label>
-      <input style={dateInp} type="date" value={form.dueDate} onChange={h("dueDate")} />
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input style={{ ...dateInp, flex: 1 }} type="date" value={form.dueDate} onChange={h("dueDate")} />
+        {form.dueDate && (
+          <button onClick={() => setForm(f => ({ ...f, dueDate: "" }))}
+            style={{ background: T.bg, border: "1px solid " + T.border, borderRadius: 8, color: T.textMuted, fontSize: 12, padding: "8px 10px", cursor: "pointer", flexShrink: 0 }}>
+            ✕ Clear
+          </button>
+        )}
+      </div>
       <label style={lbl}>Due Odometer (km)</label>
       <input style={inp} type="number" placeholder="e.g. 145000" value={form.dueKm} onChange={h("dueKm")} />
       <p style={{ fontSize: 11, color: T.textDim, margin: "8px 0 2px" }}>Repeat cycle — set either or both:</p>
@@ -4523,7 +4531,13 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                 <div>
                   <label style={lbl}>Next Due Date</label>
-                  <input style={dateInp} type="date" value={nextDue.dueDate} onChange={e => setNextDue(p => ({ ...p, dueDate: e.target.value }))} />
+                  <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <input style={{ ...dateInp, flex: 1 }} type="date" value={nextDue.dueDate} onChange={e => setNextDue(p => ({ ...p, dueDate: e.target.value }))} />
+                    {nextDue.dueDate && (
+                      <button onClick={() => setNextDue(p => ({ ...p, dueDate: "" }))}
+                        style={{ background: T.bg, border: "1px solid " + T.border, borderRadius: 8, color: T.textMuted, fontSize: 11, padding: "7px 7px", cursor: "pointer", flexShrink: 0 }}>✕</button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label style={lbl}>Next Due (km)</label>
