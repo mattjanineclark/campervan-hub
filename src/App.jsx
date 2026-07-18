@@ -51,7 +51,8 @@ const supa = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data)
     });
-    return res.json();
+    if (!res.ok) { const t = await res.text(); console.error("Supabase UPDATE " + table + " failed:", res.status, t); throw new Error("save failed (" + res.status + ")"); }
+    return res.json().catch(() => null);
   },
   upsert: async (table, data) => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
@@ -59,14 +60,16 @@ const supa = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" },
       body: JSON.stringify(data)
     });
-    return res.json();
+    if (!res.ok) { const t = await res.text(); console.error("Supabase UPSERT " + table + " failed:", res.status, t); throw new Error("save failed (" + res.status + ")"); }
+    return res.json().catch(() => null);
   },
   delete: async (table, match) => {
     const q = Object.entries(match).map(([k, v]) => k + "=eq." + v).join("&");
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`, {
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
+    if (!res.ok) { const t = await res.text(); console.error("Supabase DELETE " + table + " failed:", res.status, t); throw new Error("delete failed (" + res.status + ")"); }
   },
   uploadImage: async (file, path) => {
     const formData = new FormData();
@@ -324,6 +327,11 @@ function reducer(state, { type, payload, id }) {
     case "MARK_ODO_PAID": return { ...state, odoLog: state.odoLog.map(e => e.id === id ? { ...e, paid: !e.paid } : e) };
     case "RESET_ODO": return { ...state, odoLog: payload };
     case "SET_ODO_RATE": return { ...state, odoRate: payload };
+    // Replace a locally-generated id with the DB-assigned id after insert
+    case "REPLACE_ID": {
+      const { list, oldId, newId } = payload;
+      return { ...state, [list]: state[list].map(x => x.id === oldId ? { ...x, id: newId } : x) };
+    }
     // Due dates
     case "ADD_DUE_DATE":    return { ...state, dueDates: [...state.dueDates, payload] };
     case "UPD_DUE_DATE":    return { ...state, dueDates: state.dueDates.map(d => d.id === payload.id ? payload : d) };
@@ -878,11 +886,8 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           </div>
         )}
 
-        <p style={{ textAlign: "center", color: T.textDim, fontSize: 11, marginTop: 20, lineHeight: 1.7 }}>
-          Default PIN for all families: 0000 &mdash; change yours in Settings
-        </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.37
+          Adventure Hub · v1.40
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1035,7 +1040,7 @@ function PlaceSearch({ onSelect }) {
 // ─── CALENDAR VIEW ────────────────────────────────────────────────────
 // Monthly calendar showing all family bookings
 
-function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId }) {
+function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId, onOpenMaint }) {
   const [month, setMonth] = useState(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1));
   const [sel, setSel] = useState(null);
   const fColor = id => families.find(f => f.id === id)?.color ?? T.primary;
@@ -1057,7 +1062,8 @@ function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId }) 
     return (<Modal title={date.toLocaleDateString("en-NZ", { weekday: "long", day: "numeric", month: "long" })} onClose={onClose} width={420}>
       {/* MAINT blocks */}
       {maintBks.map(b => (
-        <div key={b.id} style={{ ...card({ padding: 12, marginBottom: 10 }), borderLeft: "4px solid #888888", background: "#88888810" }}>
+        <div key={b.id} onClick={() => { onClose(); onOpenMaint && onOpenMaint(b); }}
+          style={{ ...card({ padding: 12, marginBottom: 10 }), borderLeft: "4px solid #888888", background: "#88888810", cursor: "pointer" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 18 }}>🔧</span>
             <div>
@@ -1480,7 +1486,7 @@ function BookingForm({ bookings, dispatch, onClose, currentFamilyId, families })
 // ─── BOOKING CARD ─────────────────────────────────────────────────────
 // Compact booking card used in the main Bookings tab calendar view
 
-function BookingCard({ b, families, onOpenItinerary, currentFamilyId, dispatch, odoLog, odoRate, onAddOdo }) {
+function BookingCard({ b, families, onOpenItinerary, currentFamilyId, dispatch, odoLog, odoRate, onAddOdo, onOpenMaint }) {
   const fColor = id => families.find(f => f.id === id)?.color ?? T.primary;
   const fName = id => families.find(f => f.id === id)?.name ?? "Unknown";
 
@@ -1492,8 +1498,11 @@ function BookingCard({ b, families, onOpenItinerary, currentFamilyId, dispatch, 
   const [odoForm, setOdoForm] = useState({ startKm: "", endKm: "", tolls: "", notes: "" });
 
   return (
-    <div onClick={() => isOwn && onOpenItinerary && onOpenItinerary(b.id)}
-      style={{ ...card({ padding: 12, marginBottom: 8 }), borderLeft: "4px solid " + fColor(b.familyId), cursor: isOwn ? "pointer" : "default", transition: "box-shadow 0.15s" }}
+    <div onClick={() => {
+        if (b.familyId === "maintenance") { onOpenMaint && onOpenMaint(b); return; }
+        if (isOwn && onOpenItinerary) onOpenItinerary(b.id);
+      }}
+      style={{ ...card({ padding: 12, marginBottom: 8 }), borderLeft: "4px solid " + fColor(b.familyId), cursor: (isOwn || b.familyId === "maintenance") ? "pointer" : "default", transition: "box-shadow 0.15s" }}
       onMouseEnter={e => { if (isOwn) e.currentTarget.style.boxShadow = T.shadowMd; }}
       onMouseLeave={e => { e.currentTarget.style.boxShadow = T.shadow; }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
@@ -1509,7 +1518,15 @@ function BookingCard({ b, families, onOpenItinerary, currentFamilyId, dispatch, 
             }
           </div>
           <div style={{ color: T.textMuted, fontSize: 13, fontWeight: 500 }}>{b.destination}</div>
-          <div style={{ color: T.textDim, fontSize: 12, marginTop: 3 }}>{b.start} to {b.end} &middot; {nights(b.start, b.end)} nights</div>
+          <div style={{ color: T.textDim, fontSize: 12, marginTop: 3 }}>
+            {b.start} to {b.end} &middot; {nights(b.start, b.end)} nights
+            {(() => {
+              const d = Math.ceil((new Date(b.start + "T12:00:00") - new Date()) / 86400000);
+              if (d > 0) return <span style={{ color: T.primary, fontWeight: 700 }}> · in {d}d</span>;
+              if (fmt(new Date()) >= b.start && fmt(new Date()) <= b.end) return <span style={{ color: T.green, fontWeight: 700 }}> · now! 🎉</span>;
+              return null;
+            })()}
+          </div>
           {b.notes && <div style={{ color: T.textDim, fontSize: 12, marginTop: 4, fontStyle: "italic" }}>"{b.notes}"</div>}
         </div>
         {isOwn && <span style={{ color: T.primary, fontSize: 18, flexShrink: 0 }}>›</span>}
@@ -2429,7 +2446,9 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                       {b.guestPin || "----"}
                     </div>
                     <button onClick={() => {
-                      const pin = String(Math.floor(1000 + Math.random() * 9000));
+                      const used = new Set((bookings || []).map(x => x.guestPin).filter(Boolean));
+                      let pin;
+                      do { pin = String(Math.floor(1000 + Math.random() * 9000)); } while (used.has(pin));
                       dispatch({ type: "UPD_BOOKING", payload: { id: b.id, guestPin: pin } });
                     }} style={btn(T.primary, T.surface, { fontSize: 12, flexShrink: 0 })}>
                       {b.guestPin ? "↺ New PIN" : "Generate PIN"}
@@ -2660,7 +2679,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
 }
 
 // ─── OUR TRIPS PANEL ──────────────────────────────────────────────────────────
-function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odoLog, odoRate, onAddOdo, autoOpenItinId, onAutoOpenHandled }) {
+function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odoLog, odoRate, onAddOdo, autoOpenItinId, onAutoOpenHandled, onOpenMaint }) {
   const [showPast, setShowPast] = useState(false);
   const [openId, setOpenId] = useState(autoOpenItinId || null);
 
@@ -2683,7 +2702,7 @@ function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odo
   const upcoming = myBookings.filter(b => b.end >= today);
   const past = myBookings.filter(b => b.end < today);
 
-  const cardProps = { fam, today, odoLog, odoRate, onAddOdo, dispatch, places, families, bookings, currentFamilyId, openId, setOpenId };
+  const cardProps = { onOpenMaint, fam, today, odoLog, odoRate, onAddOdo, dispatch, places, families, bookings, currentFamilyId, openId, setOpenId };
 
   return (
     <div>
@@ -2784,6 +2803,7 @@ function GuidesPanel({ guides, dispatch, vanManual, onSetManual }) {
   const [search, setSearch] = useState("");
   const filtered = guides.filter(g => !search || g.title.toLowerCase().includes(search.toLowerCase()) || g.content.toLowerCase().includes(search.toLowerCase()) || g.links?.some(l => l.label?.toLowerCase().includes(search.toLowerCase())));
   const [uploading, setUploading] = useState(false);
+  const [viewReceipt, setViewReceipt] = useState(null);
   const handleFile = async (e, isNew) => {
     const file = e.target.files[0]; if (!file) return;
     if (file.size > 5 * 1024 * 1024) { alert("File too large — max 5MB."); return; }
@@ -2902,8 +2922,147 @@ const catIcon = cat => CAT_ICONS[cat] || "📦";
 // ─── KIT & PACKING ────────────────────────────────────────────────────
 // Shared van equipment and per-family packing lists
 
-function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, checklists = {} }) {
-  const [panelTab, setPanelTab] = useState("kit"); // kit | packing | setup | packdown
+// ─── SHARED CHECKLIST (Set Up / Pack Down / Return) ──────────────────────────
+function Checklist({ items, setItems, accent }) {
+    const [newItem, setNewItem] = useState("");
+    const [editId, setEditId] = useState(null);
+    const [editVal, setEditVal] = useState("");
+    const [confirmDel, setConfirmDel] = useState(null);
+    // Drag-to-reorder state — local order during drag, committed on release
+    const [dragItems, setDragItems] = useState(null);
+    const [dragIdx, setDragIdx] = useState(null);
+    const rowRefs = useRef([]);
+    const shown = dragItems || items;
+    const startDrag = (idx) => (e) => {
+      e.preventDefault();
+      setDragItems([...items]);
+      setDragIdx(idx);
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { }
+    };
+    const moveDrag = (e) => {
+      if (dragIdx === null || !dragItems) return;
+      const y = e.clientY;
+      for (let i = 0; i < dragItems.length; i++) {
+        if (i === dragIdx) continue;
+        const el = rowRefs.current[i];
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        const mid = r.top + r.height / 2;
+        if ((i < dragIdx && y < mid) || (i > dragIdx && y > mid)) {
+          const next = [...dragItems];
+          const [moved] = next.splice(dragIdx, 1);
+          next.splice(i, 0, moved);
+          setDragItems(next);
+          setDragIdx(i);
+          break;
+        }
+      }
+    };
+    const endDrag = () => {
+      if (dragItems) setItems(dragItems);
+      setDragItems(null);
+      setDragIdx(null);
+    };
+    const toggle = id => setItems(items.map(i => {
+      if (i.id !== id) return i;
+      const nowDone = !i.done;
+      const ts = nowDone ? new Date().toISOString() : null;
+      return { ...i, done: nowDone, tickedAt: ts };
+    }));
+    const remove = id => setItems(items.filter(i => i.id !== id));
+    const add = () => {
+      if (!newItem.trim()) return;
+      setItems([...items, { id: "c" + Date.now(), item: newItem.trim(), done: false }]);
+      setNewItem("");
+    };
+    const saveEdit = id => {
+      if (!editVal.trim()) return;
+      setItems(items.map(i => i.id === id ? { ...i, item: editVal.trim() } : i));
+      setEditId(null);
+    };
+    const doneCount = items.filter(i => i.done).length;
+    const pct = items.length ? Math.round((doneCount / items.length) * 100) : 0;
+    return (
+      <div>
+        {/* Progress */}
+        <div style={{ ...card({ padding: 12, marginBottom: 12 }) }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontWeight: 700, color: T.text, fontSize: 14 }}>{doneCount}/{items.length} done</span>
+            <span style={{ fontWeight: 700, color: pct === 100 ? T.green : T.textMuted, fontSize: 14 }}>{pct}%</span>
+          </div>
+          <div style={{ background: T.bg, borderRadius: 99, height: 8, overflow: "hidden", border: `1px solid ${T.border}` }}>
+            <div style={{ width: `${pct}%`, background: pct === 100 ? T.green : accent, height: "100%", borderRadius: 99, transition: "width 0.4s" }} />
+          </div>
+          {pct === 100 && <p style={{ margin: "8px 0 0", color: T.green, fontSize: 12, fontWeight: 600, textAlign: "center" }}>All done! 🎉</p>}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+            <DeleteButton label="Clear All" message="Clear all ticks?" detail="Items go back to unticked — nothing is deleted."
+              onConfirm={() => setItems(items.map(i => ({ ...i, done: false })))} style={{ fontSize: 11, padding: "4px 10px" }} />
+          </div>
+        </div>
+        {/* Items — drag the ⠿ handle to reorder */}
+        {shown.map((item, idx) => (
+          <div key={item.id} ref={el => rowRefs.current[idx] = el}
+            style={{ ...card({ padding: "10px 12px", marginBottom: 6 }), borderLeft: `3px solid ${item.done ? T.green : accent}`, opacity: dragIdx === idx ? 0.5 : item.done ? 0.65 : 1, boxShadow: dragIdx === idx ? T.shadowLg : T.shadow, transition: dragIdx !== null ? "none" : "opacity 0.15s" }}>
+            {editId === item.id ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input autoFocus style={{ ...inp, flex: 1, padding: "6px 8px", fontSize: 13 }} value={editVal}
+                  onChange={e => setEditVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") saveEdit(item.id); if (e.key === "Escape") setEditId(null); }} />
+                <button onClick={() => saveEdit(item.id)} style={btn(accent, T.surface, { fontSize: 12, padding: "5px 10px", flexShrink: 0 })}>Save</button>
+                <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 16 }}>&times;</button>
+              </div>
+            ) : confirmDel === item.id ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ flex: 1, fontSize: 13, color: T.red }}>Remove "{item.item}"?</span>
+                <button onClick={() => { remove(item.id); setConfirmDel(null); }} style={btn(T.red, T.surface, { fontSize: 12, padding: "5px 10px", flexShrink: 0 })}>Remove</button>
+                <button onClick={() => setConfirmDel(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, padding: "5px 10px", border: `1px solid ${T.border}`, flexShrink: 0 }) }}>Cancel</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <span onPointerDown={startDrag(idx)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}
+                  style={{ touchAction: "none", cursor: "grab", color: T.textDim, fontSize: 15, padding: "4px 2px", flexShrink: 0, userSelect: "none", lineHeight: 1 }}>⠿</span>
+                <button onClick={() => toggle(item.id)} style={{ width: 24, height: 24, borderRadius: 6, background: item.done ? T.green + "25" : "transparent", border: `2px solid ${item.done ? T.green : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", padding: 0 }}>
+                  {item.done && <span style={{ color: T.green, fontSize: 14, fontWeight: 800 }}>✓</span>}
+                </button>
+                <span onClick={() => toggle(item.id)} style={{ flex: 1, fontSize: 13, color: T.text, textDecoration: item.done ? "line-through" : "none", cursor: "pointer" }}>{item.item}</span>
+                {item.done && item.tickedAt && (() => {
+                  const d = new Date(item.tickedAt);
+                  const stale = (Date.now() - d.getTime()) > 24 * 60 * 60 * 1000;
+                  const day = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()];
+                  const date = `${d.getDate()}/${d.getMonth()+1}`;
+                  const time = d.toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit" });
+                  return (
+                    <span style={{ fontSize: 10, color: stale ? T.red : T.textDim, flexShrink: 0, marginRight: 4, whiteSpace: "nowrap", fontWeight: stale ? 700 : 400 }}
+                      title={stale ? "Ticked more than 24 hours ago — check if still valid" : ""}>
+                      {stale ? "⚠️ " : ""}{day} {date} {time}
+                    </span>
+                  );
+                })()}
+                <button onClick={() => { setEditId(item.id); setEditVal(item.item); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px", flexShrink: 0 }}>✏️</button>
+                <button onClick={() => setConfirmDel(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red + "60", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>&times;</button>
+              </div>
+            )}
+          </div>
+        ))}
+        {/* Add item */}
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <input style={{ ...inp, flex: 1 }} placeholder="Add an item..." value={newItem}
+            onChange={e => setNewItem(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && add()} />
+          <button onClick={add} style={btn(accent, T.surface, { flexShrink: 0 })}>+ Add</button>
+        </div>
+      </div>
+    );
+  }
+
+function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, checklists = {}, kitFocus = null, onKitFocusHandled = null }) {
+  const [panelTab, setPanelTab] = useState("kit"); // kit | setup | packdown | return
+  useEffect(() => {
+    if (!kitFocus) return;
+    setPanelTab(kitFocus);
+    onKitFocusHandled && onKitFocusHandled();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kitFocus]);
 
   const PANEL_TABS = [
     { id: "kit",      label: "Kit & Pack", icon: "🎒" },
@@ -2961,100 +3120,6 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
   const setupList    = toChecklist(checklists[setupKey],    SETUP_DEFAULTS);
   const packdownList = toChecklist(checklists[packdownKey], PACKDOWN_DEFAULTS);
   const returnList   = toChecklist(checklists[returnKey],   RETURN_DEFAULTS);
-
-  const Checklist = ({ items, setItems, accent }) => {
-    const [newItem, setNewItem] = useState("");
-    const [editId, setEditId] = useState(null);
-    const [editVal, setEditVal] = useState("");
-    const [confirmDel, setConfirmDel] = useState(null);
-    const toggle = id => setItems(items.map(i => {
-      if (i.id !== id) return i;
-      const nowDone = !i.done;
-      const ts = nowDone ? new Date().toISOString() : null;
-      return { ...i, done: nowDone, tickedAt: ts };
-    }));
-    const remove = id => setItems(items.filter(i => i.id !== id));
-    const add = () => {
-      if (!newItem.trim()) return;
-      setItems([...items, { id: "c" + Date.now(), item: newItem.trim(), done: false }]);
-      setNewItem("");
-    };
-    const saveEdit = id => {
-      if (!editVal.trim()) return;
-      setItems(items.map(i => i.id === id ? { ...i, item: editVal.trim() } : i));
-      setEditId(null);
-    };
-    const doneCount = items.filter(i => i.done).length;
-    const pct = items.length ? Math.round((doneCount / items.length) * 100) : 0;
-    return (
-      <div>
-        {/* Progress */}
-        <div style={{ ...card({ padding: 12, marginBottom: 12 }) }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-            <span style={{ fontWeight: 700, color: T.text, fontSize: 14 }}>{doneCount}/{items.length} done</span>
-            <span style={{ fontWeight: 700, color: pct === 100 ? T.green : T.textMuted, fontSize: 14 }}>{pct}%</span>
-          </div>
-          <div style={{ background: T.bg, borderRadius: 99, height: 8, overflow: "hidden", border: `1px solid ${T.border}` }}>
-            <div style={{ width: `${pct}%`, background: pct === 100 ? T.green : accent, height: "100%", borderRadius: 99, transition: "width 0.4s" }} />
-          </div>
-          {pct === 100 && <p style={{ margin: "8px 0 0", color: T.green, fontSize: 12, fontWeight: 600, textAlign: "center" }}>All done! 🎉</p>}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-            <DeleteButton label="Clear All" message="Clear all ticks?" detail="Items go back to unticked — nothing is deleted."
-              onConfirm={() => setItems(items.map(i => ({ ...i, done: false })))} style={{ fontSize: 11, padding: "4px 10px" }} />
-          </div>
-        </div>
-        {/* Items */}
-        {items.map(item => (
-          <div key={item.id} style={{ ...card({ padding: "10px 12px", marginBottom: 6 }), borderLeft: `3px solid ${item.done ? T.green : accent}`, opacity: item.done ? 0.65 : 1 }}>
-            {editId === item.id ? (
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input autoFocus style={{ ...inp, flex: 1, padding: "6px 8px", fontSize: 13 }} value={editVal}
-                  onChange={e => setEditVal(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") saveEdit(item.id); if (e.key === "Escape") setEditId(null); }} />
-                <button onClick={() => saveEdit(item.id)} style={btn(accent, T.surface, { fontSize: 12, padding: "5px 10px", flexShrink: 0 })}>Save</button>
-                <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 16 }}>&times;</button>
-              </div>
-            ) : confirmDel === item.id ? (
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ flex: 1, fontSize: 13, color: T.red }}>Remove "{item.item}"?</span>
-                <button onClick={() => { remove(item.id); setConfirmDel(null); }} style={btn(T.red, T.surface, { fontSize: 12, padding: "5px 10px", flexShrink: 0 })}>Remove</button>
-                <button onClick={() => setConfirmDel(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, padding: "5px 10px", border: `1px solid ${T.border}`, flexShrink: 0 }) }}>Cancel</button>
-              </div>
-            ) : (
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <button onClick={() => toggle(item.id)} style={{ width: 24, height: 24, borderRadius: 6, background: item.done ? T.green + "25" : "transparent", border: `2px solid ${item.done ? T.green : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", padding: 0 }}>
-                  {item.done && <span style={{ color: T.green, fontSize: 14, fontWeight: 800 }}>✓</span>}
-                </button>
-                <span onClick={() => toggle(item.id)} style={{ flex: 1, fontSize: 13, color: T.text, textDecoration: item.done ? "line-through" : "none", cursor: "pointer" }}>{item.item}</span>
-                {item.done && item.tickedAt && (() => {
-                  const d = new Date(item.tickedAt);
-                  const stale = (Date.now() - d.getTime()) > 24 * 60 * 60 * 1000;
-                  const day = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()];
-                  const date = `${d.getDate()}/${d.getMonth()+1}`;
-                  const time = d.toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit" });
-                  return (
-                    <span style={{ fontSize: 10, color: stale ? T.red : T.textDim, flexShrink: 0, marginRight: 4, whiteSpace: "nowrap", fontWeight: stale ? 700 : 400 }}
-                      title={stale ? "Ticked more than 24 hours ago — check if still valid" : ""}>
-                      {stale ? "⚠️ " : ""}{day} {date} {time}
-                    </span>
-                  );
-                })()}
-                <button onClick={() => { setEditId(item.id); setEditVal(item.item); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px", flexShrink: 0 }}>✏️</button>
-                <button onClick={() => setConfirmDel(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red + "60", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>&times;</button>
-              </div>
-            )}
-          </div>
-        ))}
-        {/* Add item */}
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <input style={{ ...inp, flex: 1 }} placeholder="Add an item..." value={newItem}
-            onChange={e => setNewItem(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && add()} />
-          <button onClick={add} style={btn(accent, T.surface, { flexShrink: 0 })}>+ Add</button>
-        </div>
-      </div>
-    );
-  };
 
   const STATUS_TABS = [
     { id: "all", label: "All", color: T.primary },
@@ -3367,11 +3432,10 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
 // ─── RULES ────────────────────────────────────────────────────────────
 // Shared van rules — displayed and editable by all
 
-function RulesPanel({ rules, dispatch }) {
-  const [editId, setEditId] = useState(null); const [ef, setEf] = useState({}); const [adding, setAdding] = useState(false); const [nf, setNf] = useState({ icon: "📌", rule: "", detail: "" });
-  const set = r => dispatch({ type: "SET_RULES", payload: r });
+// ─── RULE FORM ────────────────────────────────────────────────────────────────
+function RuleForm({ form, setForm, onSave, onCancel, onDel }) {
   const ICONS = ["📅", "⏱️", "🔁", "🧹", "⛽", "🛑", "🔧", "🤝", "✏️", "📌", "⚠️", "💡", "🔒", "🏆", "💬"];
-  const Form = ({ form, setForm, onSave, onCancel, onDel }) => (
+  return (
     <div style={{ ...card({ padding: 16, marginBottom: 12, border: `1px solid ${T.primary}25` }) }}>
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 14, padding: 8, background: T.bg, borderRadius: T.radiusSm, border: `1px solid ${T.border}` }}>{ICONS.map(ic => <button key={ic} onClick={() => setForm(f => ({ ...f, icon: ic }))} style={{ fontSize: 20, background: form.icon === ic ? T.surface : "transparent", border: `1px solid ${form.icon === ic ? T.border : "transparent"}`, borderRadius: 8, cursor: "pointer", padding: "5px 8px", boxShadow: form.icon === ic ? T.shadow : "none" }}>{ic}</button>)}</div>
       <input style={inp} placeholder="Rule title *" value={form.rule} onChange={e => setForm(f => ({ ...f, rule: e.target.value }))} />
@@ -3383,6 +3447,12 @@ function RulesPanel({ rules, dispatch }) {
       </div>
     </div>
   );
+}
+
+function RulesPanel({ rules, dispatch }) {
+  const [editId, setEditId] = useState(null); const [ef, setEf] = useState({}); const [adding, setAdding] = useState(false); const [nf, setNf] = useState({ icon: "📌", rule: "", detail: "" });
+  const set = r => dispatch({ type: "SET_RULES", payload: r });
+  const ICONS = ["📅", "⏱️", "🔁", "🧹", "⛽", "🛑", "🔧", "🤝", "✏️", "📌", "⚠️", "💡", "🔒", "🏆", "💬"];
   return (
     <div>
       <div style={{ ...card({ padding: 14, marginBottom: 16, background: T.primary + "08", border: `1px solid ${T.primary}20` }) }}>
@@ -3391,7 +3461,7 @@ function RulesPanel({ rules, dispatch }) {
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
         <button onClick={() => setAdding(true)} style={btn(T.primary, T.surface)}>+ Add Rule</button>
       </div>
-      {adding && <Form form={nf} setForm={setNf} onSave={() => { if (!nf.rule) return; set([...rules, { ...nf, id: "r" + Date.now() }]); setAdding(false); setNf({ icon: "📌", rule: "", detail: "" }); }} onCancel={() => setAdding(false)} />}
+      {adding && <RuleForm form={nf} setForm={setNf} onSave={() => { if (!nf.rule) return; set([...rules, { ...nf, id: "r" + Date.now() }]); setAdding(false); setNf({ icon: "📌", rule: "", detail: "" }); }} onCancel={() => setAdding(false)} />}
       {rules.map(r => editId === r.id
         ? <Form key={r.id} form={ef} setForm={setEf} onSave={() => { set(rules.map(x => x.id === r.id ? { ...x, ...ef } : x)); setEditId(null); }} onCancel={() => setEditId(null)} onDel={() => { set(rules.filter(x => x.id !== r.id)); setEditId(null); }} />
         : (<div key={r.id} style={{ ...card({ padding: 12, marginBottom: 8, cursor: "default" }), display: "flex", gap: 14, alignItems: "flex-start" }}>
@@ -3859,6 +3929,18 @@ function SettingsPanel({ state, dispatch, currentFamilyId, themeMode, onToggleTh
   );
 }
 
+// ─── SKELETON LOADER ──────────────────────────────────────────────────────────
+function Skeleton() {
+  return (
+    <div>
+      <style>{"@keyframes skPulse{0%,100%{opacity:.45}50%{opacity:.9}}"}</style>
+      {[0, 1, 2, 3].map(i => (
+        <div key={i} style={{ height: 72, borderRadius: 14, background: T.border + "66", marginBottom: 10, animation: "skPulse 1.2s ease-in-out infinite", animationDelay: (i * 0.12) + "s" }} />
+      ))}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // APP SHELL
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3951,7 +4033,7 @@ function CompanySearch({ value, location, onPick, onChange, onLocationChange }) 
 
 // ─── VAN MAINT FORM ───────────────────────────────────────────────────────────
 // Plan or log maintenance work. Top-level so inputs keep focus.
-function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCancel, onDel, uploading, onReceiptUpload }) {
+function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCancel, onDel, uploading, onReceiptUpload, onViewReceipt }) {
   const h = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
   const linkedItem = dueDates.find(d => d.id === form.linkedId);
   const isPlanned = form.workStatus === "planned";
@@ -4011,7 +4093,7 @@ function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCanc
           {form.receipt ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.bg, borderRadius: T.radiusSm, padding: "8px 10px", border: "1px solid " + T.border, marginBottom: 4 }}>
               <span style={{ fontSize: 12, flex: 1, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧾 Receipt attached</span>
-              <button onClick={() => window.open(form.receipt, "_blank")} style={{ fontSize: 12, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>View</button>
+              <button onClick={() => onViewReceipt && onViewReceipt(form.receipt)} style={{ fontSize: 12, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>View</button>
               <button onClick={() => setForm(f => ({ ...f, receipt: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 14, flexShrink: 0 }}>&times;</button>
             </div>
           ) : (
@@ -4046,7 +4128,7 @@ function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCanc
 
 // ─── VAN PANEL ────────────────────────────────────────────────────────────────
 // Vehicle maintenance — due dates (repeat cycles), planned & completed work, odometer
-function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, bookings, currentFamilyId }) {
+function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, bookings, currentFamilyId, maintFocus, onMaintFocusHandled }) {
   const [tab, setTab] = useState("due");
   const [dueAdding, setDueAdding] = useState(false);
   const [dueEditing, setDueEditing] = useState(null);
@@ -4062,6 +4144,21 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
   const myFamilyName = (families || []).find(f => f.id === currentFamilyId)?.name || "";
   const emptyMForm = { workStatus: "planned", date: fmt(new Date()), dateEnd: "", description: "", linkedId: "", cost: "", arrangedBy: myFamilyName, notes: "", currentKm: String(latestKm || ""), receipt: "", company: "", location: "", blockDates: true };
   const [mForm, setMForm] = useState(emptyMForm);
+
+  // Jump to a specific maint entry when opened from the calendar / bookings list
+  useEffect(() => {
+    if (!maintFocus) return;
+    if (maintFocus.tab) {
+      setTab(maintFocus.tab);
+    } else {
+      setTab("log");
+      const m = maintLog.find(x => x.workStatus === "planned" && x.description === maintFocus.description)
+        || maintLog.find(x => x.description === maintFocus.description);
+      if (m) setMSearch(m.description);
+    }
+    onMaintFocusHandled && onMaintFocusHandled();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maintFocus]);
 
   const VAN_TABS = [
     { id: "due", label: "Due Dates", icon: "📋" },
@@ -4118,28 +4215,30 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
       const url = await supa.uploadImage(file, path);
       setMForm(f => ({ ...f, receipt: url }));
     } catch (err) {
-      const r = new FileReader();
-      r.onload = () => setMForm(f => ({ ...f, receipt: r.result }));
-      r.readAsDataURL(file);
+      console.error("Receipt upload failed:", err);
+      alert("Receipt upload failed — check your connection and try again.");
     }
     setUploading(false);
   };
 
-  // Save maint entry (add mode)
-  const saveMaint = () => {
+  // Save maint entry (add mode). Uses inline confirm (iOS PWA safe).
+  const [overlapWarn, setOverlapWarn] = useState(null);
+  const saveMaint = (force = false) => {
     if (!mForm.description) return;
     const blockStart = mForm.date;
     const blockEnd = mForm.dateEnd || mForm.date;
-    if (mForm.workStatus === "planned" && mForm.blockDates && blockStart) {
+    if (!force && mForm.workStatus === "planned" && mForm.blockDates && blockStart) {
       const overlapping = bookings.filter(b => b.familyId !== "maintenance" && b.start <= blockEnd && b.end >= blockStart);
       if (overlapping.length > 0) {
         const names = overlapping.map(b => {
           const fam = families.find(f => f.id === b.familyId);
           return (fam ? fam.emoji + " " + fam.name + " — " : "") + b.destination;
         }).join(", ");
-        if (!window.confirm("⚠️ These dates overlap existing bookings: " + names + "\n\nShow maintenance anyway? (Both can coexist — the family just sees the 🔧 on those days.)")) return;
+        setOverlapWarn(names);
+        return;
       }
     }
+    setOverlapWarn(null);
     const payload = { id: "m" + Date.now(), workStatus: mForm.workStatus, date: mForm.date, dateEnd: mForm.dateEnd || "", description: mForm.description, linkedId: mForm.linkedId || null, cost: parseFloat(mForm.cost) || 0, arrangedBy: mForm.arrangedBy, notes: mForm.notes, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null, receipt: mForm.receipt || "", company: mForm.company || "", location: mForm.location || "" };
     dispatch({ type: "ADD_MAINT", payload });
     if (mForm.workStatus === "planned" && mForm.blockDates && blockStart) {
@@ -4193,7 +4292,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
             </div>
             {m.location && <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>📍 {m.location}</div>}
             {m.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, fontStyle: "italic" }}>{m.notes}</div>}
-            {m.receipt && <button onClick={() => window.open(m.receipt, "_blank")} style={{ marginTop: 4, fontSize: 11, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: 0 }}>🧾 View receipt</button>}
+            {m.receipt && <button onClick={() => setViewReceipt(m.receipt)} style={{ marginTop: 4, fontSize: 11, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: 0 }}>🧾 View receipt</button>}
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
             {isPlanned && <button onClick={() => markDone(m)} style={btn(T.green + "15", T.green, { fontSize: 11, padding: "4px 8px", border: "1px solid " + T.green + "30" })}>✓ Done</button>}
@@ -4281,12 +4380,23 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
             <input style={{ ...inp, flex: 1 }} placeholder="Search log..." value={mSearch} onChange={e => setMSearch(e.target.value)} />
             <button onClick={() => { setMForm(emptyMForm); setMAdding(true); setMEditing(null); }} style={btn(T.primary, T.surface, { flexShrink: 0 })}>+ Plan / Log</button>
           </div>
-          {mAdding && <MaintForm form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt}
-            onSave={saveMaint} onCancel={() => setMAdding(false)} />}
+          {overlapWarn && (
+            <div style={{ ...card({ padding: 14, marginBottom: 10 }), background: T.accent + "0c", border: "1px solid " + T.accent + "40" }}>
+              <div style={{ fontWeight: 700, color: T.accent, fontSize: 13, marginBottom: 6 }}>⚠️ Dates overlap existing bookings</div>
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>{overlapWarn}</div>
+              <p style={{ fontSize: 11, color: T.textDim, margin: "0 0 10px" }}>Both can coexist — the family just sees the 🔧 on those days.</p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => saveMaint(true)} style={btn(T.accent, T.surface, { fontSize: 12 })}>Save Anyway</button>
+                <button onClick={() => setOverlapWarn(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, border: "1px solid " + T.border }) }}>Cancel</button>
+              </div>
+            </div>
+          )}
+          {mAdding && <MaintForm form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
+            onSave={() => saveMaint(false)} onCancel={() => { setMAdding(false); setOverlapWarn(null); }} />}
           {maintLog.length === 0 && !mAdding && <div style={{ ...card({ padding: 24, textAlign: "center" }) }}><p style={{ color: T.textDim, margin: 0 }}>Nothing planned or logged yet.</p></div>}
           {plannedEntries.length > 0 && <p style={{ ...sectionHead, margin: "4px 0 8px" }}>📅 Planned</p>}
           {plannedEntries.map(m => mEditing === m.id ? (
-            <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt}
+            <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
               onSave={() => {
                 dispatch({ type: "UPD_MAINT", payload: { ...m, ...mForm, cost: parseFloat(mForm.cost) || 0, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null } });
                 const linkedItem = dueDates.find(d => d.id === mForm.linkedId);
@@ -4300,7 +4410,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
           ) : <MaintEntry key={m.id} m={m} />)}
           {doneEntries.length > 0 && <p style={{ ...sectionHead, margin: "12px 0 8px" }}>✅ Completed</p>}
           {doneEntries.map(m => mEditing === m.id ? (
-            <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt}
+            <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
               onSave={() => { dispatch({ type: "UPD_MAINT", payload: { ...m, ...mForm, cost: parseFloat(mForm.cost) || 0, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null } }); setMEditing(null); }}
               onCancel={() => setMEditing(null)}
               onDel={() => { dispatch({ type: "DEL_MAINT", id: m.id }); setMEditing(null); }} />
@@ -4309,6 +4419,16 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
       )}
 
       {tab === "odo" && <OdometerPanel odoLog={odoLog} odoRate={odoRate} dispatch={dispatch} families={families} bookings={bookings} currentFamilyId={currentFamilyId} />}
+
+      {/* Receipt viewer overlay (iOS PWA safe — no window.open) */}
+      {viewReceipt && (
+        <div onClick={() => setViewReceipt(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 950, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          {(viewReceipt.includes(".pdf") || viewReceipt.startsWith("data:application/pdf"))
+            ? <iframe src={viewReceipt} title="Receipt" style={{ width: "100%", height: "80%", border: "none", borderRadius: 8, background: "white" }} />
+            : <img src={viewReceipt} alt="Receipt" style={{ maxWidth: "100%", maxHeight: "82%", borderRadius: 8, objectFit: "contain" }} />}
+          <button onClick={() => setViewReceipt(null)} style={{ marginTop: 14, background: "white", color: "#333", border: "none", borderRadius: 99, padding: "9px 24px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -4525,6 +4645,7 @@ export default function App() {
 
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(false);
+  const [phase2Done, setPhase2Done] = useState(false);
   const [showTimeoutPopup, setShowTimeoutPopup] = useState(false);
   const loadingRef = useRef(true);
 
@@ -4615,6 +4736,7 @@ export default function App() {
             notes: e.notes || "", bookingId: e.booking_id || ""
           }))
         });
+        setPhase2Done(true);
 
       } catch (e) {
         console.error("Supabase load error:", e);
@@ -4697,11 +4819,33 @@ export default function App() {
     return false;
   }).length;
 
+  // ── Toast notifications ──
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+  const showToast = (msg, kind = "ok") => {
+    setToast({ msg, kind });
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  };
+
+  // ── Online/offline awareness ──
+  const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
+  useEffect(() => {
+    const up = () => setOnline(true), down = () => setOnline(false);
+    window.addEventListener("online", up); window.addEventListener("offline", down);
+    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+  }, []);
+
   const currentTab = TABS.find(t => t.id === tab) || TABS[0];
 
   // ── Sign-in due alert: once per session, list overdue/due-soon items and
   //    anything due before this family's next booking ──
   const [dueAlert, setDueAlert] = useState(null);
+  const [maintFocus, setMaintFocus] = useState(null); // { description } or { tab } — focuses VanPanel
+  const openMaintEntry = b => { setMaintFocus({ description: b.destination }); setTab("van"); };
+  const [kitFocus, setKitFocus] = useState(null); // "kit" | "setup" | "packdown" | "return"
+  const goKit = sub => { setKitFocus(sub); setTab("kit"); };
+  const goOdo = () => { setMaintFocus({ tab: "odo" }); setTab("van"); };
   useEffect(() => {
     if (!currentFamily || currentFamily === "__guest__") return;
     if (state.dueDates.length === 0) return;
@@ -4750,6 +4894,11 @@ export default function App() {
   };
 
   const sbDispatch = useCallback(async ({ type, payload, id }) => {
+    // Offline guard — don't apply or pretend to save
+    if (typeof navigator !== "undefined" && !navigator.onLine && !type.startsWith("RESET")) {
+      alert("📡 You're offline — this change won't be saved.\n\nWait until you're back online and try again.");
+      return;
+    }
     // Always update local state immediately (optimistic)
     dispatch({ type, payload, id });
     if (loadingRef.current && type.startsWith("RESET")) return; // Don't write bulk load actions
@@ -4905,11 +5054,19 @@ export default function App() {
             await logActivity("Removed family", f?.name || id);
           } break;
         // DUE DATES
-        case "ADD_DUE_DATE": await supa.insert("van_due_dates", { label: payload.label, due_date: payload.dueDate || null, due_km: payload.dueKm || null, cycle_days: payload.cycleDays || null, cycle_km: payload.cycleKm || null, notes: payload.notes || "" }); break;
+        case "ADD_DUE_DATE": {
+          const r = await supa.insert("van_due_dates", { label: payload.label, due_date: payload.dueDate || null, due_km: payload.dueKm || null, cycle_days: payload.cycleDays || null, cycle_km: payload.cycleKm || null, notes: payload.notes || "" });
+          if (Array.isArray(r) && r[0]?.id) dispatch({ type: "REPLACE_ID", payload: { list: "dueDates", oldId: payload.id, newId: r[0].id } });
+          break;
+        }
         case "UPD_DUE_DATE": await supa.update("van_due_dates", { label: payload.label, due_date: payload.dueDate || null, due_km: payload.dueKm || null, cycle_days: payload.cycleDays || null, cycle_km: payload.cycleKm || null, notes: payload.notes || "" }, { id: payload.id }); break;
         case "DEL_DUE_DATE": await supa.delete("van_due_dates", { id }); break;
         // MAINTENANCE LOG
-        case "ADD_MAINT": await supa.insert("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }); break;
+        case "ADD_MAINT": {
+          const r = await supa.insert("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" });
+          if (Array.isArray(r) && r[0]?.id) dispatch({ type: "REPLACE_ID", payload: { list: "maintLog", oldId: payload.id, newId: r[0].id } });
+          break;
+        }
         case "UPD_MAINT": await supa.update("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }, { id: payload.id }); break;
         case "DEL_MAINT": await supa.delete("van_maintenance_log", { id }); break;
         // VAN SETTINGS
@@ -4922,8 +5079,10 @@ export default function App() {
         case "SET_VAN_MANUAL": await supa.update("van_settings", { van_manual: payload }, { id: 1 }); break;
         default: break;
       }
+      if (type.startsWith("ADD_") || type === "UPD_DUE_DATE" || type === "UPD_MAINT" || type === "UPD_PLACE") showToast("Saved ✓");
     } catch (e) {
       console.error("Supabase write error:", type, e);
+      showToast("⚠️ Couldn't save — " + (e.message || "check connection"), "err");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -5078,6 +5237,22 @@ export default function App() {
         </div>
       </div>
 
+      {/* OFFLINE BANNER */}
+      {!online && (
+        <div style={{ position: "sticky", top: 0, zIndex: 850, background: "#b45309", color: "white", textAlign: "center", padding: "7px 12px", fontSize: 12, fontWeight: 700 }}>
+          📡 You're offline — changes won't save until you're back online
+        </div>
+      )}
+
+      {/* TOAST */}
+      {toast && (
+        <div style={{ position: "fixed", bottom: 106, left: 0, right: 0, zIndex: 900, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+          <div style={{ background: toast.kind === "err" ? T.red : "#1a2e1a", color: "white", borderRadius: 99, padding: "9px 18px", fontSize: 13, fontWeight: 600, boxShadow: T.shadowLg, maxWidth: "85%" }}>
+            {toast.msg}
+          </div>
+        </div>
+      )}
+
       {/* DUE ALERT — drops down on sign-in when van items need attention */}
       {dueAlert && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 800, padding: "10px 12px 0", animation: "dropDown 0.35s ease" }}>
@@ -5102,10 +5277,66 @@ export default function App() {
 
       {/* CONTENT */}
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "14px 12px 100px" }}>
+        {tab === "calendar" && (() => {
+          const todayStr = fmt(new Date());
+          const HeroBtn = ({ label, onTap }) => (
+            <button onClick={e => { e.stopPropagation(); onTap(); }}
+              style={{ background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.4)", color: "white", borderRadius: 99, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              {label}
+            </button>
+          );
+          const Hero = ({ tag, title, sub, buttons, onTap }) => (
+            <div onClick={onTap}
+              style={{ ...card({ padding: "14px 16px", marginBottom: 12 }), background: `linear-gradient(135deg, ${T.primary}, #3a8a5f)`, color: "white", cursor: onTap ? "pointer" : "default", border: "none" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, opacity: 0.85, textTransform: "uppercase", marginBottom: 3 }}>{tag}</div>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>{title}</div>
+              {sub && <div style={{ fontSize: 12, opacity: 0.9, marginTop: 2 }}>{sub}</div>}
+              {buttons && buttons.length > 0 && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                  {buttons.map((b, i) => <HeroBtn key={i} label={b.label} onTap={b.onTap} />)}
+                </div>
+              )}
+            </div>
+          );
+          const myNext = state.bookings.filter(b => b.familyId === currentFamily && b.end >= todayStr).sort((a, b) => a.start.localeCompare(b.start))[0];
+          if (myNext) {
+            const d = Math.ceil((new Date(myNext.start + "T12:00:00") - new Date()) / 86400000);
+            const active = todayStr >= myNext.start && todayStr <= myNext.end;
+            const lastDay = todayStr === myNext.end;
+            const openTrip = () => { setTab("trips"); setOpenItinId(myNext.id); };
+            if (lastDay) return <Hero tag="🏠 Last day — heading home?" title={myNext.destination} sub={`${myNext.start} → ${myNext.end}`} onTap={openTrip}
+              buttons={[
+                { label: "🔑 Return Van List", onTap: () => goKit("return") },
+                { label: "🔢 Log Odometer", onTap: goOdo },
+              ]} />;
+            if (active) return <Hero tag="🎉 Your trip is on!" title={myNext.destination} sub={`${myNext.start} → ${myNext.end}`} onTap={openTrip}
+              buttons={[
+                { label: "✅ Set Up List", onTap: () => goKit("setup") },
+                { label: "🚐 Pack Down List", onTap: () => goKit("packdown") },
+                { label: "🗺️ Trip Plan", onTap: openTrip },
+              ]} />;
+            if (d <= 7) return <Hero tag="⏳ Almost here!" title={myNext.destination} sub={`${myNext.start} → ${myNext.end} · in ${d} day${d === 1 ? "" : "s"}`} onTap={openTrip}
+              buttons={[
+                { label: "🗺️ Review Plan", onTap: openTrip },
+                { label: "🎒 Pack List", onTap: () => goKit("kit") },
+              ]} />;
+            return <Hero tag="Your next trip" title={myNext.destination} sub={`${myNext.start} → ${myNext.end} · in ${d} day${d === 1 ? "" : "s"}`} onTap={openTrip} />;
+          }
+          // Recently returned? Prompt report + odo for 3 days after the trip ends
+          const cutoff = fmt(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000));
+          const justBack = state.bookings.filter(b => b.familyId === currentFamily && b.end < todayStr && b.end >= cutoff).sort((a, b) => b.end.localeCompare(a.end))[0];
+          if (justBack) return <Hero tag="👋 Welcome back!" title={justBack.destination} sub="Hope it was a great trip" onTap={() => { setTab("trips"); setOpenItinId(justBack.id); }}
+            buttons={[
+              { label: "📄 Trip Report", onTap: () => { setTab("trips"); setOpenItinId(justBack.id); } },
+              { label: "🔢 Log Odometer", onTap: goOdo },
+              { label: "🔑 Return Van List", onTap: () => goKit("return") },
+            ]} />;
+          return null;
+        })()}
         {tab === "calendar" && (
           <>
             <div style={card({ padding: 14, marginBottom: 12 })}>
-              <CalendarView bookings={state.bookings} families={families} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily} />
+              <CalendarView bookings={state.bookings} families={families} onOpenItinerary={handleOpenItinerary} currentFamilyId={currentFamily} onOpenMaint={openMaintEntry} />
             </div>
             <CollapsibleBookings
               bookings={state.bookings} dispatch={sbDispatch} families={families}
@@ -5115,14 +5346,20 @@ export default function App() {
             />
           </>
         )}
-        {tab === "trips" && <TripsPanel bookings={state.bookings} dispatch={sbDispatch} places={state.places} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={() => setOpenItinId(null)} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e => e._action === "MARK_PAID" ? sbDispatch({ type: "MARK_ODO_PAID", id: e.id }) : sbDispatch({ type: "ADD_ODO", payload: e })} />}
-        {tab === "places" && <PlacesPanel places={state.places} dispatch={sbDispatch} onPickItinerary={addPlaceToItinerary}
+        {tab === "trips" && !phase2Done && <Skeleton />}
+        {tab === "trips" && phase2Done && <TripsPanel bookings={state.bookings} dispatch={sbDispatch} places={state.places} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={() => setOpenItinId(null)} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e => e._action === "MARK_PAID" ? sbDispatch({ type: "MARK_ODO_PAID", id: e.id }) : sbDispatch({ type: "ADD_ODO", payload: e })} onOpenMaint={openMaintEntry} />}
+        {tab === "places" && !phase2Done && <Skeleton />}
+        {tab === "places" && phase2Done && <PlacesPanel places={state.places} dispatch={sbDispatch} onPickItinerary={addPlaceToItinerary}
           families={[...families, ...state.bookings.filter(b => b.guestName && b.guestPin).map(b => ({ id: "guest_" + b.id, name: b.guestName || "Guest", color: "#e07a28", emoji: "🔑" }))]}
           currentFamilyId={currentFamily} itineraries={state.itineraries} />}
-        {tab === "guides" && <GuidesPanel guides={state.guides} dispatch={sbDispatch} vanManual={state.vanManual} onSetManual={url => sbDispatch({ type: "SET_VAN_MANUAL", payload: url })} />}
-        {tab === "kit" && <KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily} checklists={state.checklists} />}
-        {tab === "van" && <VanPanel dueDates={state.dueDates} maintLog={state.maintLog} odoLog={state.odoLog} odoRate={state.odoRate} dispatch={sbDispatch} families={families} bookings={state.bookings} currentFamilyId={currentFamily} />}
-        {tab === "rules" && <RulesPanel rules={state.rules} dispatch={sbDispatch} />}
+        {tab === "guides" && !phase2Done && <Skeleton />}
+        {tab === "guides" && phase2Done && <GuidesPanel guides={state.guides} dispatch={sbDispatch} vanManual={state.vanManual} onSetManual={url => sbDispatch({ type: "SET_VAN_MANUAL", payload: url })} />}
+        {tab === "kit" && !phase2Done && <Skeleton />}
+        {tab === "kit" && phase2Done && <KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily} checklists={state.checklists} kitFocus={kitFocus} onKitFocusHandled={() => setKitFocus(null)} />}
+        {tab === "van" && !phase2Done && <Skeleton />}
+        {tab === "van" && phase2Done && <VanPanel dueDates={state.dueDates} maintLog={state.maintLog} odoLog={state.odoLog} odoRate={state.odoRate} dispatch={sbDispatch} families={families} bookings={state.bookings} currentFamilyId={currentFamily} maintFocus={maintFocus} onMaintFocusHandled={() => setMaintFocus(null)} />}
+        {tab === "rules" && !phase2Done && <Skeleton />}
+        {tab === "rules" && phase2Done && <RulesPanel rules={state.rules} dispatch={sbDispatch} />}
         {tab === "settings" && <ErrorBoundary><SettingsPanel state={state} dispatch={sbDispatch} currentFamilyId={currentFamily} themeMode={themeMode} onToggleTheme={toggleTheme} /></ErrorBoundary>}
 
         {showBook && <BookingForm bookings={state.bookings} dispatch={sbDispatch} onClose={(newId) => {
