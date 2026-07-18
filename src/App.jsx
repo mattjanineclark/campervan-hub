@@ -268,6 +268,8 @@ const INIT = {
   families: DEFAULT_FAMILIES, vanPhoto: null, vanName: "The Family Campervan", vanManual: null,
   packingByFamily: {}, // { familyId: [{id,category,item,status}] }
   checklists: {}, // { __setup__: [...], __packdown__: [...], __return__: [...] }
+  dueDates: [],   // [{id, label, dueDate, notes}]
+  maintLog: [],   // [{id, date, description, cost, arrangedBy, notes}]
   odoLog: [], // [{id,familyId,date,startKm,endKm,notes,bookingId}]
   odoRate: 0.30, // cost per km in dollars
 };
@@ -322,6 +324,16 @@ function reducer(state, { type, payload, id }) {
     case "MARK_ODO_PAID": return { ...state, odoLog: state.odoLog.map(e => e.id === id ? { ...e, paid: !e.paid } : e) };
     case "RESET_ODO": return { ...state, odoLog: payload };
     case "SET_ODO_RATE": return { ...state, odoRate: payload };
+    // Due dates
+    case "ADD_DUE_DATE":    return { ...state, dueDates: [...state.dueDates, payload] };
+    case "UPD_DUE_DATE":    return { ...state, dueDates: state.dueDates.map(d => d.id === payload.id ? payload : d) };
+    case "DEL_DUE_DATE":    return { ...state, dueDates: state.dueDates.filter(d => d.id !== id) };
+    case "RESET_DUE_DATES": return { ...state, dueDates: payload };
+    // Maintenance log
+    case "ADD_MAINT":       return { ...state, maintLog: [...state.maintLog, payload] };
+    case "UPD_MAINT":       return { ...state, maintLog: state.maintLog.map(m => m.id === payload.id ? payload : m) };
+    case "DEL_MAINT":       return { ...state, maintLog: state.maintLog.filter(m => m.id !== id) };
+    case "RESET_MAINT":     return { ...state, maintLog: payload };
     default: return state;
   }
 }
@@ -869,7 +881,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.29
+          Adventure Hub · v1.31
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3855,11 +3867,282 @@ const TABS = [
   { id: "places", label: "Places", icon: "📍" },
   { id: "kit", label: "Checklists", icon: "✅" },
   { id: "guides", label: "How-To", icon: "📖" },
-  { id: "odo", label: "Odometer", icon: "🔢" },
+  { id: "van", label: "Van", icon: "🚐" },
   { id: "rules", label: "Rules", icon: "📜" },
   { id: "settings", label: "Settings", icon: "⚙️" },
 ];
 
+
+// ─── VAN PANEL ────────────────────────────────────────────────────────────────
+// Vehicle maintenance — due dates (with repeat cycles), maintenance log, odometer
+function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, bookings, currentFamilyId }) {
+  const [tab, setTab] = useState("due");
+  const VAN_TABS = [
+    { id: "due", label: "Due Dates", icon: "📋" },
+    { id: "log", label: "Maint Log", icon: "🔧" },
+    { id: "odo", label: "Odometer",  icon: "🔢" },
+  ];
+
+  // Latest odometer reading — used for km-based due dates
+  const latestKm = odoLog.length > 0 ? Math.max(...odoLog.map(e => e.endKm)) : 0;
+
+  // Urgency for a due date item
+  const urgency = item => {
+    let score = "ok";
+    if (item.dueDate) {
+      const days = Math.round((new Date(item.dueDate + "T12:00:00") - new Date()) / 86400000);
+      if (days < 0) score = "overdue";
+      else if (days <= 30) score = "soon";
+    }
+    if (item.dueKm && latestKm > 0) {
+      const kmLeft = item.dueKm - latestKm;
+      if (kmLeft <= 0) score = "overdue";
+      else if (kmLeft <= 500 && score !== "overdue") score = "soon";
+    }
+    return score;
+  };
+  const urgencyColor = u => u === "overdue" ? T.red : u === "soon" ? T.accent : T.green;
+  const urgencyLabel = item => {
+    const parts = [];
+    if (item.dueDate) {
+      const days = Math.round((new Date(item.dueDate + "T12:00:00") - new Date()) / 86400000);
+      parts.push(days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "Due today" : `${days}d`);
+    }
+    if (item.dueKm && latestKm > 0) {
+      const kmLeft = item.dueKm - latestKm;
+      parts.push(kmLeft <= 0 ? `${Math.abs(kmLeft).toLocaleString()}km overdue` : `${kmLeft.toLocaleString()}km left`);
+    }
+    return parts.join(" · ");
+  };
+
+  // Calculate next due date/km from a due date item after service
+  const calcNext = (item, serviceDate) => {
+    const next = { ...item };
+    if (item.cycleDays && item.dueDate) {
+      const base = serviceDate || item.dueDate;
+      const d = new Date(base + "T12:00:00");
+      d.setDate(d.getDate() + parseInt(item.cycleDays));
+      next.dueDate = fmt(d);
+    }
+    if (item.cycleKm && latestKm > 0) {
+      next.dueKm = latestKm + parseInt(item.cycleKm);
+    }
+    return next;
+  };
+
+  const DEFAULT_TYPES = ["WOF", "Rego", "Service", "RUC", "Tyre Check", "Gas Certificate", "Fire Extinguisher", "Warrant of Fitness"];
+
+  // ── Due Dates Panel ──────────────────────────────────────────────────────────
+  const DueDatesPanel = () => {
+    const [adding, setAdding] = useState(false);
+    const [editing, setEditing] = useState(null);
+    const emptyForm = { label: "", dueDate: "", dueKm: "", cycleDays: "", cycleKm: "", notes: "" };
+    const [form, setForm] = useState(emptyForm);
+    const h = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+    const sorted = [...dueDates].sort((a, b) => {
+      const ua = urgency(a), ub = urgency(b);
+      const order = { overdue: 0, soon: 1, ok: 2 };
+      return (order[ua] ?? 3) - (order[ub] ?? 3);
+    });
+    const DueForm = ({ onSave, onCancel, onDel }) => (
+      <div style={{ ...card({ padding: 14, marginBottom: 10 }), border: "1px solid " + T.primary + "20" }}>
+        <label style={lbl}>Item Name *</label>
+        <input style={inp} list="due-suggestions" placeholder="e.g. WOF, Service" value={form.label} onChange={h("label")} />
+        <datalist id="due-suggestions">{DEFAULT_TYPES.map(t => <option key={t} value={t} />)}</datalist>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+          <div>
+            <label style={lbl}>Due Date</label>
+            <input style={inp} type="date" value={form.dueDate} onChange={h("dueDate")} />
+          </div>
+          <div>
+            <label style={lbl}>Due Odometer (km)</label>
+            <input style={inp} type="number" placeholder="e.g. 145000" value={form.dueKm} onChange={h("dueKm")} />
+          </div>
+        </div>
+        <p style={{ fontSize: 11, color: T.textDim, margin: "6px 0 2px" }}>Repeat cycle — set either or both:</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <label style={lbl}>Every (days)</label>
+            <input style={inp} type="number" placeholder="e.g. 365 = yearly" value={form.cycleDays} onChange={h("cycleDays")} />
+          </div>
+          <div>
+            <label style={lbl}>Every (km)</label>
+            <input style={inp} type="number" placeholder="e.g. 10000" value={form.cycleKm} onChange={h("cycleKm")} />
+          </div>
+        </div>
+        <label style={lbl}>Notes</label>
+        <input style={inp} placeholder="Optional" value={form.notes} onChange={h("notes")} />
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <button onClick={onSave} disabled={!form.label} style={{ ...btn(T.primary, T.surface), opacity: !form.label ? 0.5 : 1 }}>Save</button>
+          <button onClick={onCancel} style={{ ...btn("transparent", T.textMuted, { border: "1px solid " + T.border }) }}>Cancel</button>
+          {onDel && <DeleteButton label="Delete" message={"Delete " + form.label + "?"} onConfirm={onDel} style={{ fontSize: 12 }} />}
+        </div>
+      </div>
+    );
+    return (
+      <div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <button onClick={() => { setForm(emptyForm); setAdding(true); setEditing(null); }} style={btn(T.primary, T.surface)}>+ Add Item</button>
+        </div>
+        {adding && <DueForm onSave={() => { if (!form.label) return; dispatch({ type: "ADD_DUE_DATE", payload: { id: "dd" + Date.now(), ...form, dueKm: form.dueKm ? parseInt(form.dueKm) : null, cycleDays: form.cycleDays ? parseInt(form.cycleDays) : null, cycleKm: form.cycleKm ? parseInt(form.cycleKm) : null } }); setAdding(false); }} onCancel={() => setAdding(false)} />}
+        {dueDates.length === 0 && !adding && <div style={{ ...card({ padding: 24, textAlign: "center" }) }}><p style={{ color: T.textDim, margin: 0 }}>No items set up yet. Add your WOF, rego, service intervals.</p></div>}
+        {sorted.map(item => {
+          const u = urgency(item);
+          const col = urgencyColor(u);
+          const ul = urgencyLabel(item);
+          return editing === item.id ? (
+            <DueForm key={item.id}
+              onSave={() => { dispatch({ type: "UPD_DUE_DATE", payload: { ...item, ...form, dueKm: form.dueKm ? parseInt(form.dueKm) : null, cycleDays: form.cycleDays ? parseInt(form.cycleDays) : null, cycleKm: form.cycleKm ? parseInt(form.cycleKm) : null } }); setEditing(null); }}
+              onCancel={() => setEditing(null)}
+              onDel={() => { dispatch({ type: "DEL_DUE_DATE", id: item.id }); setEditing(null); }} />
+          ) : (
+            <div key={item.id} style={{ ...card({ padding: "12px 14px", marginBottom: 8 }), borderLeft: "4px solid " + col }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: T.text, fontSize: 14 }}>{item.label}</div>
+                  <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
+                    {item.dueDate && <span>📅 {new Date(item.dueDate + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" })}</span>}
+                    {item.dueKm && <span>{item.dueDate ? " · " : ""}🔢 {item.dueKm.toLocaleString()} km</span>}
+                  </div>
+                  {(item.cycleDays || item.cycleKm) && (
+                    <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>
+                      ↻ {[item.cycleDays ? `every ${item.cycleDays} days` : null, item.cycleKm ? `every ${item.cycleKm.toLocaleString()} km` : null].filter(Boolean).join(" / ")}
+                    </div>
+                  )}
+                  {item.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>{item.notes}</div>}
+                </div>
+                {ul && <span style={{ ...pill(col + "15", col), fontSize: 10, flexShrink: 0, alignSelf: "flex-start" }}>{ul}</span>}
+                <button onClick={() => { setForm({ label: item.label, dueDate: item.dueDate || "", dueKm: item.dueKm ? String(item.dueKm) : "", cycleDays: item.cycleDays ? String(item.cycleDays) : "", cycleKm: item.cycleKm ? String(item.cycleKm) : "", notes: item.notes || "" }); setEditing(item.id); setAdding(false); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px", flexShrink: 0 }}>✏️</button>
+                <DeleteButton label="✕" message={"Remove " + item.label + "?"} onConfirm={() => dispatch({ type: "DEL_DUE_DATE", id: item.id })} style={{ fontSize: 13, padding: "0 4px", background: "none", border: "none", color: T.red + "80" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // ── Maintenance Log Panel ────────────────────────────────────────────────────
+  const MaintLogPanel = () => {
+    const [adding, setAdding] = useState(false);
+    const [editing, setEditing] = useState(null);
+    const [nextDue, setNextDue] = useState(null); // {item, next} — prompt after logging
+    const emptyForm = { date: fmt(new Date()), description: "", linkedId: "", cost: "", arrangedBy: "", notes: "", currentKm: String(latestKm || "") };
+    const [form, setForm] = useState(emptyForm);
+    const h = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+    const linkedItem = dueDates.find(d => d.id === form.linkedId);
+
+    const doAdd = () => {
+      if (!form.description) return;
+      const payload = { id: "m" + Date.now(), date: form.date, description: form.description, linkedId: form.linkedId || null, cost: parseFloat(form.cost) || 0, arrangedBy: form.arrangedBy, notes: form.notes, currentKm: form.currentKm ? parseInt(form.currentKm) : null };
+      dispatch({ type: "ADD_MAINT", payload });
+      // If linked to a due date item with a cycle, calculate next
+      if (linkedItem && (linkedItem.cycleDays || linkedItem.cycleKm)) {
+        const next = calcNext(linkedItem, form.date);
+        setNextDue({ item: linkedItem, next });
+      }
+      setAdding(false);
+      setForm(emptyForm);
+    };
+
+    const MaintForm = ({ onSave, onCancel, onDel }) => (
+      <div style={{ ...card({ padding: 14, marginBottom: 10 }), border: "1px solid " + T.primary + "20" }}>
+        <label style={lbl}>Linked Due Date Item</label>
+        <select style={inp} value={form.linkedId} onChange={h("linkedId")}>
+          <option value="">— One-off / not linked —</option>
+          {dueDates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+        </select>
+        {linkedItem && <div style={{ fontSize: 11, color: T.primary, margin: "4px 0 4px", fontWeight: 600 }}>↻ Will auto-calculate next due date after saving</div>}
+        <label style={lbl}>Description *</label>
+        <input style={inp} placeholder="e.g. Full service, oil change, new WOF" value={form.description} onChange={h("description")} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div><label style={lbl}>Date</label><input style={inp} type="date" value={form.date} onChange={h("date")} /></div>
+          <div><label style={lbl}>Cost ($)</label><input style={inp} type="number" step="0.01" placeholder="0.00" value={form.cost} onChange={h("cost")} /></div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div><label style={lbl}>Arranged By</label><input style={inp} placeholder="e.g. Matt, XYZ Auto" value={form.arrangedBy} onChange={h("arrangedBy")} /></div>
+          <div><label style={lbl}>Odometer (km)</label><input style={inp} type="number" placeholder="Current km" value={form.currentKm} onChange={h("currentKm")} /></div>
+        </div>
+        <label style={lbl}>Notes</label>
+        <textarea style={{ ...inp, height: 52, resize: "vertical" }} placeholder="Additional details" value={form.notes} onChange={h("notes")} />
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <button onClick={onSave} disabled={!form.description} style={{ ...btn(T.primary, T.surface), opacity: !form.description ? 0.5 : 1 }}>Save</button>
+          <button onClick={onCancel} style={{ ...btn("transparent", T.textMuted, { border: "1px solid " + T.border }) }}>Cancel</button>
+          {onDel && <DeleteButton label="Delete" message="Delete this log entry?" onConfirm={onDel} style={{ fontSize: 12 }} />}
+        </div>
+      </div>
+    );
+
+    return (
+      <div>
+        {/* Next due prompt */}
+        {nextDue && (
+          <div style={{ ...card({ padding: 16, marginBottom: 12 }), background: T.primary + "08", border: "1px solid " + T.primary + "30" }}>
+            <div style={{ fontWeight: 700, color: T.primary, fontSize: 14, marginBottom: 8 }}>📅 Update next due date for {nextDue.item.label}?</div>
+            {nextDue.next.dueDate && <div style={{ fontSize: 13, color: T.text, marginBottom: 4 }}>📅 Next date: <b>{new Date(nextDue.next.dueDate + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" })}</b></div>}
+            {nextDue.next.dueKm && <div style={{ fontSize: 13, color: T.text, marginBottom: 8 }}>🔢 Next km: <b>{nextDue.next.dueKm.toLocaleString()} km</b></div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { dispatch({ type: "UPD_DUE_DATE", payload: nextDue.next }); setNextDue(null); }} style={btn(T.primary, T.surface, { fontSize: 12 })}>✓ Update</button>
+              <button onClick={() => setNextDue(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, border: "1px solid " + T.border }) }}>Skip</button>
+            </div>
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <button onClick={() => { setForm(emptyForm); setAdding(true); setEditing(null); }} style={btn(T.primary, T.surface)}>+ Log Work</button>
+        </div>
+        {adding && <MaintForm onSave={doAdd} onCancel={() => setAdding(false)} />}
+        {maintLog.length === 0 && !adding && <div style={{ ...card({ padding: 24, textAlign: "center" }) }}><p style={{ color: T.textDim, margin: 0 }}>No maintenance logged yet.</p></div>}
+        {maintLog.map(m => {
+          const linked = dueDates.find(d => d.id === m.linkedId);
+          return editing === m.id ? (
+            <MaintForm key={m.id}
+              onSave={() => { dispatch({ type: "UPD_MAINT", payload: { ...m, ...form, cost: parseFloat(form.cost) || 0, currentKm: form.currentKm ? parseInt(form.currentKm) : null } }); setEditing(null); }}
+              onCancel={() => setEditing(null)}
+              onDel={() => { dispatch({ type: "DEL_MAINT", id: m.id }); setEditing(null); }} />
+          ) : (
+            <div key={m.id} style={{ ...card({ padding: "12px 14px", marginBottom: 8 }), borderLeft: "4px solid " + T.primary }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 700, color: T.text, fontSize: 14 }}>{m.description}</span>
+                    {linked && <span style={{ ...pill(T.primary + "15", T.primary), fontSize: 10 }}>{linked.label}</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
+                    {m.date ? new Date(m.date + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                    {m.arrangedBy ? " · " + m.arrangedBy : ""}
+                    {m.cost > 0 ? <span style={{ color: T.accent, fontWeight: 700 }}> · ${Number(m.cost).toFixed(2)}</span> : ""}
+                    {m.currentKm ? <span style={{ color: T.textDim }}> · {Number(m.currentKm).toLocaleString()} km</span> : ""}
+                  </div>
+                  {m.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, fontStyle: "italic" }}>{m.notes}</div>}
+                </div>
+                <button onClick={() => { setForm({ date: m.date, description: m.description, linkedId: m.linkedId || "", cost: String(m.cost || ""), arrangedBy: m.arrangedBy || "", notes: m.notes || "", currentKm: m.currentKm ? String(m.currentKm) : "" }); setEditing(m.id); setAdding(false); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px", flexShrink: 0 }}>✏️</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, background: T.bg, padding: 4, borderRadius: T.radiusSm, border: "1px solid " + T.border, marginBottom: 14 }}>
+        {VAN_TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={{ padding: "8px 4px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: tab === t.id ? 700 : 500, background: tab === t.id ? T.surface : T.bg, color: tab === t.id ? T.primary : T.textMuted, boxShadow: tab === t.id ? T.shadow : "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+            <span style={{ fontSize: 16 }}>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+      {tab === "due" && <DueDatesPanel />}
+      {tab === "log" && <MaintLogPanel />}
+      {tab === "odo" && <OdometerPanel odoLog={odoLog} odoRate={odoRate} dispatch={dispatch} families={families} bookings={bookings} currentFamilyId={currentFamilyId} />}
+    </div>
+  );
+}
 
 // ─── ODOMETER PANEL ───────────────────────────────────────────────────────────
 function OdometerPanel({ odoLog, odoRate, dispatch, families, bookings, currentFamilyId }) {
@@ -4109,7 +4392,7 @@ export default function App() {
         setLoading(false); loadingRef.current = false;
 
         // ── Phase 2: Background load everything else ──────────────────────
-        const [places, reviews, equipment, packing, itins, guides, rules, odoLog] = await Promise.all([
+        const [places, reviews, equipment, packing, itins, guides, rules, odoLog, dueDates, maintLog] = await Promise.all([
           supa.get("places", "order=name"),
           supa.get("reviews", "order=place_id"),
           supa.get("equipment", "order=category,item"),
@@ -4118,6 +4401,8 @@ export default function App() {
           supa.get("guides", "order=title"),
           supa.get("rules", "order=id"),
           supa.get("odometer_log", "order=date.desc"),
+          supa.get("van_due_dates", "order=due_date"),
+          supa.get("van_maintenance_log", "order=date.desc"),
         ]);
 
         const placesWithReviews = (places || []).map(p => {
@@ -4151,6 +4436,8 @@ export default function App() {
           }
         }
 
+        if (dueDates && dueDates.length > 0) dispatch({ type: "RESET_DUE_DATES", payload: dueDates.map(d => ({ id: d.id, label: d.label, dueDate: d.due_date || null, dueKm: d.due_km || null, cycleDays: d.cycle_days || null, cycleKm: d.cycle_km || null, notes: d.notes || "" })) });
+        if (maintLog && maintLog.length > 0) dispatch({ type: "RESET_MAINT", payload: maintLog.map(m => ({ id: m.id, date: m.date, description: m.description, linkedId: m.linked_id || null, cost: m.cost || 0, arrangedBy: m.arranged_by || "", notes: m.notes || "", currentKm: m.current_km || null })) });
         if (odoLog && odoLog.length > 0) dispatch({
           type: "RESET_ODO", payload: odoLog.map(e => ({
             id: e.id, familyId: e.family_id, date: e.date,
@@ -4403,6 +4690,14 @@ export default function App() {
             const f = state.families.find(f => f.id === id);
             await logActivity("Removed family", f?.name || id);
           } break;
+        // DUE DATES
+        case "ADD_DUE_DATE": await supa.insert("van_due_dates", { label: payload.label, due_date: payload.dueDate || null, due_km: payload.dueKm || null, cycle_days: payload.cycleDays || null, cycle_km: payload.cycleKm || null, notes: payload.notes || "" }); break;
+        case "UPD_DUE_DATE": await supa.update("van_due_dates", { label: payload.label, due_date: payload.dueDate || null, due_km: payload.dueKm || null, cycle_days: payload.cycleDays || null, cycle_km: payload.cycleKm || null, notes: payload.notes || "" }, { id: payload.id }); break;
+        case "DEL_DUE_DATE": await supa.delete("van_due_dates", { id }); break;
+        // MAINTENANCE LOG
+        case "ADD_MAINT": await supa.insert("van_maintenance_log", { date: payload.date, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", notes: payload.notes || "", current_km: payload.currentKm || null }); break;
+        case "UPD_MAINT": await supa.update("van_maintenance_log", { date: payload.date, description: payload.description, linked_id: payload.linkedId || null, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", notes: payload.notes || "", current_km: payload.currentKm || null }, { id: payload.id }); break;
+        case "DEL_MAINT": await supa.delete("van_maintenance_log", { id }); break;
         // VAN SETTINGS
         case "SET_CHECKLIST": {
           const col = payload.key === "__setup__" ? "checklist_setup" : payload.key === "__packdown__" ? "checklist_packdown" : "checklist_return";
@@ -4590,7 +4885,7 @@ export default function App() {
           currentFamilyId={currentFamily} itineraries={state.itineraries} />}
         {tab === "guides" && <GuidesPanel guides={state.guides} dispatch={sbDispatch} vanManual={state.vanManual} onSetManual={url => sbDispatch({ type: "SET_VAN_MANUAL", payload: url })} />}
         {tab === "kit" && <KitPanel equipment={state.equipment} dispatch={sbDispatch} currentFamilyId={currentFamily} packingByFamily={state.packingByFamily} checklists={state.checklists} />}
-        {tab === "odo" && <OdometerPanel odoLog={state.odoLog} odoRate={state.odoRate} dispatch={sbDispatch} families={families} bookings={state.bookings} currentFamilyId={currentFamily} />}
+        {tab === "van" && <VanPanel dueDates={state.dueDates} maintLog={state.maintLog} odoLog={state.odoLog} odoRate={state.odoRate} dispatch={sbDispatch} families={families} bookings={state.bookings} currentFamilyId={currentFamily} />}
         {tab === "rules" && <RulesPanel rules={state.rules} dispatch={sbDispatch} />}
         {tab === "settings" && <ErrorBoundary><SettingsPanel state={state} dispatch={sbDispatch} currentFamilyId={currentFamily} themeMode={themeMode} onToggleTheme={toggleTheme} /></ErrorBoundary>}
 
