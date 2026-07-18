@@ -887,7 +887,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.46
+          Adventure Hub · v1.47
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3958,12 +3958,18 @@ function SettingsPanel({ state, dispatch, currentFamilyId, themeMode, onToggleTh
 
 // ─── HOME STRIP ───────────────────────────────────────────────────────────────
 // Slim date · time · location · weather line at the top of Home.
-// Uses browser geolocation + Open-Meteo (no API key). Degrades gracefully:
-// no permission → just date/time. Cached 30 min per session.
+// Tap to expand: today's detail (feels-like, rain) + 3-day forecast.
+// Open-Meteo, no API key. Degrades gracefully without location. Cached 30 min.
+const wmoIcon = code =>
+  code === 0 ? "☀️" : code <= 2 ? "🌤️" : code === 3 ? "☁️" : code <= 48 ? "🌫️" :
+  code <= 57 ? "🌦️" : code <= 67 ? "🌧️" : code <= 77 ? "🌨️" : code <= 82 ? "🌧️" :
+  code <= 86 ? "🌨️" : "⛈️";
+
 function HomeStrip() {
   const [now, setNow] = useState(new Date());
   const [place, setPlace] = useState(null);
   const [wx, setWx] = useState(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30000);
@@ -3973,7 +3979,7 @@ function HomeStrip() {
   useEffect(() => {
     let cancelled = false;
     try {
-      const cached = JSON.parse(sessionStorage.getItem("homeStrip") || "null");
+      const cached = JSON.parse(sessionStorage.getItem("homeStrip2") || "null");
       if (cached && Date.now() - cached.ts < 30 * 60 * 1000) { setPlace(cached.place); setWx(cached.wx); return; }
     } catch (e) { }
     if (!navigator.geolocation) return;
@@ -3988,41 +3994,81 @@ function HomeStrip() {
         placeName = a.city || a.town || a.village || a.suburb || a.county || null;
       } catch (e) { }
       try {
-        const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto`);
+        const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,weather_code,precipitation&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,precipitation_sum&forecast_days=4&timezone=auto`);
         const j = await r.json();
+        const d = j.daily || {};
         weather = {
           temp: Math.round(j.current?.temperature_2m),
+          feels: Math.round(j.current?.apparent_temperature),
           code: j.current?.weather_code,
-          hi: Math.round(j.daily?.temperature_2m_max?.[0]),
-          lo: Math.round(j.daily?.temperature_2m_min?.[0]),
+          rainNow: j.current?.precipitation || 0,
+          days: (d.time || []).map((t, i) => ({
+            date: t,
+            hi: Math.round(d.temperature_2m_max?.[i]),
+            lo: Math.round(d.temperature_2m_min?.[i]),
+            code: d.weather_code?.[i],
+            rainProb: d.precipitation_probability_max?.[i],
+            rainSum: d.precipitation_sum?.[i],
+          })),
         };
       } catch (e) { }
       if (cancelled) return;
       setPlace(placeName); setWx(weather);
-      try { sessionStorage.setItem("homeStrip", JSON.stringify({ ts: Date.now(), place: placeName, wx: weather })); } catch (e) { }
+      try { sessionStorage.setItem("homeStrip2", JSON.stringify({ ts: Date.now(), place: placeName, wx: weather })); } catch (e) { }
     }, () => { }, { timeout: 8000, maximumAge: 600000 });
     return () => { cancelled = true; };
   }, []);
 
-  const wmo = code =>
-    code === 0 ? "☀️" : code <= 2 ? "🌤️" : code === 3 ? "☁️" : code <= 48 ? "🌫️" :
-    code <= 57 ? "🌦️" : code <= 67 ? "🌧️" : code <= 77 ? "🌨️" : code <= 82 ? "🌧️" :
-    code <= 86 ? "🌨️" : "⛈️";
+  const today = wx?.days?.[0];
+  const nextDays = (wx?.days || []).slice(1, 4);
   const dateStr = now.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" });
   const timeStr = now.toLocaleTimeString("en-NZ", { hour: "numeric", minute: "2-digit" });
+  const dayName = ds => new Date(ds + "T12:00:00").toLocaleDateString("en-NZ", { weekday: "short" });
 
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", marginBottom: 10, background: T.surface, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, fontSize: 12, color: T.textMuted }}>
-      <span style={{ fontWeight: 700, color: T.text, flexShrink: 0 }}>{dateStr} · {timeStr}</span>
-      <span style={{ display: "flex", gap: 10, alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
-        {place && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>📍 {place}</span>}
-        {wx && Number.isFinite(wx.temp) && (
-          <span style={{ fontWeight: 700, color: T.text, flexShrink: 0 }}>
-            {wmo(wx.code)} {wx.temp}°
-            {Number.isFinite(wx.hi) && <span style={{ fontWeight: 400, color: T.textDim, fontSize: 11 }}> H{wx.hi}° L{wx.lo}°</span>}
-          </span>
-        )}
-      </span>
+    <div onClick={() => wx && setExpanded(!expanded)}
+      style={{ marginBottom: 10, background: T.surface, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, cursor: wx ? "pointer" : "default", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", fontSize: 12, color: T.textMuted }}>
+        <span style={{ fontWeight: 700, color: T.text, flexShrink: 0 }}>{dateStr} · {timeStr}</span>
+        <span style={{ display: "flex", gap: 10, alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
+          {place && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>📍 {place}</span>}
+          {wx && Number.isFinite(wx.temp) && (
+            <span style={{ fontWeight: 700, color: T.text, flexShrink: 0 }}>
+              {wmoIcon(wx.code)} {wx.temp}°
+              {today && <span style={{ fontWeight: 400, color: T.textDim, fontSize: 11 }}> H{today.hi}° L{today.lo}°</span>}
+            </span>
+          )}
+          {wx && <span style={{ fontSize: 9, color: T.textDim, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>}
+        </span>
+      </div>
+
+      {expanded && wx && (
+        <div style={{ borderTop: `1px solid ${T.borderLight}`, padding: "10px 14px", background: T.bg + "60" }}>
+          {/* Today detail */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>Today {wmoIcon(wx.code)}</div>
+              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
+                Feels like {wx.feels}°
+                {today && Number.isFinite(today.rainProb) && ` · 💧 ${today.rainProb}% chance`}
+                {today && today.rainSum > 0 && ` · ${Number(today.rainSum).toFixed(1)}mm`}
+              </div>
+            </div>
+            {today && <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>H{today.hi}° <span style={{ color: T.textDim, fontWeight: 400 }}>L{today.lo}°</span></div>}
+          </div>
+          {/* Next days */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+            {nextDays.map(d => (
+              <div key={d.date} style={{ background: T.surface, borderRadius: 8, border: `1px solid ${T.borderLight}`, padding: "7px 4px", textAlign: "center" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted }}>{dayName(d.date)}</div>
+                <div style={{ fontSize: 16, margin: "2px 0" }}>{wmoIcon(d.code)}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.text }}>{d.hi}° <span style={{ color: T.textDim, fontWeight: 400 }}>{d.lo}°</span></div>
+                {Number.isFinite(d.rainProb) && d.rainProb > 15 && <div style={{ fontSize: 9, color: T.sky || "#3b82f6" }}>💧{d.rainProb}%</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5461,7 +5507,30 @@ function AppInner() {
               {label}
             </button>
           );
-          const Hero = ({ tag, title, sub, buttons, onTap }) => (
+          const mapsUrl = act => {
+            const pl = state.places.find(p => p.id === act.placeId);
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "");
+            if (pl && pl.lat && pl.lng) return isIOS ? `https://maps.apple.com/?daddr=${pl.lat},${pl.lng}` : `https://www.google.com/maps/dir/?api=1&destination=${pl.lat},${pl.lng}`;
+            const q = encodeURIComponent(act.location || act.title || "");
+            return isIOS ? `https://maps.apple.com/?q=${q}` : `https://www.google.com/maps/search/?api=1&query=${q}`;
+          };
+          const PlannedToday = ({ acts }) => acts.length === 0 ? null : (
+            <div onClick={e => e.stopPropagation()} style={{ marginTop: 12, background: "rgba(255,255,255,0.12)", borderRadius: 12, padding: "10px 12px" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, opacity: 0.85, textTransform: "uppercase", marginBottom: 6 }}>📌 Planned today</div>
+              {acts.map(a => (
+                <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+                  <span style={{ fontSize: 12, flex: 1 }}>
+                    {a.time && <b>{a.time} · </b>}{a.title}
+                  </span>
+                  <a href={mapsUrl(a)} target="_blank" rel="noopener noreferrer"
+                    style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "white", borderRadius: 99, padding: "3px 10px", fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0 }}>
+                    🧭 Directions
+                  </a>
+                </div>
+              ))}
+            </div>
+          );
+          const Hero = ({ tag, title, sub, buttons, onTap, extra }) => (
             <div onClick={onTap}
               style={{ ...card({ padding: "14px 16px", marginBottom: 12 }), background: `linear-gradient(135deg, ${T.primary}, #3a8a5f)`, color: "white", cursor: onTap ? "pointer" : "default", border: "none" }}>
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, opacity: 0.85, textTransform: "uppercase", marginBottom: 3 }}>{tag}</div>
@@ -5472,6 +5541,7 @@ function AppInner() {
                   {buttons.map((b, i) => <HeroBtn key={i} label={b.label} onTap={b.onTap} />)}
                 </div>
               )}
+              {extra}
             </div>
           );
           const myNext = state.bookings.filter(b => b.familyId === currentFamily && b.end >= todayStr).sort((a, b) => a.start.localeCompare(b.start))[0];
@@ -5480,17 +5550,18 @@ function AppInner() {
             const active = todayStr >= myNext.start && todayStr <= myNext.end;
             const lastDay = todayStr === myNext.end;
             const openTrip = () => { setTab("trips"); setOpenItinId(myNext.id); };
+            const todayActs = active ? (((myNext.days || []).find(dd => dd.date === todayStr) || {}).activities || []) : [];
             if (lastDay) return <Hero tag="🏠 Last day — heading home?" title={myNext.destination} sub={`${myNext.start} → ${myNext.end}`} onTap={openTrip}
               buttons={[
                 { label: "🔑 Return Van List", onTap: () => goKit("return") },
                 { label: "🔢 Log Odometer", onTap: goOdo },
-              ]} />;
+              ]} extra={<PlannedToday acts={todayActs} />} />;
             if (active) return <Hero tag="🎉 Your trip is on!" title={myNext.destination} sub={`${myNext.start} → ${myNext.end}`} onTap={openTrip}
               buttons={[
                 { label: "✅ Set Up List", onTap: () => goKit("setup") },
                 { label: "🚐 Pack Down List", onTap: () => goKit("packdown") },
                 { label: "🗺️ Trip Plan", onTap: openTrip },
-              ]} />;
+              ]} extra={<PlannedToday acts={todayActs} />} />;
             if (d <= 7) return <Hero tag="⏳ Almost here!" title={myNext.destination} sub={`${myNext.start} → ${myNext.end} · in ${d} day${d === 1 ? "" : "s"}`} onTap={openTrip}
               buttons={[
                 { label: "🗺️ Review Plan", onTap: openTrip },
