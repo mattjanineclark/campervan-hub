@@ -887,7 +887,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.50
+          Adventure Hub · v1.51
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4192,7 +4192,7 @@ function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCanc
           </button>
         ))}
       </div>
-      <label style={lbl}>Linked Due Date Item</label>
+      <label style={lbl}>Linked Due Item</label>
       <select style={inp} value={form.linkedId} onChange={h("linkedId")}>
         <option value="">— One-off / not linked —</option>
         {dueDates.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
@@ -4306,7 +4306,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
   }, [maintFocus]);
 
   const VAN_TABS = [
-    { id: "due", label: "Due Dates", icon: "📋" },
+    { id: "due", label: "Due Items", icon: "📋" },
     { id: "log", label: "Maint Log", icon: "🔧" },
     { id: "odo", label: "Odometer",  icon: "🔢" },
   ];
@@ -4420,10 +4420,16 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
   const plannedEntries = filtered.filter(m => m.workStatus === "planned").sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const doneEntries = filtered.filter(m => m.workStatus !== "planned").sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
-  const sortedDue = [...dueDates].sort((a, b) => {
-    const order = { overdue: 0, soon: 1, ok: 2 };
-    return (order[urgency(a)] ?? 3) - (order[urgency(b)] ?? 3);
-  });
+  // Km-limit items pinned to the top (fewest km remaining first), then
+  // date-based items soonest first, then anything with neither.
+  const sortedDue = (() => {
+    const kmItems = dueDates.filter(d => d.dueKm != null && d.dueKm !== "")
+      .sort((a, b) => (a.dueKm - latestKm) - (b.dueKm - latestKm));
+    const dateItems = dueDates.filter(d => (d.dueKm == null || d.dueKm === "") && d.dueDate)
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    const rest = dueDates.filter(d => (d.dueKm == null || d.dueKm === "") && !d.dueDate);
+    return [...kmItems, ...dateItems, ...rest];
+  })();
 
   const MaintEntry = ({ m }) => {
     const linked = dueDates.find(d => d.id === m.linkedId);
@@ -4495,7 +4501,16 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
                     <div style={{ fontWeight: 700, color: T.text, fontSize: 14 }}>{item.label}</div>
                     <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
                       {item.dueDate && <span>📅 {new Date(item.dueDate + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" })}</span>}
-                      {item.dueKm && <span>{item.dueDate ? " · " : ""}🔢 {item.dueKm.toLocaleString()} km</span>}
+                      {item.dueKm && (
+                        <span>
+                          {item.dueDate ? " · " : ""}🔢 {item.dueKm.toLocaleString()} km
+                          {latestKm > 0 && (
+                            (item.dueKm - latestKm) > 0
+                              ? <span style={{ fontWeight: 700, color: (item.dueKm - latestKm) <= 500 ? T.accent : T.green }}> · {(item.dueKm - latestKm).toLocaleString()} km left</span>
+                              : <span style={{ fontWeight: 700, color: T.red }}> · {Math.abs(item.dueKm - latestKm).toLocaleString()} km OVER</span>
+                          )}
+                        </span>
+                      )}
                     </div>
                     {(item.cycleDays || item.cycleKm) && (
                       <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>
