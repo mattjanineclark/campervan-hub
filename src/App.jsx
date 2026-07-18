@@ -887,7 +887,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.42
+          Adventure Hub · v1.45
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2679,7 +2679,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
 }
 
 // ─── OUR TRIPS PANEL ──────────────────────────────────────────────────────────
-function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odoLog, odoRate, onAddOdo, autoOpenItinId, onAutoOpenHandled, onOpenMaint }) {
+function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odoLog, odoRate, onAddOdo, autoOpenItinId, onAutoOpenHandled, onOpenMaint, maintLog = [] }) {
   const [showPast, setShowPast] = useState(false);
   const [openId, setOpenId] = useState(autoOpenItinId || null);
 
@@ -2696,9 +2696,13 @@ function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odo
   const today = fmt(new Date());
   const myBookings = [...bookings]
     .filter(b => b.familyId === currentFamilyId
-      || (b.collaborators || []).includes(currentFamilyId)
-      || b.familyId === "maintenance")
+      || (b.collaborators || []).includes(currentFamilyId))
     .sort((a, b) => a.start.localeCompare(b.start));
+
+  // Planned maintenance assigned to this family — their to-do list
+  const myMaintTasks = maintLog
+    .filter(m => m.workStatus === "planned" && m.arrangedBy === fam?.name)
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const upcoming = myBookings.filter(b => b.end >= today);
   const past = myBookings.filter(b => b.end < today);
 
@@ -2706,6 +2710,27 @@ function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odo
 
   return (
     <div>
+      {myMaintTasks.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <p style={{ ...sectionHead, margin: "0 0 8px" }}>🔧 Your maintenance tasks</p>
+          {myMaintTasks.map(m => (
+            <div key={m.id} onClick={() => onOpenMaint && onOpenMaint({ destination: m.description })}
+              style={{ ...card({ padding: "11px 14px", marginBottom: 6 }), borderLeft: "4px solid " + T.accent, cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: T.text, fontSize: 13 }}>{m.description}</div>
+                  <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
+                    {m.date ? new Date(m.date + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short" }) : "No date"}
+                    {m.dateEnd && m.dateEnd !== m.date ? " → " + new Date(m.dateEnd + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short" }) : ""}
+                    {m.company ? " · " + m.company : ""}
+                  </div>
+                </div>
+                <span style={{ color: T.accent, fontSize: 16, flexShrink: 0 }}>›</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {upcoming.length === 0 && (
         <div style={{ ...card({ padding: 24, textAlign: "center" }) }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>🗺️</div>
@@ -3769,7 +3794,10 @@ function ActivityLog({ families }) {
                   <div key={i} style={{ display: "flex", gap: 10, padding: "7px 0", borderBottom: i < group.items.length - 1 ? `1px solid ${T.borderLight}` : "none", alignItems: "flex-start" }}>
                     <div style={{ fontSize: 16, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{f?.emoji || "🚐"}</div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{log.action}</div>
+                      <div style={{ fontSize: 12, color: T.text }}>
+                        <span style={{ fontWeight: 800, color: f?.color || T.textMuted }}>{f?.name || "Unknown"}</span>
+                        <span style={{ fontWeight: 600 }}> · {log.action}</span>
+                      </div>
                       {log.detail && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>{log.detail}</div>}
                     </div>
                     <div style={{ fontSize: 10, color: T.textDim, flexShrink: 0, paddingTop: 2 }}>
@@ -5084,6 +5112,64 @@ function AppInner() {
         default: break;
       }
       if (type.startsWith("ADD_") || type === "UPD_DUE_DATE" || type === "UPD_MAINT" || type === "UPD_PLACE") showToast("Saved ✓");
+
+      // ── Automatic activity logging for everything else ──
+      const CHECKLIST_NAMES = { __setup__: "Set Up list", __packdown__: "Pack Down list", __return__: "Return Van list" };
+      const autoLog = {
+        UPD_BOOKING: () => {
+          const keys = Object.keys(payload || {}).filter(k => k !== "id");
+          // Skip keystroke-level updates (guest name typing etc)
+          if (keys.length > 0 && keys.every(k => k === "guestName" || k === "guests")) return null;
+          const b = state.bookings.find(x => x.id === payload.id);
+          return ["Updated booking", payload.destination || b?.destination || ""];
+        },
+        CONFIRM_BOOKING: () => {
+          const b = state.bookings.find(x => x.id === id);
+          return ["Confirmed booking", b?.destination || ""];
+        },
+        UPD_BOOKING_DAYS: () => {
+          const b = state.bookings.find(x => x.id === payload.id);
+          return ["Updated trip plan", b?.destination || ""];
+        },
+        UPD_BOOKING_COLLAB: () => {
+          const b = state.bookings.find(x => x.id === payload.id);
+          return ["Updated trip collaborators", b?.destination || ""];
+        },
+        ADD_MAINT: () => ["Added maintenance" + (payload.workStatus === "planned" ? " (planned)" : ""), payload.description || ""],
+        UPD_MAINT: () => ["Updated maintenance", payload.description || ""],
+        DEL_MAINT: () => {
+          const m = state.maintLog.find(x => x.id === id);
+          return ["Deleted maintenance entry", m?.description || ""];
+        },
+        ADD_DUE_DATE: () => ["Added due item", payload.label || ""],
+        UPD_DUE_DATE: () => ["Updated due item", payload.label || ""],
+        DEL_DUE_DATE: () => {
+          const d = state.dueDates.find(x => x.id === id);
+          return ["Deleted due item", d?.label || ""];
+        },
+        ADD_PLACE: () => ["Added place", payload.name || ""],
+        UPD_PLACE: () => ["Updated place", payload.name || ""],
+        ADD_REVIEW: () => ["Added review", ""],
+        ADD_GUIDE: () => ["Added guide", payload.title || ""],
+        UPDATE_GUIDE: () => ["Updated guide", payload.title || ""],
+        ADD_ITINERARY: () => ["Added trip", payload.title || ""],
+        UPDATE_ITINERARY: () => ["Updated trip", payload.title || ""],
+        SET_ITINERARY: () => ["Updated trip", ""],
+        SET_RULES: () => ["Updated rules", ""],
+        SET_CHECKLIST: () => ["Updated " + (CHECKLIST_NAMES[payload.key] || "checklist"), ""],
+        SET_FAMILY_PACKING: () => ["Updated kit / packing list", ""],
+        SET_EQUIPMENT: () => ["Updated van kit", ""],
+        MARK_ODO_PAID: () => ["Toggled odometer paid", ""],
+        ADD_FAMILY: () => ["Added family", payload.name || ""],
+        UPDATE_FAMILY: () => ["Updated family", payload.name || ""],
+        SET_VAN_PHOTO: () => ["Updated van photo", ""],
+        SET_VAN_MANUAL: () => ["Updated van manual", ""],
+        SET_ODO_RATE: () => ["Changed km rate", "$" + payload + "/km"],
+      };
+      if (autoLog[type]) {
+        const info = autoLog[type]();
+        if (info) await logActivity(info[0], info[1]);
+      }
     } catch (e) {
       console.error("Supabase write error:", type, e);
       showToast("⚠️ Couldn't save — " + (e.message || "check connection"), "err");
@@ -5352,7 +5438,7 @@ function AppInner() {
           return null;
         })()}
         {tab === "trips" && !phase2Done && <Skeleton />}
-        {tab === "trips" && phase2Done && <TripsPanel bookings={state.bookings} dispatch={sbDispatch} places={state.places} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={() => setOpenItinId(null)} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e => e._action === "MARK_PAID" ? sbDispatch({ type: "MARK_ODO_PAID", id: e.id }) : sbDispatch({ type: "ADD_ODO", payload: e })} onOpenMaint={openMaintEntry} />}
+        {tab === "trips" && phase2Done && <TripsPanel bookings={state.bookings} dispatch={sbDispatch} places={state.places} families={families} autoOpenItinId={openItinId} onAutoOpenHandled={() => setOpenItinId(null)} currentFamilyId={currentFamily} odoLog={state.odoLog} odoRate={state.odoRate} onAddOdo={e => e._action === "MARK_PAID" ? sbDispatch({ type: "MARK_ODO_PAID", id: e.id }) : sbDispatch({ type: "ADD_ODO", payload: e })} onOpenMaint={openMaintEntry} maintLog={state.maintLog} />}
         {tab === "places" && !phase2Done && <Skeleton />}
         {tab === "places" && phase2Done && <PlacesPanel places={state.places} dispatch={sbDispatch} onPickItinerary={addPlaceToItinerary}
           families={[...families, ...state.bookings.filter(b => b.guestName && b.guestPin).map(b => ({ id: "guest_" + b.id, name: b.guestName || "Guest", color: "#e07a28", emoji: "🔑" }))]}
