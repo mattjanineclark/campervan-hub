@@ -887,7 +887,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.45
+          Adventure Hub · v1.46
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3956,6 +3956,77 @@ function SettingsPanel({ state, dispatch, currentFamilyId, themeMode, onToggleTh
   );
 }
 
+// ─── HOME STRIP ───────────────────────────────────────────────────────────────
+// Slim date · time · location · weather line at the top of Home.
+// Uses browser geolocation + Open-Meteo (no API key). Degrades gracefully:
+// no permission → just date/time. Cached 30 min per session.
+function HomeStrip() {
+  const [now, setNow] = useState(new Date());
+  const [place, setPlace] = useState(null);
+  const [wx, setWx] = useState(null);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const cached = JSON.parse(sessionStorage.getItem("homeStrip") || "null");
+      if (cached && Date.now() - cached.ts < 30 * 60 * 1000) { setPlace(cached.place); setWx(cached.wx); return; }
+    } catch (e) { }
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async pos => {
+      if (cancelled) return;
+      const { latitude, longitude } = pos.coords;
+      let placeName = null, weather = null;
+      try {
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&zoom=10`, { headers: { "Accept-Language": "en" } });
+        const j = await r.json();
+        const a = j.address || {};
+        placeName = a.city || a.town || a.village || a.suburb || a.county || null;
+      } catch (e) { }
+      try {
+        const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto`);
+        const j = await r.json();
+        weather = {
+          temp: Math.round(j.current?.temperature_2m),
+          code: j.current?.weather_code,
+          hi: Math.round(j.daily?.temperature_2m_max?.[0]),
+          lo: Math.round(j.daily?.temperature_2m_min?.[0]),
+        };
+      } catch (e) { }
+      if (cancelled) return;
+      setPlace(placeName); setWx(weather);
+      try { sessionStorage.setItem("homeStrip", JSON.stringify({ ts: Date.now(), place: placeName, wx: weather })); } catch (e) { }
+    }, () => { }, { timeout: 8000, maximumAge: 600000 });
+    return () => { cancelled = true; };
+  }, []);
+
+  const wmo = code =>
+    code === 0 ? "☀️" : code <= 2 ? "🌤️" : code === 3 ? "☁️" : code <= 48 ? "🌫️" :
+    code <= 57 ? "🌦️" : code <= 67 ? "🌧️" : code <= 77 ? "🌨️" : code <= 82 ? "🌧️" :
+    code <= 86 ? "🌨️" : "⛈️";
+  const dateStr = now.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" });
+  const timeStr = now.toLocaleTimeString("en-NZ", { hour: "numeric", minute: "2-digit" });
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", marginBottom: 10, background: T.surface, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, fontSize: 12, color: T.textMuted }}>
+      <span style={{ fontWeight: 700, color: T.text, flexShrink: 0 }}>{dateStr} · {timeStr}</span>
+      <span style={{ display: "flex", gap: 10, alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
+        {place && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>📍 {place}</span>}
+        {wx && Number.isFinite(wx.temp) && (
+          <span style={{ fontWeight: 700, color: T.text, flexShrink: 0 }}>
+            {wmo(wx.code)} {wx.temp}°
+            {Number.isFinite(wx.hi) && <span style={{ fontWeight: 400, color: T.textDim, fontSize: 11 }}> H{wx.hi}° L{wx.lo}°</span>}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 // ─── SKELETON LOADER ──────────────────────────────────────────────────────────
 function Skeleton() {
   return (
@@ -5381,6 +5452,7 @@ function AppInner() {
             />
           </>
         )}
+        {tab === "trips" && <HomeStrip />}
         {tab === "trips" && (() => {
           const todayStr = fmt(new Date());
           const HeroBtn = ({ label, onTap }) => (
