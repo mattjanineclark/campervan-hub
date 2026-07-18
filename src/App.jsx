@@ -882,7 +882,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
           Default PIN for all families: 0000 &mdash; change yours in Settings
         </p>
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.35
+          Adventure Hub · v1.37
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4060,7 +4060,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
   const [uploading, setUploading] = useState(false);
   const latestKm = odoLog.length > 0 ? Math.max(...odoLog.map(e => e.endKm)) : 0;
   const myFamilyName = (families || []).find(f => f.id === currentFamilyId)?.name || "";
-  const emptyMForm = { workStatus: "planned", date: fmt(new Date()), dateEnd: "", description: "", linkedId: "", cost: "", arrangedBy: myFamilyName, notes: "", currentKm: String(latestKm || ""), receipt: "", company: "", location: "", blockDates: false };
+  const emptyMForm = { workStatus: "planned", date: fmt(new Date()), dateEnd: "", description: "", linkedId: "", cost: "", arrangedBy: myFamilyName, notes: "", currentKm: String(latestKm || ""), receipt: "", company: "", location: "", blockDates: true };
   const [mForm, setMForm] = useState(emptyMForm);
 
   const VAN_TABS = [
@@ -4686,7 +4686,52 @@ export default function App() {
     } catch (e) { return null; }
   });
   const [openItinId, setOpenItinId] = useState(null); // itinerary to auto-open in Trips tab
+  // Count of overdue / due-soon van items — shown as a badge on the Van tab
+  const vanLatestKm = state.odoLog.length > 0 ? Math.max(...state.odoLog.map(e => e.endKm)) : 0;
+  const vanDueCount = state.dueDates.filter(d => {
+    if (d.dueDate) {
+      const days = Math.round((new Date(d.dueDate + "T12:00:00") - new Date()) / 86400000);
+      if (days <= 30) return true;
+    }
+    if (d.dueKm && vanLatestKm > 0 && (d.dueKm - vanLatestKm) <= 500) return true;
+    return false;
+  }).length;
+
   const currentTab = TABS.find(t => t.id === tab) || TABS[0];
+
+  // ── Sign-in due alert: once per session, list overdue/due-soon items and
+  //    anything due before this family's next booking ──
+  const [dueAlert, setDueAlert] = useState(null);
+  useEffect(() => {
+    if (!currentFamily || currentFamily === "__guest__") return;
+    if (state.dueDates.length === 0) return;
+    try { if (sessionStorage.getItem("dueAlertShown")) return; } catch (e) { }
+    const latest = state.odoLog.length > 0 ? Math.max(...state.odoLog.map(e => e.endKm)) : 0;
+    const today = new Date();
+    const todayStr = fmt(today);
+    const myNext = state.bookings
+      .filter(b => b.familyId === currentFamily && b.end >= todayStr)
+      .sort((a, b) => a.start.localeCompare(b.start))[0] || null;
+    const items = state.dueDates.map(d => {
+      let reason = null;
+      if (d.dueDate) {
+        const days = Math.round((new Date(d.dueDate + "T12:00:00") - today) / 86400000);
+        if (days < 0) reason = Math.abs(days) + "d overdue";
+        else if (days <= 30) reason = "due in " + days + "d";
+        else if (myNext && d.dueDate <= myNext.end) reason = "due before your " + myNext.destination + " trip";
+      }
+      if (!reason && d.dueKm && latest > 0 && (d.dueKm - latest) <= 500) {
+        const left = d.dueKm - latest;
+        reason = left <= 0 ? Math.abs(left).toLocaleString() + "km overdue" : "only " + left.toLocaleString() + "km left";
+      }
+      return reason ? { ...d, reason } : null;
+    }).filter(Boolean);
+    if (items.length > 0) {
+      setDueAlert({ items });
+      try { sessionStorage.setItem("dueAlertShown", "1"); } catch (e) { }
+    }
+  }, [currentFamily, state.dueDates, state.bookings, state.odoLog]);
+
   const { families } = state;
   const fColor = id => families.find(f => f.id === id)?.color ?? T.primary;
   const fName = id => families.find(f => f.id === id)?.name ?? "Unknown";
@@ -5033,6 +5078,28 @@ export default function App() {
         </div>
       </div>
 
+      {/* DUE ALERT — drops down on sign-in when van items need attention */}
+      {dueAlert && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 800, padding: "10px 12px 0", animation: "dropDown 0.35s ease" }}>
+          <style>{"@keyframes dropDown{from{transform:translateY(-110%)}to{transform:translateY(0)}}"}</style>
+          <div style={{ maxWidth: 560, margin: "0 auto", background: T.surface, borderRadius: T.radius, boxShadow: T.shadowLg, border: `1px solid ${T.red}30`, overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", background: T.red + "0c" }}>
+              <div style={{ fontWeight: 800, color: T.red, fontSize: 14, marginBottom: 8 }}>🔧 Van needs attention</div>
+              {dueAlert.items.slice(0, 4).map(d => (
+                <div key={d.id} style={{ fontSize: 13, color: T.text, padding: "3px 0" }}>
+                  <b>{d.label}</b> — <span style={{ color: T.textMuted }}>{d.reason}</span>
+                </div>
+              ))}
+              {dueAlert.items.length > 4 && <div style={{ fontSize: 12, color: T.textDim, marginTop: 2 }}>+{dueAlert.items.length - 4} more</div>}
+            </div>
+            <div style={{ display: "flex", gap: 8, padding: "10px 16px" }}>
+              <button onClick={() => { setTab("van"); setDueAlert(null); }} style={btn(T.primary, T.surface, { fontSize: 12, flex: 1 })}>Review</button>
+              <button onClick={() => setDueAlert(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, flex: 1, border: `1px solid ${T.border}` }) }}>Ignore</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CONTENT */}
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "14px 12px 100px" }}>
         {tab === "calendar" && (
@@ -5093,7 +5160,12 @@ export default function App() {
                     margin: "2px 3px", padding: "2px 0",
                     boxShadow: tab === t.id ? `0 0 0 1px ${T.primary}35` : "none"
                   }}>
-                  <span style={{ fontSize: 26, lineHeight: 1, display: "block" }}>{t.icon}</span>
+                  <span style={{ fontSize: 26, lineHeight: 1, display: "block", position: "relative" }}>
+                    {t.icon}
+                    {t.id === "van" && vanDueCount > 0 && (
+                      <span style={{ position: "absolute", top: -4, right: -10, background: T.red, color: "white", borderRadius: 99, minWidth: 16, height: 16, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px", border: "1.5px solid white" }}>{vanDueCount}</span>
+                    )}
+                  </span>
                   <span style={{ fontSize: 8, fontWeight: tab === t.id ? 700 : 400, marginTop: -2, color: tab === t.id ? T.primary : T.textDim, letterSpacing: 0.2, display: "block" }}>{t.label}</span>
                 </button>
               ))}
@@ -5113,7 +5185,12 @@ export default function App() {
                     margin: "2px 3px", padding: "2px 0",
                     boxShadow: tab === t.id ? `0 0 0 1px ${T.primary}35` : "none"
                   }}>
-                  <span style={{ fontSize: 26, lineHeight: 1, display: "block" }}>{t.icon}</span>
+                  <span style={{ fontSize: 26, lineHeight: 1, display: "block", position: "relative" }}>
+                    {t.icon}
+                    {t.id === "van" && vanDueCount > 0 && (
+                      <span style={{ position: "absolute", top: -4, right: -10, background: T.red, color: "white", borderRadius: 99, minWidth: 16, height: 16, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px", border: "1.5px solid white" }}>{vanDueCount}</span>
+                    )}
+                  </span>
                   <span style={{ fontSize: 8, fontWeight: tab === t.id ? 700 : 400, marginTop: -2, color: tab === t.id ? T.primary : T.textDim, letterSpacing: 0.2, display: "block" }}>{t.label}</span>
                 </button>
               ))}
