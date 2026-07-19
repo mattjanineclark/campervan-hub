@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.54
+          Adventure Hub · v1.55
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1134,28 +1134,49 @@ function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId, on
             <div key={i} onClick={() => d && setSel(new Date(y, m, d))}
               style={{
                 minHeight: 52, background: d ? T.surface : "transparent", borderRadius: T.radiusSm, padding: 5,
-                border: `1.5px solid ${isToday ? T.primary : bks.length ? T.border : "transparent"}`,
-                cursor: d ? "pointer" : "default", transition: "all 0.1s", boxShadow: d ? T.shadow : "none"
+                border: `1.5px solid ${isToday ? T.primary : "transparent"}`,
+                cursor: d ? "pointer" : "default", transition: "all 0.1s", boxShadow: d ? T.shadow : "none", overflow: "visible"
               }}
               onMouseEnter={e => { if (d) { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.background = T.cardHover; } }}
-              onMouseLeave={e => { if (d) { e.currentTarget.style.borderColor = isToday ? T.primary : bks.length ? T.border : "transparent"; e.currentTarget.style.background = T.surface; } }}>
+              onMouseLeave={e => { if (d) { e.currentTarget.style.borderColor = isToday ? T.primary : "transparent"; e.currentTarget.style.background = T.surface; } }}>
               {d && <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 500, color: isToday ? T.primary : T.textMuted, marginBottom: 2 }}>{d}</div>}
-              {bks.filter(b => b.familyId !== "maintenance").slice(0, 2).map(b => (
-                <div key={b.id} style={{
-                  borderRadius: 4, fontSize: 8, fontWeight: 600, color: "white", padding: "2px 4px", marginBottom: 2,
-                  background: b.status === "tentative" ? `repeating-linear-gradient(45deg,${fColor(b.familyId)}99 0,${fColor(b.familyId)}99 3px,${fColor(b.familyId)}44 3px,${fColor(b.familyId)}44 6px)` : fColor(b.familyId),
-                  opacity: 0.9, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 1
-                }}>
-                  <FamilyAvatar family={families.find(f => f.id === b.familyId)} size={18} fontSize={13} />
-                  {(b.collaborators || []).slice(0, 2).map(id => {
-                    const cf = families.find(f => f.id === id);
-                    return cf ? <FamilyAvatar key={id} family={cf} size={14} fontSize={10} /> : null;
-                  })}
-                </div>
-              ))}
-              {bks.some(b => b.familyId === "maintenance") && (
-                <div style={{ fontSize: 9, color: "#888", marginTop: 1, lineHeight: 1 }}>🔧</div>
-              )}
+              {d && (() => {
+                // ── Airbnb-style spanning bars: one continuous bar per booking,
+                //    avatar shown once at the start. Bars bridge the cell gaps
+                //    with negative margins so multi-day trips read as one strip.
+                const ds = fmt(new Date(y, m, d));
+                const dayBks = bks.filter(b => b.familyId !== "maintenance")
+                  .sort((a, b2) => a.start.localeCompare(b2.start) || String(a.id).localeCompare(String(b2.id)));
+                const maint = bks.filter(b => b.familyId === "maintenance");
+                const BRIDGE = -10.5; // cell padding 5 + border 1.5 + half of 4px gap + 2 overlap
+                const Bar = ({ b, thin }) => {
+                  const isStart = ds === b.start || d === 1;
+                  const isEnd = ds === b.end || d === dim;
+                  const col = thin ? "#9aa0a6" : fColor(b.familyId);
+                  const r = thin ? 6 : 9;
+                  return (
+                    <div style={{
+                      height: thin ? 12 : 18, marginBottom: 2, display: "flex", alignItems: "center",
+                      marginLeft: isStart ? 0 : BRIDGE, marginRight: isEnd ? 0 : BRIDGE,
+                      borderRadius: isStart && isEnd ? r : isStart ? `${r}px 0 0 ${r}px` : isEnd ? `0 ${r}px ${r}px 0` : 0,
+                      background: !thin && b.status === "tentative"
+                        ? `repeating-linear-gradient(45deg,${col}99 0,${col}99 4px,${col}50 4px,${col}50 8px)`
+                        : col,
+                      position: "relative", zIndex: 1,
+                    }}>
+                      {isStart && !thin && <span style={{ paddingLeft: 1, display: "flex" }}><FamilyAvatar family={families.find(f => f.id === b.familyId)} size={16} fontSize={11} /></span>}
+                      {isStart && thin && <span style={{ fontSize: 9, lineHeight: 1, paddingLeft: 2 }}>🔧</span>}
+                    </div>
+                  );
+                };
+                return (
+                  <>
+                    {dayBks.slice(0, 2).map(b => <Bar key={b.id} b={b} />)}
+                    {dayBks.length > 2 && <div style={{ fontSize: 8, color: T.textDim, lineHeight: 1, marginBottom: 1 }}>+{dayBks.length - 2}</div>}
+                    {maint.slice(0, 1).map(b => <Bar key={b.id} b={b} thin />)}
+                  </>
+                );
+              })()}
             </div>
           );
         })}
@@ -1163,8 +1184,8 @@ function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId, on
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 14 }}>
         {families.filter(f => f.id !== "maintenance").map(f => (
           <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, background: (f.color || T.primary) + "10", border: `1.5px solid ${f.color || T.primary}40`, borderRadius: 99, padding: "4px 12px 4px 5px" }}>
-            <FamilyAvatar family={f} size={26} fontSize={18} />
-            <span style={{ color: T.text, fontWeight: 600 }}>{f.name}</span>
+            <FamilyAvatar family={f} size={22} fontSize={15} />
+            <span style={{ color: T.text, fontWeight: 600, fontSize: 11 }}>{f.name}</span>
           </div>
         ))}
       </div>
