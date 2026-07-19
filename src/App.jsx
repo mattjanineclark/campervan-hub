@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.53
+          Adventure Hub · v1.54
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -1146,10 +1146,10 @@ function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId, on
                   background: b.status === "tentative" ? `repeating-linear-gradient(45deg,${fColor(b.familyId)}99 0,${fColor(b.familyId)}99 3px,${fColor(b.familyId)}44 3px,${fColor(b.familyId)}44 6px)` : fColor(b.familyId),
                   opacity: 0.9, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 1
                 }}>
-                  <FamilyAvatar family={families.find(f => f.id === b.familyId)} size={14} fontSize={10} />
+                  <FamilyAvatar family={families.find(f => f.id === b.familyId)} size={18} fontSize={13} />
                   {(b.collaborators || []).slice(0, 2).map(id => {
                     const cf = families.find(f => f.id === id);
-                    return cf ? <FamilyAvatar key={id} family={cf} size={11} fontSize={8} /> : null;
+                    return cf ? <FamilyAvatar key={id} family={cf} size={14} fontSize={10} /> : null;
                   })}
                 </div>
               ))}
@@ -1161,7 +1161,12 @@ function CalendarView({ bookings, families, onOpenItinerary, currentFamilyId, on
         })}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 14 }}>
-        {families.map(f => <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}><div style={{ width: 10, height: 10, borderRadius: 3, background: f.color }} /><span style={{ color: T.textMuted, fontWeight: 500 }}>{f.name}</span></div>)}
+        {families.filter(f => f.id !== "maintenance").map(f => (
+          <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, background: (f.color || T.primary) + "10", border: `1.5px solid ${f.color || T.primary}40`, borderRadius: 99, padding: "4px 12px 4px 5px" }}>
+            <FamilyAvatar family={f} size={26} fontSize={18} />
+            <span style={{ color: T.text, fontWeight: 600 }}>{f.name}</span>
+          </div>
+        ))}
       </div>
       {sel && <DayModal date={sel} onClose={() => setSel(null)} />}
     </div>
@@ -4410,6 +4415,20 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
     setMForm(emptyMForm);
   };
 
+  // Keep the 🔧 calendar block in sync when editing a planned entry.
+  // Done entries keep any existing block as calendar history.
+  const syncCalendarBlock = origDesc => {
+    const oldBlock = bookings.find(b => b.familyId === "maintenance" && b.destination === origDesc);
+    if (mForm.workStatus !== "planned") return;
+    const bs = mForm.date, be = mForm.dateEnd || mForm.date;
+    if (mForm.blockDates && bs) {
+      if (oldBlock) dispatch({ type: "UPD_BOOKING", payload: { id: oldBlock.id, start: bs, end: be, destination: mForm.description, notes: mForm.notes } });
+      else dispatch({ type: "ADD_BOOKING", payload: { id: "b" + Date.now(), familyId: "maintenance", createdBy: currentFamilyId, start: bs, end: be, destination: mForm.description, notes: mForm.notes, status: "confirmed", days: [], collaborators: [], guests: "", guestName: "", guestPin: "" } });
+    } else if (oldBlock) {
+      dispatch({ type: "DEL_BOOKING", id: oldBlock.id });
+    }
+  };
+
   // Mark a planned entry as done — opens edit form pre-set to done
   const markDone = m => {
     setMForm({ workStatus: "done", date: fmt(new Date()), dateEnd: "", description: m.description, linkedId: m.linkedId || "", cost: "", arrangedBy: m.arrangedBy || myFamilyName, notes: m.notes || "", currentKm: String(latestKm || ""), receipt: "", company: m.company || "", location: m.location || "", blockDates: false });
@@ -4460,7 +4479,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
             {isPlanned && <button onClick={() => markDone(m)} style={btn(T.green + "15", T.green, { fontSize: 11, padding: "4px 8px", border: "1px solid " + T.green + "30" })}>✓ Done</button>}
-            <button onClick={() => { setMForm({ workStatus: m.workStatus || "done", date: m.date, dateEnd: m.dateEnd || "", description: m.description, linkedId: m.linkedId || "", cost: String(m.cost || ""), arrangedBy: m.arrangedBy || "", notes: m.notes || "", currentKm: m.currentKm ? String(m.currentKm) : "", receipt: m.receipt || "", company: m.company || "", location: m.location || "", blockDates: false }); setMEditing(m.id); setMAdding(false); }}
+            <button onClick={() => { setMForm({ workStatus: m.workStatus || "done", date: m.date, dateEnd: m.dateEnd || "", description: m.description, linkedId: m.linkedId || "", cost: String(m.cost || ""), arrangedBy: m.arrangedBy || "", notes: m.notes || "", currentKm: m.currentKm ? String(m.currentKm) : "", receipt: m.receipt || "", company: m.company || "", location: m.location || "", blockDates: !!bookings.find(b => b.familyId === "maintenance" && b.destination === m.description) }); setMEditing(m.id); setMAdding(false); }}
               style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px" }}>✏️</button>
           </div>
         </div>
@@ -4606,6 +4625,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
             <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
               onSave={() => {
                 dispatch({ type: "UPD_MAINT", payload: { ...m, ...mForm, cost: parseFloat(mForm.cost) || 0, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null } });
+                syncCalendarBlock(m.description);
                 const linkedItem = dueDates.find(d => d.id === mForm.linkedId);
                 if (mForm.workStatus === "done" && m.workStatus === "planned" && linkedItem) openNextDue(linkedItem, mForm.date);
                 setMEditing(null);
@@ -4616,7 +4636,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
           {doneEntries.length > 0 && <p style={{ ...sectionHead, margin: "12px 0 8px" }}>✅ Completed</p>}
           {doneEntries.map(m => mEditing === m.id ? (
             <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
-              onSave={() => { dispatch({ type: "UPD_MAINT", payload: { ...m, ...mForm, cost: parseFloat(mForm.cost) || 0, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null } }); setMEditing(null); }}
+              onSave={() => { dispatch({ type: "UPD_MAINT", payload: { ...m, ...mForm, cost: parseFloat(mForm.cost) || 0, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null } }); syncCalendarBlock(m.description); setMEditing(null); }}
               onCancel={() => setMEditing(null)}
               onDel={() => { dispatch({ type: "DEL_MAINT", id: m.id }); setMEditing(null); }} />
           ) : <MaintEntry key={m.id} m={m} />)}
