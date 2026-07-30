@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.55
+          Adventure Hub · v1.56
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3337,7 +3337,9 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
             }}>
             {t.label}
             <span style={{ display: "block", fontSize: 10, opacity: 0.7, marginTop: 1 }}>
-              {t.id === "all" ? equipment.length : equipment.filter(e => e.status === t.id).length}
+              {t.id === "all" ? invanItems.length + myPacking.length
+                : t.id === "invan" ? invanItems.length
+                : myPacking.filter(e => e.status === t.id).length}
             </span>
           </button>
         ))}
