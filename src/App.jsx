@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.57
+          Adventure Hub · v1.58
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4264,27 +4264,28 @@ function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCanc
           <input style={inp} type="number" step="0.01" placeholder="0.00" value={form.cost} onChange={h("cost")} />
           <label style={lbl}>Odometer (km)</label>
           <input style={inp} type="number" placeholder="Current km" value={form.currentKm} onChange={h("currentKm")} />
-          <label style={lbl}>Receipts & Attachments</label>
-          {form.receipt && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.bg, borderRadius: T.radiusSm, padding: "8px 10px", border: "1px solid " + T.border, marginBottom: 4 }}>
-              <span style={{ fontSize: 12, flex: 1, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧾 Receipt</span>
-              <button onClick={() => onViewReceipt && onViewReceipt(form.receipt)} style={{ fontSize: 12, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>View</button>
-              <button onClick={() => setForm(f => ({ ...f, receipt: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 14, flexShrink: 0 }}>&times;</button>
-            </div>
-          )}
-          {(form.attachments || []).map((a, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: T.bg, borderRadius: T.radiusSm, padding: "8px 10px", border: "1px solid " + T.border, marginBottom: 4 }}>
-              <span style={{ fontSize: 12, flex: 1, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {a.name || "File"}</span>
-              <button onClick={() => onViewReceipt && onViewReceipt(a.url)} style={{ fontSize: 12, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>View</button>
-              <button onClick={() => setForm(f => ({ ...f, attachments: f.attachments.filter((_, j) => j !== i) }))} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 14, flexShrink: 0 }}>&times;</button>
-            </div>
-          ))}
-          <label style={{ ...btn(uploading ? T.textDim + "20" : T.bg, T.textMuted, { display: "inline-block", cursor: uploading ? "wait" : "pointer", fontSize: 12, border: "1px solid " + T.border }) }}>
-            {uploading ? "⏳ Uploading..." : "📎 Add Photo / PDF"}
-            <input type="file" accept="image/*,.pdf" multiple style={{ display: "none" }} onChange={onAttachmentUpload} disabled={uploading} />
-          </label>
+
         </>
       )}
+      <label style={lbl}>Receipts & Attachments</label>
+      {form.receipt && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.bg, borderRadius: T.radiusSm, padding: "8px 10px", border: "1px solid " + T.border, marginBottom: 4 }}>
+          <span style={{ fontSize: 12, flex: 1, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧾 Receipt</span>
+          <button onClick={() => onViewReceipt && onViewReceipt(form.receipt)} style={{ fontSize: 12, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>View</button>
+          <button onClick={() => setForm(f => ({ ...f, receipt: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 14, flexShrink: 0 }}>&times;</button>
+        </div>
+      )}
+      {(form.attachments || []).map((a, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: T.bg, borderRadius: T.radiusSm, padding: "8px 10px", border: "1px solid " + T.border, marginBottom: 4 }}>
+          <span style={{ fontSize: 12, flex: 1, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {a.name || "File"}</span>
+          <button onClick={() => onViewReceipt && onViewReceipt(a.url)} style={{ fontSize: 12, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>View</button>
+          <button onClick={() => setForm(f => ({ ...f, attachments: f.attachments.filter((_, j) => j !== i) }))} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 14, flexShrink: 0 }}>&times;</button>
+        </div>
+      ))}
+      <label style={{ ...btn(uploading ? T.textDim + "20" : T.bg, T.textMuted, { display: "inline-block", cursor: uploading ? "wait" : "pointer", fontSize: 12, border: "1px solid " + T.border }) }}>
+        {uploading ? "⏳ Uploading..." : "📎 Add Photo / PDF"}
+        <input type="file" accept="image/*,.pdf" multiple style={{ display: "none" }} onChange={onAttachmentUpload} disabled={uploading} />
+      </label>
       {isPlanned && (
         <>
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, cursor: "pointer", fontSize: 13, color: T.text }}>
