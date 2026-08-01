@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.56
+          Adventure Hub · v1.57
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4208,7 +4208,7 @@ function CompanySearch({ value, location, onPick, onChange, onLocationChange }) 
 
 // ─── VAN MAINT FORM ───────────────────────────────────────────────────────────
 // Plan or log maintenance work. Top-level so inputs keep focus.
-function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCancel, onDel, uploading, onReceiptUpload, onViewReceipt }) {
+function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCancel, onDel, uploading, onReceiptUpload, onAttachmentUpload, onViewReceipt }) {
   const h = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
   const linkedItem = dueDates.find(d => d.id === form.linkedId);
   const isPlanned = form.workStatus === "planned";
@@ -4264,19 +4264,25 @@ function MaintForm({ form, setForm, dueDates, bookings, families, onSave, onCanc
           <input style={inp} type="number" step="0.01" placeholder="0.00" value={form.cost} onChange={h("cost")} />
           <label style={lbl}>Odometer (km)</label>
           <input style={inp} type="number" placeholder="Current km" value={form.currentKm} onChange={h("currentKm")} />
-          <label style={lbl}>Receipt</label>
-          {form.receipt ? (
+          <label style={lbl}>Receipts & Attachments</label>
+          {form.receipt && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.bg, borderRadius: T.radiusSm, padding: "8px 10px", border: "1px solid " + T.border, marginBottom: 4 }}>
-              <span style={{ fontSize: 12, flex: 1, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧾 Receipt attached</span>
+              <span style={{ fontSize: 12, flex: 1, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧾 Receipt</span>
               <button onClick={() => onViewReceipt && onViewReceipt(form.receipt)} style={{ fontSize: 12, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>View</button>
               <button onClick={() => setForm(f => ({ ...f, receipt: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 14, flexShrink: 0 }}>&times;</button>
             </div>
-          ) : (
-            <label style={{ ...btn(uploading ? T.textDim + "20" : T.bg, T.textMuted, { display: "inline-block", cursor: uploading ? "wait" : "pointer", fontSize: 12, border: "1px solid " + T.border }) }}>
-              {uploading ? "⏳ Uploading..." : "📷 Attach Receipt"}
-              <input type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={onReceiptUpload} disabled={uploading} />
-            </label>
           )}
+          {(form.attachments || []).map((a, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: T.bg, borderRadius: T.radiusSm, padding: "8px 10px", border: "1px solid " + T.border, marginBottom: 4 }}>
+              <span style={{ fontSize: 12, flex: 1, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {a.name || "File"}</span>
+              <button onClick={() => onViewReceipt && onViewReceipt(a.url)} style={{ fontSize: 12, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>View</button>
+              <button onClick={() => setForm(f => ({ ...f, attachments: f.attachments.filter((_, j) => j !== i) }))} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 14, flexShrink: 0 }}>&times;</button>
+            </div>
+          ))}
+          <label style={{ ...btn(uploading ? T.textDim + "20" : T.bg, T.textMuted, { display: "inline-block", cursor: uploading ? "wait" : "pointer", fontSize: 12, border: "1px solid " + T.border }) }}>
+            {uploading ? "⏳ Uploading..." : "📎 Add Photo / PDF"}
+            <input type="file" accept="image/*,.pdf" multiple style={{ display: "none" }} onChange={onAttachmentUpload} disabled={uploading} />
+          </label>
         </>
       )}
       {isPlanned && (
@@ -4318,7 +4324,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
   const [viewReceipt, setViewReceipt] = useState(null);
   const latestKm = odoLog.length > 0 ? Math.max(...odoLog.map(e => e.endKm)) : 0;
   const myFamilyName = (families || []).find(f => f.id === currentFamilyId)?.name || "";
-  const emptyMForm = { workStatus: "planned", date: fmt(new Date()), dateEnd: "", description: "", linkedId: "", cost: "", arrangedBy: myFamilyName, notes: "", currentKm: String(latestKm || ""), receipt: "", company: "", location: "", blockDates: true };
+  const emptyMForm = { workStatus: "planned", date: fmt(new Date()), dateEnd: "", description: "", linkedId: "", cost: "", arrangedBy: myFamilyName, notes: "", currentKm: String(latestKm || ""), receipt: "", attachments: [], company: "", location: "", blockDates: true };
   const [mForm, setMForm] = useState(emptyMForm);
 
   // Jump to a specific maint entry when opened from the calendar / bookings list
@@ -4393,6 +4399,25 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
     });
   };
 
+  // Multi-file attachment upload (photos, PDFs — quotes, invoices, receipts)
+  const handleAttachment = async e => {
+    const files = Array.from(e.target.files || []); if (!files.length) return;
+    setUploading(true);
+    for (const file of files) {
+      if (file.size > 10 * 1024 * 1024) { alert(file.name + " is too large — max 10MB."); continue; }
+      try {
+        const path = "receipts/" + Date.now() + "-" + file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const url = await supa.uploadImage(file, path);
+        setMForm(f => ({ ...f, attachments: [...(f.attachments || []), { name: file.name, url }] }));
+      } catch (err) {
+        console.error("Attachment upload failed:", err);
+        alert("Upload failed for " + file.name + " — check your connection and try again.");
+      }
+    }
+    setUploading(false);
+    e.target.value = "";
+  };
+
   // Receipt upload handler
   const handleReceipt = async e => {
     const file = e.target.files[0]; if (!file) return;
@@ -4427,7 +4452,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
       }
     }
     setOverlapWarn(null);
-    const payload = { id: "m" + Date.now(), workStatus: mForm.workStatus, date: mForm.date, dateEnd: mForm.dateEnd || "", description: mForm.description, linkedId: mForm.linkedId || null, cost: parseFloat(mForm.cost) || 0, arrangedBy: mForm.arrangedBy, notes: mForm.notes, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null, receipt: mForm.receipt || "", company: mForm.company || "", location: mForm.location || "" };
+    const payload = { id: "m" + Date.now(), workStatus: mForm.workStatus, date: mForm.date, dateEnd: mForm.dateEnd || "", description: mForm.description, linkedId: mForm.linkedId || null, cost: parseFloat(mForm.cost) || 0, arrangedBy: mForm.arrangedBy, notes: mForm.notes, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null, receipt: mForm.receipt || "", attachments: mForm.attachments || [], company: mForm.company || "", location: mForm.location || "" };
     dispatch({ type: "ADD_MAINT", payload });
     if (mForm.workStatus === "planned" && mForm.blockDates && blockStart) {
       dispatch({ type: "ADD_BOOKING", payload: { id: "b" + Date.now(), familyId: "maintenance", createdBy: currentFamilyId, start: blockStart, end: blockEnd, destination: mForm.description || "Maintenance", notes: mForm.notes, status: "confirmed", days: [], collaborators: [], guests: "", guestName: "", guestPin: "" } });
@@ -4454,7 +4479,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
 
   // Mark a planned entry as done — opens edit form pre-set to done
   const markDone = m => {
-    setMForm({ workStatus: "done", date: fmt(new Date()), dateEnd: "", description: m.description, linkedId: m.linkedId || "", cost: "", arrangedBy: m.arrangedBy || myFamilyName, notes: m.notes || "", currentKm: String(latestKm || ""), receipt: "", company: m.company || "", location: m.location || "", blockDates: false });
+    setMForm({ workStatus: "done", date: fmt(new Date()), dateEnd: "", description: m.description, linkedId: m.linkedId || "", cost: "", arrangedBy: m.arrangedBy || myFamilyName, notes: m.notes || "", currentKm: String(latestKm || ""), receipt: "", attachments: m.attachments || [], company: m.company || "", location: m.location || "", blockDates: false });
     setMEditing(m.id);
     setMAdding(false);
   };
@@ -4498,11 +4523,20 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
             </div>
             {m.location && <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>📍 {m.location}</div>}
             {m.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, fontStyle: "italic" }}>{m.notes}</div>}
-            {m.receipt && <button onClick={() => setViewReceipt(m.receipt)} style={{ marginTop: 4, fontSize: 11, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: 0 }}>🧾 View receipt</button>}
+            {(m.receipt || (m.attachments || []).length > 0) && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5 }}>
+                {m.receipt && (
+                  <button onClick={() => setViewReceipt(m.receipt)} style={{ ...pill(T.primary + "12", T.primary), fontSize: 10, border: "1px solid " + T.primary + "25", cursor: "pointer" }}>🧾 Receipt</button>
+                )}
+                {(m.attachments || []).map((a, i) => (
+                  <button key={i} onClick={() => setViewReceipt(a.url)} style={{ ...pill(T.primary + "12", T.primary), fontSize: 10, border: "1px solid " + T.primary + "25", cursor: "pointer", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {a.name || "File"}</button>
+                ))}
+              </div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
             {isPlanned && <button onClick={() => markDone(m)} style={btn(T.green + "15", T.green, { fontSize: 11, padding: "4px 8px", border: "1px solid " + T.green + "30" })}>✓ Done</button>}
-            <button onClick={() => { setMForm({ workStatus: m.workStatus || "done", date: m.date, dateEnd: m.dateEnd || "", description: m.description, linkedId: m.linkedId || "", cost: String(m.cost || ""), arrangedBy: m.arrangedBy || "", notes: m.notes || "", currentKm: m.currentKm ? String(m.currentKm) : "", receipt: m.receipt || "", company: m.company || "", location: m.location || "", blockDates: !!bookings.find(b => b.familyId === "maintenance" && b.destination === m.description) }); setMEditing(m.id); setMAdding(false); }}
+            <button onClick={() => { setMForm({ workStatus: m.workStatus || "done", date: m.date, dateEnd: m.dateEnd || "", description: m.description, linkedId: m.linkedId || "", cost: String(m.cost || ""), arrangedBy: m.arrangedBy || "", notes: m.notes || "", currentKm: m.currentKm ? String(m.currentKm) : "", receipt: m.receipt || "", attachments: m.attachments || [], company: m.company || "", location: m.location || "", blockDates: !!bookings.find(b => b.familyId === "maintenance" && b.destination === m.description) }); setMEditing(m.id); setMAdding(false); }}
               style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 4px" }}>✏️</button>
           </div>
         </div>
@@ -4628,7 +4662,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
               </div>
             </div>
           )}
-          {mAdding && <MaintForm form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
+          {mAdding && <MaintForm form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onAttachmentUpload={handleAttachment} onViewReceipt={setViewReceipt}
             onSave={() => saveMaint(false)} onCancel={() => { setMAdding(false); setOverlapWarn(null); }} />}
           {mSearch && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -4645,7 +4679,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
           )}
           {plannedEntries.length > 0 && <p style={{ ...sectionHead, margin: "4px 0 8px" }}>📅 Planned</p>}
           {plannedEntries.map(m => mEditing === m.id ? (
-            <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
+            <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onAttachmentUpload={handleAttachment} onViewReceipt={setViewReceipt}
               onSave={() => {
                 dispatch({ type: "UPD_MAINT", payload: { ...m, ...mForm, cost: parseFloat(mForm.cost) || 0, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null } });
                 syncCalendarBlock(m.description);
@@ -4658,7 +4692,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
           ) : <MaintEntry key={m.id} m={m} />)}
           {doneEntries.length > 0 && <p style={{ ...sectionHead, margin: "12px 0 8px" }}>✅ Completed</p>}
           {doneEntries.map(m => mEditing === m.id ? (
-            <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onViewReceipt={setViewReceipt}
+            <MaintForm key={m.id} form={mForm} setForm={setMForm} dueDates={dueDates} bookings={bookings} families={families} uploading={uploading} onReceiptUpload={handleReceipt} onAttachmentUpload={handleAttachment} onViewReceipt={setViewReceipt}
               onSave={() => { dispatch({ type: "UPD_MAINT", payload: { ...m, ...mForm, cost: parseFloat(mForm.cost) || 0, currentKm: mForm.currentKm ? parseInt(mForm.currentKm) : null } }); syncCalendarBlock(m.description); setMEditing(null); }}
               onCancel={() => setMEditing(null)}
               onDel={() => { dispatch({ type: "DEL_MAINT", id: m.id }); setMEditing(null); }} />
@@ -4979,7 +5013,7 @@ function AppInner() {
         }
 
         if (dueDates && dueDates.length > 0) dispatch({ type: "RESET_DUE_DATES", payload: dueDates.map(d => ({ id: d.id, label: d.label, dueDate: d.due_date || null, dueKm: d.due_km || null, cycleDays: d.cycle_days || null, cycleKm: d.cycle_km || null, notes: d.notes || "" })) });
-        if (maintLog && maintLog.length > 0) dispatch({ type: "RESET_MAINT", payload: maintLog.map(m => ({ id: m.id, date: m.date, dateEnd: m.date_end || "", description: m.description, linkedId: m.linked_id || null, cost: m.cost || 0, arrangedBy: m.arranged_by || "", company: m.company || "", location: m.location || "", notes: m.notes || "", currentKm: m.current_km || null, workStatus: m.work_status || "done", receipt: m.receipt || "" })) });
+        if (maintLog && maintLog.length > 0) dispatch({ type: "RESET_MAINT", payload: maintLog.map(m => ({ id: m.id, attachments: m.attachments || [], date: m.date, dateEnd: m.date_end || "", description: m.description, linkedId: m.linked_id || null, cost: m.cost || 0, arrangedBy: m.arranged_by || "", company: m.company || "", location: m.location || "", notes: m.notes || "", currentKm: m.current_km || null, workStatus: m.work_status || "done", receipt: m.receipt || "" })) });
         if (odoLog && odoLog.length > 0) dispatch({
           type: "RESET_ODO", payload: odoLog.map(e => ({
             id: e.id, familyId: e.family_id, date: e.date,
@@ -5316,11 +5350,11 @@ function AppInner() {
         // MAINTENANCE LOG
         case "ADD_MAINT": {
           const lid = payload.linkedId && /^\d+$/.test(String(payload.linkedId)) ? payload.linkedId : null;
-          const r = await supa.insert("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: lid, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" });
+          const r = await supa.insert("van_maintenance_log", { attachments: payload.attachments || [], date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: lid, cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" });
           if (Array.isArray(r) && r[0]?.id) dispatch({ type: "REPLACE_ID", payload: { list: "maintLog", oldId: payload.id, newId: r[0].id } });
           break;
         }
-        case "UPD_MAINT": await supa.update("van_maintenance_log", { date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: (payload.linkedId && /^\d+$/.test(String(payload.linkedId)) ? payload.linkedId : null), cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }, { id: payload.id }); break;
+        case "UPD_MAINT": await supa.update("van_maintenance_log", { attachments: payload.attachments || [], date: payload.date, date_end: payload.dateEnd || null, description: payload.description, linked_id: (payload.linkedId && /^\d+$/.test(String(payload.linkedId)) ? payload.linkedId : null), cost: payload.cost || 0, arranged_by: payload.arrangedBy || "", company: payload.company || "", location: payload.location || "", notes: payload.notes || "", current_km: payload.currentKm || null, work_status: payload.workStatus || "done", receipt: payload.receipt || "" }, { id: payload.id }); break;
         case "DEL_MAINT": await supa.delete("van_maintenance_log", { id }); break;
         // VAN SETTINGS
         case "SET_CHECKLIST": {
