@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.58
+          Adventure Hub · v1.59
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2028,7 +2028,32 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
     const days = Array.from({ length: n + 1 }, (_, i) => { const d = fmt(addDays(new Date(data.start), i)); return existing.find(e => e.date === d) || { date: d, activities: [] }; });
     h("days", days);
   }, [data.start, data.end]);
-  const addAct = di => { const days = [...(data.days || [])]; days[di] = { ...days[di], activities: [...(days[di].activities || []), { id: "a" + Date.now(), time: "", title: "", placeId: "", location: "", notes: "" }] }; h("days", days); };
+  const [editingDates, setEditingDates] = useState(false);
+  const [viewFile, setViewFile] = useState(null);
+  const [actUploading, setActUploading] = useState(false);
+  const addAct = di => { const days = [...(data.days || [])]; days[di] = { ...days[di], activities: [...(days[di].activities || []), { id: "a" + Date.now(), type: "activity", time: "", title: "", placeId: "", location: "", notes: "", attachments: [] }] }; h("days", days); };
+  const addStay = di => { const days = [...(data.days || [])]; days[di] = { ...days[di], activities: [...(days[di].activities || []), { id: "a" + Date.now(), type: "stay", title: "", checkIn: "", checkOut: "", placeId: "", location: "", notes: "", attachments: [] }] }; h("days", days); };
+  const updActMulti = (di, ai, obj) => { const days = [...(data.days || [])]; days[di] = { ...days[di], activities: days[di].activities.map((a, i) => i === ai ? { ...a, ...obj } : a) }; h("days", days); };
+  const uploadActFiles = async (di, ai, e) => {
+    const files = Array.from(e.target.files || []); if (!files.length) return;
+    setActUploading(true);
+    for (const file of files) {
+      if (file.size > 10 * 1024 * 1024) { alert(file.name + " is too large — max 10MB."); continue; }
+      try {
+        const path = "trips/" + Date.now() + "-" + file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const url = await supa.uploadImage(file, path);
+        setData(d => {
+          const days = [...(d.days || [])];
+          const acts = [...days[di].activities];
+          acts[ai] = { ...acts[ai], attachments: [...(acts[ai].attachments || []), { name: file.name, url }] };
+          days[di] = { ...days[di], activities: acts };
+          return { ...d, days };
+        });
+      } catch (err) { alert("Upload failed for " + file.name + " — check connection and try again."); }
+    }
+    setActUploading(false);
+    e.target.value = "";
+  };
   const updAct = (di, ai, field, val) => { const days = [...(data.days || [])]; days[di] = { ...days[di], activities: days[di].activities.map((a, i) => i === ai ? { ...a, [field]: val } : a) }; h("days", days); };
   const delAct = (di, ai) => { const days = [...(data.days || [])]; days[di] = { ...days[di], activities: days[di].activities.filter((_, i) => i !== ai) }; h("days", days); };
   const save = () => {
@@ -2045,6 +2070,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
     delete payload._unsaved; delete payload._tentClash; delete payload._saveErr;
     if (data._unsaved) dispatch({ type: "ADD_ITINERARY", payload });
     else dispatch({ type: "SET_ITINERARY", payload });
+    if (data.bookingId && payload.title) dispatch({ type: "UPD_BOOKING", payload: { id: data.bookingId, destination: payload.title } });
     if (onClose) onClose();
   };
   if (inline) return (
@@ -2058,10 +2084,12 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
             Day {di + 1} · {day.date}
           </div>
           {(day.activities || []).map((act, ai) => (
-            <div key={ai} style={{ ...card({ padding: "8px 10px" }), marginBottom: 4, display: "flex", gap: 8, alignItems: "flex-start" }}>
-              {act.time && <span style={{ fontSize: 11, color: T.textDim, minWidth: 36, paddingTop: 1 }}>{act.time}</span>}
+            <div key={ai} style={{ ...card({ padding: "8px 10px" }), marginBottom: 4, display: "flex", gap: 8, alignItems: "flex-start", borderLeft: act.type === "stay" ? `3px solid ${T.sky || "#3b82f6"}` : undefined }}>
+              {act.type === "stay"
+                ? <span style={{ fontSize: 12, paddingTop: 1 }}>🛏️</span>
+                : act.time ? <span style={{ fontSize: 11, color: T.textDim, minWidth: 36, paddingTop: 1 }}>{act.time}</span> : null}
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 12, color: T.text }}>{act.title}</div>
+                <div style={{ fontWeight: 600, fontSize: 12, color: T.text }}>{act.title}{act.type === "stay" && act.checkIn ? <span style={{ fontWeight: 400, color: T.textDim }}> · check-in {act.checkIn}</span> : ""}</div>
                 {act.place && <div style={{ fontSize: 11, color: T.primary, marginTop: 1 }}>📍 {act.place}</div>}
                 {act.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 1, fontStyle: "italic" }}>{act.notes}</div>}
               </div>
@@ -2081,7 +2109,8 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
   return (
     <div style={{ ...card(), marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h3 style={{ margin: 0, color: T.primary, fontSize: 16, fontWeight: 700 }}>{data.title || "New Trip"}</h3>
+        <input style={{ ...inp, fontSize: 16, fontWeight: 700, color: T.primary, flex: 1, minWidth: 0, marginRight: 8 }}
+          value={data.title || ""} placeholder="Trip name..." onChange={e => h("title", e.target.value)} />
         <div style={{ display: "flex", gap: 8 }}>
           {data._saveErr && <div style={{ padding: "6px 10px", marginBottom: 8, background: T.red + "12", border: `1px solid ${T.red}30`, borderRadius: T.radiusSm, fontSize: 12, color: T.red, width: "100%" }}>X {data._saveErr}</div>}
           {data._tentClash && <div style={{ padding: "6px 10px", marginBottom: 8, background: T.accent + "12", border: `1px solid ${T.accent}30`, borderRadius: T.radiusSm, fontSize: 12, color: T.accent }}>⚠️ Dates overlap tentative booking: {data._tentClash}</div>}
@@ -2093,7 +2122,21 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
         <div style={{ gridColumn: "1/-1" }}>
           <label style={lbl}>Dates</label>
-          <DateRangePicker
+          {!editingDates && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: T.bg, border: `1px solid ${T.border}`, borderRadius: T.radiusSm, padding: "10px 12px" }}>
+              <span style={{ fontWeight: 700, color: T.text, fontSize: 13, flex: 1 }}>
+                {data.start ? `${data.start} → ${data.end}` : "No dates set"}
+                {data.start && <span style={{ color: T.textDim, fontWeight: 500 }}> · {nights(data.start, data.end)} nights</span>}
+              </span>
+              <button onClick={() => setEditingDates(true)} style={{ ...btn(T.bg, T.textMuted, { fontSize: 11, border: `1px solid ${T.border}`, padding: "5px 10px", flexShrink: 0 }) }}>✏️ Change</button>
+            </div>
+          )}
+          {editingDates && (
+            <div style={{ padding: "8px 10px", marginBottom: 8, background: T.accent + "0c", border: `1px solid ${T.accent}40`, borderRadius: T.radiusSm, fontSize: 11, color: T.accent, fontWeight: 600 }}>
+              ⚠️ Changing dates moves the whole booking straight away.
+            </div>
+          )}
+          {editingDates && <DateRangePicker
             startDate={data.start} endDate={data.end}
             bookings={bookings} families={[]}
             onChange={({ start, end }) => {
@@ -2120,7 +2163,10 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
                 dispatch({ type: "UPD_BOOKING", payload: { id: data.bookingId, start, end } });
               }
             }}
-          />
+          />}
+          {editingDates && (
+            <button onClick={() => setEditingDates(false)} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 11, marginTop: 8, padding: "6px 14px", border: `1px solid ${T.primary}30` }) }}>✓ Done changing dates</button>
+          )}
         </div>
         <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Notes</label><textarea style={{ ...inp, height: 52 }} value={data.notes || ""} onChange={e => h("notes", e.target.value)} placeholder="Overview, goals, reminders..." /></div>
 
@@ -2128,44 +2174,88 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
       {(data.days || []).map((day, di) => {
         const d = new Date(day.date);
         return (
-          <div key={day.date} style={{ background: T.bg, borderRadius: T.radiusSm, padding: 14, marginTop: 10, border: `1px solid ${T.border}` }}>
+          <div key={day.date} style={{ background: T.bg, borderRadius: T.radiusSm, padding: "10px 8px", marginTop: 10, border: `1px solid ${T.border}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ fontWeight: 700, color: T.primary, fontSize: 13 }}>{DAY_NAMES[d.getDay()]} <span style={{ color: T.textMuted, fontWeight: 500 }}>{day.date}</span></span>
-              <button onClick={() => addAct(di)} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 11, padding: "4px 12px" }), border: `1px solid ${T.primary}30` }}>+ Activity</button>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button onClick={() => addStay(di)} style={{ ...btn(T.sky + "18", T.sky || "#3b82f6", { fontSize: 11, padding: "4px 10px" }), border: `1px solid ${(T.sky || "#3b82f6")}30` }}>+ 🛏️ Stay</button>
+                <button onClick={() => addAct(di)} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 11, padding: "4px 10px" }), border: `1px solid ${T.primary}30` }}>+ Activity</button>
+              </div>
             </div>
-            {(day.activities || []).map((act, ai) => (
-              <div key={act.id} style={{ ...card({ padding: 12, marginBottom: 8 }), border: `1px solid ${T.border}` }}>
-                {/* Row 1: time + title + delete */}
+            {(day.activities || []).map((act, ai) => {
+              const isStay = act.type === "stay";
+              return (
+              <div key={act.id} style={{ ...card({ padding: 10, marginBottom: 8 }), border: `1px solid ${isStay ? (T.sky || "#3b82f6") + "50" : T.border}`, borderLeft: `3px solid ${isStay ? (T.sky || "#3b82f6") : T.primary}` }}>
+                {/* Row 1 */}
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                  <input style={{ ...inp, width: 72, flexShrink: 0, padding: "7px 8px", fontSize: 13 }} placeholder="Time" value={act.time} onChange={e => updAct(di, ai, "time", e.target.value)} />
-                  <input style={{ ...inp, flex: 1, padding: "7px 8px", fontSize: 13 }} placeholder="Activity title *" value={act.title} onChange={e => updAct(di, ai, "title", e.target.value)} />
+                  {isStay
+                    ? <span style={{ fontSize: 16, flexShrink: 0 }}>🛏️</span>
+                    : <input style={{ ...inp, width: 64, flexShrink: 0, padding: "7px 8px", fontSize: 13 }} placeholder="Time" value={act.time || ""} onChange={e => updAct(di, ai, "time", e.target.value)} />}
+                  <input style={{ ...inp, flex: 1, minWidth: 0, padding: "7px 8px", fontSize: 13 }} placeholder={isStay ? "Where are you staying? *" : "Activity title *"} value={act.title} onChange={e => updAct(di, ai, "title", e.target.value)} />
                   <button onClick={() => delAct(di, ai)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 20, padding: "0 2px", flexShrink: 0 }}>&times;</button>
                 </div>
-                {/* Row 2: location */}
+                {/* Stay: check-in / check-out */}
+                {isStay && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+                    <div>
+                      <label style={{ ...lbl, fontSize: 10 }}>Check-in</label>
+                      <input style={{ ...inp, padding: "7px 8px", fontSize: 13 }} placeholder="e.g. 14:00" value={act.checkIn || ""} onChange={e => updAct(di, ai, "checkIn", e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={{ ...lbl, fontSize: 10 }}>Check-out</label>
+                      <input style={{ ...inp, padding: "7px 8px", fontSize: 13 }} placeholder="e.g. 10:00" value={act.checkOut || ""} onChange={e => updAct(di, ai, "checkOut", e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {/* Location */}
                 {act.placeId ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.primary + "10", borderRadius: T.radiusSm, padding: "8px 10px", border: `1px solid ${T.primary}30`, marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, color: T.primary, flex: 1, fontWeight: 600 }}>📍 {places.find(p => p.id === act.placeId)?.name || "Place"}</span>
-                    <button onClick={() => setPickingPlaceFor({ di, ai })} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 11, padding: "3px 8px" }) }}>Change</button>
-                    <button onClick={() => updAct(di, ai, "placeId", "")} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 16 }}>&times;</button>
+                    <span style={{ fontSize: 13, color: T.primary, flex: 1, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>📍 {places.find(p => p.id === act.placeId)?.name || "Place"}</span>
+                    <button onClick={() => setPickingPlaceFor({ di, ai })} style={{ ...btn(T.primary + "15", T.primary, { fontSize: 11, padding: "3px 8px", flexShrink: 0 }) }}>Change</button>
+                    <button onClick={() => updAct(di, ai, "placeId", "")} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 16, flexShrink: 0 }}>&times;</button>
                   </div>
                 ) : (
                   <div style={{ marginBottom: 8 }}>
-                    <input style={{ ...inp, padding: "7px 8px", fontSize: 13, marginBottom: 6 }} placeholder="📌 Type a location..." value={act.location || ""} onChange={e => updAct(di, ai, "location", e.target.value)} />
+                    <ActLocationField
+                      value={act.location || ""}
+                      onChange={v => updAct(di, ai, "location", v)}
+                      onPick={(name, lat, lng) => updActMulti(di, ai, { location: name, lat, lng })} />
+                    {act.lat && <div style={{ fontSize: 10, color: T.green, margin: "2px 0 4px" }}>✓ Location pinned — directions will route here</div>}
                     {places.length > 0 && <button onClick={() => setPickingPlaceFor({ di, ai })}
                       style={{ ...btn(T.bg, T.textMuted, { border: `1px solid ${T.border}`, fontSize: 12, padding: "6px 12px", width: "100%", textAlign: "left" }) }}>
                       📍 Or pick from saved places...
                     </button>}
                   </div>
                 )}
-                {/* Row 3: notes */}
-                <textarea style={{ ...inp, padding: "7px 8px", fontSize: 13, height: 52, resize: "none" }} placeholder="Notes (optional)" value={act.notes || ""} onChange={e => updAct(di, ai, "notes", e.target.value)} />
+                {/* Attachments — reservations, confirmations */}
+                {(act.attachments || []).map((a, fi) => (
+                  <div key={fi} style={{ display: "flex", alignItems: "center", gap: 8, background: T.bg, borderRadius: T.radiusSm, padding: "6px 10px", border: `1px solid ${T.border}`, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, flex: 1, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {a.name || "File"}</span>
+                    <button onClick={() => setViewFile(a.url)} style={{ fontSize: 11, color: T.primary, fontWeight: 600, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>View</button>
+                    <button onClick={() => updActMulti(di, ai, { attachments: (act.attachments || []).filter((_, j) => j !== fi) })} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 13, flexShrink: 0 }}>&times;</button>
+                  </div>
+                ))}
+                <label style={{ ...btn(actUploading ? T.textDim + "20" : T.bg, T.textMuted, { display: "inline-block", cursor: actUploading ? "wait" : "pointer", fontSize: 11, border: `1px solid ${T.border}`, padding: "5px 10px", marginBottom: 8 }) }}>
+                  {actUploading ? "⏳ Uploading..." : "📎 Attach reservation / file"}
+                  <input type="file" accept="image/*,.pdf" multiple style={{ display: "none" }} onChange={e => uploadActFiles(di, ai, e)} disabled={actUploading} />
+                </label>
+                {/* Notes */}
+                <textarea style={{ ...inp, padding: "7px 8px", fontSize: 13, height: 44, resize: "none" }} placeholder="Notes (optional)" value={act.notes || ""} onChange={e => updAct(di, ai, "notes", e.target.value)} />
               </div>
-            ))}
+            );})}
             {!(day.activities || []).length && <p style={{ color: T.textDim, fontSize: 12, margin: "4px 0" }}>No activities planned.</p>}
           </div>
         );
       })}
       {!data.start && <p style={{ color: T.textDim, fontSize: 13, marginTop: 12 }}>Set dates above to build the day-by-day plan.</p>}
+      {viewFile && (
+        <div onClick={() => setViewFile(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 950, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          {(viewFile.includes(".pdf") || viewFile.startsWith("data:application/pdf"))
+            ? <iframe src={viewFile} title="Attachment" style={{ width: "100%", height: "80%", border: "none", borderRadius: 8, background: "white" }} />
+            : <img src={viewFile} alt="Attachment" style={{ maxWidth: "100%", maxHeight: "82%", borderRadius: 8, objectFit: "contain" }} />}
+          <button onClick={() => setViewFile(null)} style={{ marginTop: 14, background: "white", color: "#333", border: "none", borderRadius: 99, padding: "9px 24px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
+        </div>
+      )}
       {pickingPlaceFor && (
         <PlacePickerModal
           places={places}
@@ -4167,6 +4257,47 @@ function DueDateForm({ form, setForm, onSave, onCancel, onDel }) {
   );
 }
 
+// ─── ACTIVITY LOCATION FIELD ──────────────────────────────────────────────────
+// Location input with NZ place search (Nominatim). Picking a result stores
+// coordinates so the Home hero's Directions button routes precisely.
+function ActLocationField({ value, onChange, onPick }) {
+  const [results, setResults] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [noHits, setNoHits] = useState(false);
+  const search = async () => {
+    if (!value || !value.trim()) return;
+    setBusy(true); setNoHits(false);
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&limit=5&countrycodes=nz`, { headers: { "Accept-Language": "en" } });
+      const j = await r.json();
+      setResults(j || []);
+      if (!j || j.length === 0) setNoHits(true);
+    } catch (e) { setNoHits(true); }
+    setBusy(false);
+  };
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input style={{ ...inp, flex: 1, padding: "8px 10px", fontSize: 13 }} placeholder="📌 Location — type & search..."
+          value={value || ""} onChange={e => { onChange(e.target.value); setNoHits(false); }}
+          onKeyDown={e => e.key === "Enter" && search()} />
+        <button onClick={search} style={{ ...btn(T.bg, T.textMuted, { fontSize: 12, border: "1px solid " + T.border, flexShrink: 0, padding: "8px 12px" }) }}>{busy ? "..." : "🔍"}</button>
+      </div>
+      {noHits && <p style={{ fontSize: 11, color: T.accent, margin: "4px 0 0" }}>No matches — try adding the full name or town, e.g. "Waikite Valley Thermal Pools".</p>}
+      {results.length > 0 && (
+        <div style={{ border: "1px solid " + T.border, borderRadius: T.radiusSm, marginTop: 4, overflow: "hidden" }}>
+          {results.map(r => (
+            <button key={r.place_id} onClick={() => { onPick((r.display_name || "").split(",")[0].trim(), r.lat, r.lon); setResults([]); }}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", background: T.surface, border: "none", borderBottom: "1px solid " + T.borderLight, cursor: "pointer", fontSize: 12, color: T.text }}>
+              {r.display_name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── COMPANY SEARCH ───────────────────────────────────────────────────────────
 // NZ business/place search that fills company name + location together
 function CompanySearch({ value, location, onPick, onChange, onLocationChange }) {
@@ -5649,6 +5780,7 @@ function AppInner() {
           const mapsUrl = act => {
             const pl = state.places.find(p => p.id === act.placeId);
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "");
+            if (act.lat && act.lng) return isIOS ? `https://maps.apple.com/?daddr=${act.lat},${act.lng}` : `https://www.google.com/maps/dir/?api=1&destination=${act.lat},${act.lng}`;
             if (pl && pl.lat && pl.lng) return isIOS ? `https://maps.apple.com/?daddr=${pl.lat},${pl.lng}` : `https://www.google.com/maps/dir/?api=1&destination=${pl.lat},${pl.lng}`;
             const q = encodeURIComponent(act.location || act.title || "");
             return isIOS ? `https://maps.apple.com/?q=${q}` : `https://www.google.com/maps/search/?api=1&query=${q}`;
@@ -5659,7 +5791,9 @@ function AppInner() {
               {acts.map(a => (
                 <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
                   <span style={{ fontSize: 12, flex: 1 }}>
-                    {a.time && <b>{a.time} · </b>}{a.title}
+                    {a.type === "stay"
+                      ? <b>🛏️ {a.checkIn ? "Check-in " + a.checkIn + " · " : ""}</b>
+                      : a.time ? <b>{a.time} · </b> : null}{a.title}
                   </span>
                   <a href={mapsUrl(a)} target="_blank" rel="noopener noreferrer"
                     style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "white", borderRadius: 99, padding: "3px 10px", fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0 }}>
