@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.59
+          Adventure Hub · v1.60
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2070,7 +2070,6 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
     delete payload._unsaved; delete payload._tentClash; delete payload._saveErr;
     if (data._unsaved) dispatch({ type: "ADD_ITINERARY", payload });
     else dispatch({ type: "SET_ITINERARY", payload });
-    if (data.bookingId && payload.title) dispatch({ type: "UPD_BOOKING", payload: { id: data.bookingId, destination: payload.title } });
     if (onClose) onClose();
   };
   if (inline) return (
@@ -2404,9 +2403,10 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   const handleItinSave = (payload) => {
     // Save days and notes back to the booking
     dispatch({ type: "UPD_BOOKING_DAYS", payload: { id: b.id, days: payload.days, notes: payload.notes } });
-    // Also update dates if changed
-    if (payload.start !== b.start || payload.end !== b.end) {
-      dispatch({ type: "UPD_BOOKING", payload: { id: b.id, start: payload.start, end: payload.end, destination: payload.title || b.destination } });
+    // Sync dates and/or trip name when either changed
+    const newDest = (payload.title || "").trim() || b.destination;
+    if (payload.start !== b.start || payload.end !== b.end || newDest !== b.destination) {
+      dispatch({ type: "UPD_BOOKING", payload: { id: b.id, start: payload.start, end: payload.end, destination: newDest } });
     }
   };
 
