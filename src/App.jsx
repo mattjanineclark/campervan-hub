@@ -271,7 +271,7 @@ const SEED_RULES = [
 const INIT = {
   bookings: [], places: [], equipment: [],
   guides: [], rules: [], itineraries: [],
-  families: DEFAULT_FAMILIES, vanPhoto: null, vanName: "The Family Campervan", vanManual: null,
+  families: DEFAULT_FAMILIES, vanPhoto: null, vanName: "The Family Campervan", vanPlate: "", vanManual: null,
   packingByFamily: {}, // { familyId: [{id,category,item,status}] }
   checklists: {}, // { __setup__: [...], __packdown__: [...], __return__: [...] }
   dueDates: [],   // [{id, label, dueDate, notes}]
@@ -315,6 +315,7 @@ function reducer(state, { type, payload, id }) {
     case "DEL_FAMILY": return { ...state, families: state.families.filter(f => f.id !== id) };
     case "SET_VAN_PHOTO": return { ...state, vanPhoto: payload };
     case "SET_VAN_NAME": return { ...state, vanName: payload };
+    case "SET_VAN_PLATE": return { ...state, vanPlate: payload };
     case "SET_VAN_MANUAL": return { ...state, vanManual: payload };
     // Supabase bulk load actions
     case "RESET_FAMILIES": return { ...state, families: payload };
@@ -890,7 +891,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.66
+          Adventure Hub · v1.67
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3318,6 +3319,7 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
 
   const PANEL_TABS = [
     { id: "kit",      label: "Kit & Pack", icon: "🎒" },
+    { id: "pickup",   label: "Pick Up",    icon: "🚦" },
     { id: "setup",    label: "Set Up",     icon: "✅" },
     { id: "packdown", label: "Pack Down",  icon: "🚐" },
     { id: "return",   label: "Return Van", icon: "🔑" },
@@ -3326,6 +3328,20 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
   const setupKey    = "__setup__";
   const packdownKey = "__packdown__";
   const returnKey   = "__return__";
+  const pickupKey   = "__pickup__";
+
+  const PICKUP_DEFAULTS = [
+    { id: "pu1", item: "Record odometer reading in the app", done: false },
+    { id: "pu2", item: "Check fuel level — note if below ¼", done: false },
+    { id: "pu3", item: "Walk-around exterior check — photograph any damage", done: false },
+    { id: "pu4", item: "Tyres look OK (condition & inflation)", done: false },
+    { id: "pu5", item: "Fresh water level checked", done: false },
+    { id: "pu6", item: "Gas bottles — level checked & secured", done: false },
+    { id: "pu7", item: "Toilet cassette empty", done: false },
+    { id: "pu8", item: "Keys & step/tank controller collected", done: false },
+    { id: "pu9", item: "Interior clean & ready", done: false },
+    { id: "pu10", item: "Check Van tab for any due items before you go", done: false },
+  ];
 
   const SETUP_DEFAULTS = [
     { id: "su1", item: "Level the van", done: false },
@@ -3360,6 +3376,7 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
     { id: "rv10", item: "Lock all external hatches", done: false },
   ];
 
+  const setPickup   = items => dispatch({ type: "SET_CHECKLIST", payload: { key: pickupKey,   items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
   const setSetup    = items => dispatch({ type: "SET_CHECKLIST", payload: { key: setupKey,    items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
   const setPackdown = items => dispatch({ type: "SET_CHECKLIST", payload: { key: packdownKey, items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
   const setReturn   = items => dispatch({ type: "SET_CHECKLIST", payload: { key: returnKey,   items: items.map(i => ({ ...i, status: i.done ? "done" : "pending", category: "checklist" })) } });
@@ -3369,6 +3386,7 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
     return raw.map(i => ({ ...i, done: i.status === "done", tickedAt: i.tickedAt || null }));
   };
 
+  const pickupList   = toChecklist(checklists[pickupKey],   PICKUP_DEFAULTS);
   const setupList    = toChecklist(checklists[setupKey],    SETUP_DEFAULTS);
   const packdownList = toChecklist(checklists[packdownKey], PACKDOWN_DEFAULTS);
   const returnList   = toChecklist(checklists[returnKey],   RETURN_DEFAULTS);
@@ -3452,7 +3470,7 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
   return (
     <div>
       {/* ── Panel tab switcher ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4, background: T.bg, padding: 4, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, marginBottom: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 4, background: T.bg, padding: 4, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, marginBottom: 14 }}>
         {PANEL_TABS.map(t => (
           <button key={t.id} onClick={() => setPanelTab(t.id)}
             style={{ padding: "8px 4px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: panelTab === t.id ? 700 : 500, background: panelTab === t.id ? T.surface : T.bg, color: panelTab === t.id ? T.primary : T.textMuted, boxShadow: panelTab === t.id ? T.shadow : "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -3479,6 +3497,16 @@ function KitPanel({ equipment, dispatch, currentFamilyId, packingByFamily, check
             <p style={{ margin: 0, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>📦 Tick off each item before you leave. Shared across all families.</p>
           </div>
           <Checklist items={packdownList} setItems={setPackdown} accent={T.accent} />
+        </div>
+      )}
+
+      {/* ── Pick Up Van checklist ── */}
+      {panelTab === "pickup" && (
+        <div>
+          <div style={{ ...card({ padding: 12, marginBottom: 12, background: T.accent + "08", border: `1px solid ${T.accent}20` }) }}>
+            <p style={{ margin: 0, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>🚦 Run through when collecting the van — protects everyone by recording its condition at handover. Shared across all families.</p>
+          </div>
+          <Checklist items={pickupList} setItems={setPickup} accent={T.accent} />
         </div>
       )}
 
@@ -4045,6 +4073,9 @@ function SettingsPanel({ state, dispatch, currentFamilyId, themeMode, onToggleTh
   const families = state.families || [];
   const { vanPhoto, vanName } = state;
   const [newVanName, setNewVanName] = useState(vanName);
+  const [newVanPlate, setNewVanPlate] = useState(state.vanPlate || "");
+  const [vanPlateSaved, setVanPlateSaved] = useState(false);
+  const saveVanPlate = () => { dispatch({ type: "SET_VAN_PLATE", payload: newVanPlate.trim().toUpperCase() }); setVanPlateSaved(true); setTimeout(() => setVanPlateSaved(false), 2000); };
   const [vanNameSaved, setVanNameSaved] = useState(false);
   const handleVanPhoto = async e => {
     const file = e.target.files[0]; if (!file) return;
@@ -4100,6 +4131,11 @@ function SettingsPanel({ state, dispatch, currentFamilyId, themeMode, onToggleTh
               <button onClick={saveVanName} style={btn(T.primary, T.surface)}>{vanNameSaved ? "Saved!" : "Save"}</button>
             </div>
             <p style={{ color: T.textDim, fontSize: 12, marginTop: 6 }}>Shown on the sign-in screen.</p>
+            <label style={{ ...lbl, marginTop: 10 }}>Licence Plate</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input style={{ ...inp, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }} value={newVanPlate} onChange={e => setNewVanPlate(e.target.value)} placeholder="e.g. ABC123" onKeyDown={e => e.key === "Enter" && saveVanPlate()} />
+              <button onClick={saveVanPlate} style={btn(T.primary, T.surface)}>{vanPlateSaved ? "Saved!" : "Save"}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -5205,6 +5241,7 @@ function AppInner() {
         const vans = Array.isArray(vs) ? vs : [vs];
         if (vans[0]) {
           if (vans[0].van_name) dispatch({ type: "SET_VAN_NAME", payload: vans[0].van_name });
+          if (vans[0].van_plate) dispatch({ type: "SET_VAN_PLATE", payload: vans[0].van_plate });
           if (vans[0].van_photo) dispatch({ type: "SET_VAN_PHOTO", payload: vans[0].van_photo });
           if (vans[0].van_manual) dispatch({ type: "SET_VAN_MANUAL", payload: vans[0].van_manual });
           if (vans[0].odo_rate) dispatch({ type: "SET_ODO_RATE", payload: vans[0].odo_rate });
@@ -5213,6 +5250,7 @@ function AppInner() {
             __setup__:    vans[0].checklist_setup    || null,
             __packdown__: vans[0].checklist_packdown || null,
             __return__:   vans[0].checklist_return   || null,
+            __pickup__:   vans[0].checklist_pickup   || null,
           }});
         }
 
@@ -5612,10 +5650,12 @@ function AppInner() {
         case "DEL_MAINT": await supa.delete("van_maintenance_log", { id }); break;
         // VAN SETTINGS
         case "SET_CHECKLIST": {
-          const col = payload.key === "__setup__" ? "checklist_setup" : payload.key === "__packdown__" ? "checklist_packdown" : "checklist_return";
+          const col = payload.key === "__setup__" ? "checklist_setup" : payload.key === "__packdown__" ? "checklist_packdown" : payload.key === "__pickup__" ? "checklist_pickup" : "checklist_return";
           await supa.update("van_settings", { [col]: payload.items }, { id: 1 });
           break;
         }
+        case "SET_VAN_NAME": await supa.update("van_settings", { van_name: payload }, { id: 1 }); break;
+        case "SET_VAN_PLATE": await supa.update("van_settings", { van_plate: payload }, { id: 1 }); break;
         case "SET_VAN_PHOTO": await supa.update("van_settings", { van_photo: payload }, { id: 1 }); break;
         case "SET_VAN_MANUAL": await supa.update("van_settings", { van_manual: payload }, { id: 1 }); break;
         default: break;
@@ -5623,7 +5663,7 @@ function AppInner() {
       if (type.startsWith("ADD_") || type === "UPD_DUE_DATE" || type === "UPD_MAINT" || type === "UPD_PLACE") showToast("Saved ✓");
 
       // ── Automatic activity logging for everything else ──
-      const CHECKLIST_NAMES = { __setup__: "Set Up list", __packdown__: "Pack Down list", __return__: "Return Van list" };
+      const CHECKLIST_NAMES = { __setup__: "Set Up list", __packdown__: "Pack Down list", __return__: "Return Van list", __pickup__: "Pick Up list" };
       const autoLog = {
         UPD_BOOKING: () => {
           const keys = Object.keys(payload || {}).filter(k => k !== "id");
@@ -5672,6 +5712,7 @@ function AppInner() {
         ADD_FAMILY: () => ["Added family", payload.name || ""],
         UPDATE_FAMILY: () => ["Updated family", payload.name || ""],
         SET_VAN_PHOTO: () => ["Updated van photo", ""],
+        SET_VAN_PLATE: () => ["Updated licence plate", String(payload || "")],
         SET_VAN_MANUAL: () => ["Updated van manual", ""],
         SET_ODO_RATE: () => ["Changed km rate", "$" + payload + "/km"],
       };
@@ -5946,6 +5987,7 @@ function AppInner() {
               ]} extra={<PlannedToday acts={todayActs} />} />;
             if (active) return <Hero tag="🎉 Your trip is on!" title={myNext.destination} sub={`${myNext.start} → ${myNext.end}`} onTap={openTrip}
               buttons={[
+                ...(todayStr === myNext.start ? [{ label: "🚦 Pick Up List", onTap: () => goKit("pickup") }] : []),
                 { label: "✅ Set Up List", onTap: () => goKit("setup") },
                 { label: "🚐 Pack Down List", onTap: () => goKit("packdown") },
                 { label: "🗺️ Trip Plan", onTap: openTrip },
