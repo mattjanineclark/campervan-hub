@@ -891,7 +891,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.68
+          Adventure Hub · v1.69
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -5467,10 +5467,17 @@ function AppInner() {
   const fEmoji = id => families.find(f => f.id === id)?.emoji ?? "";
 
   // ── Supabase-aware dispatch: persist every action to DB ─────────────────
+  // sbDispatch is a stable callback (deps []), so it must read live values via
+  // refs — otherwise it forever sees the sign-in state from first render.
+  const currentFamilyRef = useRef(currentFamily);
+  currentFamilyRef.current = currentFamily;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const logActivity = async (action, detail) => {
     try {
       await supa.insert("activity_log", {
-        family_id: currentFamily,
+        family_id: currentFamilyRef.current,
         action,
         detail,
         created_at: new Date().toISOString()
@@ -5522,7 +5529,7 @@ function AppInner() {
         case "UPD_BOOKING": {
           // Clash check before updating dates
           if (payload.start && payload.end) {
-            const clash = state.bookings.filter(b =>
+            const clash = stateRef.current.bookings.filter(b =>
               b.id !== payload.id && b.status === "confirmed" &&
               payload.start <= b.end && payload.end >= b.start
             );
@@ -5557,7 +5564,7 @@ function AppInner() {
         case "UPD_PLACE": await supa.update("places", { name: payload.name, category: payload.category, notes: payload.notes || "" }, { id: payload.id }); break;
         case "DEL_PLACE": await supa.delete("places", { id });
           {
-            const pl = state.places.find(p => p.id === id);
+            const pl = stateRef.current.places.find(p => p.id === id);
             await logActivity("Deleted place", pl?.name || id);
           } break;
         case "ADD_REVIEW":
@@ -5594,7 +5601,7 @@ function AppInner() {
         case "UPDATE_GUIDE": await supa.upsert("guides", toDB.guide(payload)); break;
         case "DEL_GUIDE": await supa.delete("guides", { id });
           {
-            const g = state.guides.find(g => g.id === id);
+            const g = stateRef.current.guides.find(g => g.id === id);
             await logActivity("Deleted guide", g?.title || id);
           } break;
                 case "SET_RULES":
@@ -5615,7 +5622,7 @@ function AppInner() {
           break;
         case "MARK_ODO_PAID":
           {
-            const entry = state.odoLog.find(e => e.id === id);
+            const entry = stateRef.current.odoLog.find(e => e.id === id);
             await supa.update("odometer_log", { paid: !entry?.paid }, { id });
           } break;
         case "SET_ODO_RATE":
@@ -5627,7 +5634,7 @@ function AppInner() {
         case "SET_ITINERARY": await supa.upsert("itineraries", toDB.itin(payload)); break;
         case "DEL_ITINERARY": await supa.delete("itineraries", { id });
           {
-            const it = state.itineraries.find(i => i.id === id);
+            const it = stateRef.current.itineraries.find(i => i.id === id);
             await logActivity("Deleted trip", it?.title || id);
           } break;
         // FAMILIES
@@ -5635,7 +5642,7 @@ function AppInner() {
         case "UPDATE_FAMILY": await supa.upsert("families", toDB.family(payload)); break;
         case "DEL_FAMILY": await supa.delete("families", { id });
           {
-            const f = state.families.find(f => f.id === id);
+            const f = stateRef.current.families.find(f => f.id === id);
             await logActivity("Removed family", f?.name || id);
           } break;
         // DUE DATES
@@ -5676,31 +5683,31 @@ function AppInner() {
           const keys = Object.keys(payload || {}).filter(k => k !== "id");
           // Skip keystroke-level updates (guest name typing etc)
           if (keys.length > 0 && keys.every(k => k === "guestName" || k === "guests")) return null;
-          const b = state.bookings.find(x => x.id === payload.id);
+          const b = stateRef.current.bookings.find(x => x.id === payload.id);
           return ["Updated booking", payload.destination || b?.destination || ""];
         },
         CONFIRM_BOOKING: () => {
-          const b = state.bookings.find(x => x.id === id);
+          const b = stateRef.current.bookings.find(x => x.id === id);
           return ["Confirmed booking", b?.destination || ""];
         },
         UPD_BOOKING_DAYS: () => {
-          const b = state.bookings.find(x => x.id === payload.id);
+          const b = stateRef.current.bookings.find(x => x.id === payload.id);
           return ["Updated trip plan", b?.destination || ""];
         },
         UPD_BOOKING_COLLAB: () => {
-          const b = state.bookings.find(x => x.id === payload.id);
+          const b = stateRef.current.bookings.find(x => x.id === payload.id);
           return ["Updated trip collaborators", b?.destination || ""];
         },
         ADD_MAINT: () => ["Added maintenance" + (payload.workStatus === "planned" ? " (planned)" : ""), payload.description || ""],
         UPD_MAINT: () => ["Updated maintenance", payload.description || ""],
         DEL_MAINT: () => {
-          const m = state.maintLog.find(x => x.id === id);
+          const m = stateRef.current.maintLog.find(x => x.id === id);
           return ["Deleted maintenance entry", m?.description || ""];
         },
         ADD_DUE_DATE: () => ["Added due item", payload.label || ""],
         UPD_DUE_DATE: () => ["Updated due item", payload.label || ""],
         DEL_DUE_DATE: () => {
-          const d = state.dueDates.find(x => x.id === id);
+          const d = stateRef.current.dueDates.find(x => x.id === id);
           return ["Deleted due item", d?.label || ""];
         },
         ADD_PLACE: () => ["Added place", payload.name || ""],
