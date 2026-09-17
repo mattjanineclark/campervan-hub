@@ -584,7 +584,7 @@ function TripReport({ booking, places, vanName, guestName, onClose }) {
               {days.map((day, di) => {
                 const d = new Date(day.date + "T12:00:00");
                 const dayName = DAY_NAMES[d.getDay()];
-                const acts = day.activities || [];
+                const acts = sortActs(day.activities);
                 return (
                   <div key={di} style={{ marginBottom: 14 }}>
                     <div style={{ fontWeight: 700, color: T.primary, fontSize: 13, marginBottom: 6, paddingBottom: 4, borderBottom: `1px solid ${T.border}` }}>
@@ -701,7 +701,7 @@ function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, 
           : days.map((day, di) => {
             const d = new Date(day.date + "T12:00:00");
             const dayName = DAY_NAMES[d.getDay()];
-            const acts = day.activities || [];
+            const acts = sortActs(day.activities);
             return (
               <div key={di} style={{ ...card({ padding: 12, marginBottom: 8 }) }}>
                 <div style={{ fontWeight: 700, color: T.primary, fontSize: 13, marginBottom: 8 }}>
@@ -891,7 +891,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.67
+          Adventure Hub · v1.68
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2069,6 +2069,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
     }
     const payload = { ...data };
     delete payload._unsaved; delete payload._tentClash; delete payload._saveErr;
+    payload.days = (payload.days || []).map(d => ({ ...d, activities: sortActs(d.activities) }));
     if (data._unsaved) dispatch({ type: "ADD_ITINERARY", payload });
     else dispatch({ type: "SET_ITINERARY", payload });
     if (onClose) onClose();
@@ -2080,7 +2081,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
       </div>
       {(data.days || []).map((day, di) => {
         const dayLabel = day.date ? new Date(day.date + "T12:00:00").toLocaleDateString("en-NZ", { weekday: "long", day: "numeric", month: "long" }) : "";
-        const acts = day.activities || [];
+        const acts = sortActs(day.activities);
         return (
           <div key={di} style={{ marginBottom: 14 }}>
             {/* Day banner */}
@@ -2242,7 +2243,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                   {isStay
                     ? <span style={{ fontSize: 16, flexShrink: 0 }}>🛏️</span>
-                    : <input style={{ ...inp, width: 64, flexShrink: 0, padding: "7px 8px", fontSize: 13 }} placeholder="Time" value={act.time || ""} onChange={e => updAct(di, ai, "time", e.target.value)} />}
+                    : <input type="time" style={{ ...dateInp, width: 96, flexShrink: 0, padding: "7px 6px", fontSize: 13 }} value={act.time || ""} onChange={e => updAct(di, ai, "time", e.target.value)} />}
                   <input style={{ ...inp, flex: 1, minWidth: 0, padding: "7px 8px", fontSize: 13 }} placeholder={isStay ? "Where are you staying? *" : "Activity title *"} value={act.title} onChange={e => updAct(di, ai, "title", e.target.value)} />
                   <button onClick={() => delAct(di, ai)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 20, padding: "0 2px", flexShrink: 0 }}>&times;</button>
                 </div>
@@ -2251,11 +2252,11 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
                     <div>
                       <label style={{ ...lbl, fontSize: 10 }}>Check-in</label>
-                      <input style={{ ...inp, padding: "7px 8px", fontSize: 13 }} placeholder="e.g. 14:00" value={act.checkIn || ""} onChange={e => updAct(di, ai, "checkIn", e.target.value)} />
+                      <input type="time" style={{ ...dateInp, padding: "7px 6px", fontSize: 13 }} value={act.checkIn || ""} onChange={e => updAct(di, ai, "checkIn", e.target.value)} />
                     </div>
                     <div>
                       <label style={{ ...lbl, fontSize: 10 }}>Check-out</label>
-                      <input style={{ ...inp, padding: "7px 8px", fontSize: 13 }} placeholder="e.g. 10:00" value={act.checkOut || ""} onChange={e => updAct(di, ai, "checkOut", e.target.value)} />
+                      <input type="time" style={{ ...dateInp, padding: "7px 6px", fontSize: 13 }} value={act.checkOut || ""} onChange={e => updAct(di, ai, "checkOut", e.target.value)} />
                     </div>
                   </div>
                 )}
@@ -2824,7 +2825,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
               <p style={{ fontSize: 11, color: T.textDim, fontStyle: "italic", margin: 0 }}>No plan yet — tap Edit Plan to add activities.</p>
             ) : (
               days.map((day, di) => {
-                const acts = day.activities || [];
+                const acts = sortActs(day.activities);
                 const dayLabel = day.date ? new Date(day.date + "T12:00:00").toLocaleDateString("en-NZ", { weekday: "long", day: "numeric", month: "long" }) : "";
                 return (
                   <div key={di} style={{ marginBottom: 12 }}>
@@ -4415,6 +4416,12 @@ function actMapsUrl(act, places) {
   return isIOS ? `https://maps.apple.com/?q=${encodeURIComponent(q)}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
 }
 
+// ─── ACTIVITY SORTING ─────────────────────────────────────────────────────────
+// Chronological order within a day: stays by check-in, activities by time,
+// untimed entries keep their added order at the end.
+const actSortKey = a => ((a.type === "stay" ? a.checkIn : a.time) || "99:99");
+const sortActs = list => [...(list || [])].sort((a, b) => actSortKey(a).localeCompare(actSortKey(b)));
+
 // ─── ACTIVITY LOCATION FIELD ──────────────────────────────────────────────────
 // Location input with NZ place search (Nominatim). Picking a result stores
 // coordinates so the Home hero's Directions button routes precisely.
@@ -5979,7 +5986,7 @@ function AppInner() {
             const active = todayStr >= myNext.start && todayStr <= myNext.end;
             const lastDay = todayStr === myNext.end;
             const openTrip = () => { setTab("trips"); setOpenItinId(myNext.id); };
-            const todayActs = active ? (((myNext.days || []).find(dd => dd.date === todayStr) || {}).activities || []) : [];
+            const todayActs = active ? sortActs(((myNext.days || []).find(dd => dd.date === todayStr) || {}).activities) : [];
             if (lastDay) return <Hero tag="🏠 Last day — heading home?" title={myNext.destination} sub={`${myNext.start} → ${myNext.end}`} onTap={openTrip}
               buttons={[
                 { label: "🔑 Return Van List", onTap: () => goKit("return") },
