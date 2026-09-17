@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.63
+          Adventure Hub · v1.64
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2089,6 +2089,10 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
                 : act.time ? <span style={{ fontSize: 11, color: T.textDim, minWidth: 36, paddingTop: 1 }}>{act.time}</span> : null}
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 12, color: T.text }}>{act.title}{act.type === "stay" && act.checkIn ? <span style={{ fontWeight: 400, color: T.textDim }}> · check-in {act.checkIn}</span> : ""}</div>
+                {actMapsUrl(act, places) && (
+                  <a href={actMapsUrl(act, places)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                    style={{ fontSize: 11, color: T.primary, fontWeight: 700, textDecoration: "none" }}>🧭 Directions</a>
+                )}
                 {act.place && <div style={{ fontSize: 11, color: T.primary, marginTop: 1 }}>📍 {act.place}</div>}
                 {act.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 1, fontStyle: "italic" }}>{act.notes}</div>}
               </div>
@@ -2225,6 +2229,12 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
                       📍 Or pick from saved places...
                     </button>}
                   </div>
+                )}
+                {actMapsUrl(act, places) && (
+                  <a href={actMapsUrl(act, places)} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "inline-block", fontSize: 11, color: T.primary, fontWeight: 700, textDecoration: "none", marginBottom: 6 }}>
+                    🧭 Open in Maps
+                  </a>
                 )}
                 {/* Attachments — reservations, confirmations */}
                 {(act.attachments || []).map((a, fi) => (
@@ -4257,6 +4267,19 @@ function DueDateForm({ form, setForm, onSave, onCancel, onDel }) {
   );
 }
 
+// ─── ACTIVITY MAPS LINK ───────────────────────────────────────────────────────
+// Best-available maps link for an activity/stay: pinned coords → saved place
+// coords → name search. Apple Maps on iOS, Google Maps elsewhere.
+function actMapsUrl(act, places) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "");
+  if (act.lat && act.lng) return isIOS ? `https://maps.apple.com/?daddr=${act.lat},${act.lng}` : `https://www.google.com/maps/dir/?api=1&destination=${act.lat},${act.lng}`;
+  const pl = (places || []).find(p => p.id === act.placeId);
+  if (pl && pl.lat && pl.lng) return isIOS ? `https://maps.apple.com/?daddr=${pl.lat},${pl.lng}` : `https://www.google.com/maps/dir/?api=1&destination=${pl.lat},${pl.lng}`;
+  const q = (act.location || act.title || "").trim();
+  if (!q) return null;
+  return isIOS ? `https://maps.apple.com/?q=${encodeURIComponent(q)}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+}
+
 // ─── ACTIVITY LOCATION FIELD ──────────────────────────────────────────────────
 // Location input with NZ place search (Nominatim). Picking a result stores
 // coordinates so the Home hero's Directions button routes precisely.
@@ -5777,14 +5800,7 @@ function AppInner() {
               {label}
             </button>
           );
-          const mapsUrl = act => {
-            const pl = state.places.find(p => p.id === act.placeId);
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "");
-            if (act.lat && act.lng) return isIOS ? `https://maps.apple.com/?daddr=${act.lat},${act.lng}` : `https://www.google.com/maps/dir/?api=1&destination=${act.lat},${act.lng}`;
-            if (pl && pl.lat && pl.lng) return isIOS ? `https://maps.apple.com/?daddr=${pl.lat},${pl.lng}` : `https://www.google.com/maps/dir/?api=1&destination=${pl.lat},${pl.lng}`;
-            const q = encodeURIComponent(act.location || act.title || "");
-            return isIOS ? `https://maps.apple.com/?q=${q}` : `https://www.google.com/maps/search/?api=1&query=${q}`;
-          };
+          const mapsUrl = act => actMapsUrl(act, state.places);
           const PlannedToday = ({ acts }) => acts.length === 0 ? null : (
             <div onClick={e => e.stopPropagation()} style={{ marginTop: 12, background: "rgba(255,255,255,0.12)", borderRadius: 12, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, opacity: 0.85, textTransform: "uppercase", marginBottom: 6 }}>📌 Planned today</div>
