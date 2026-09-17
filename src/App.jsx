@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.62
+          Adventure Hub · v1.63
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2106,7 +2106,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
     </div>
   );
   return (
-    <div style={{ ...card({ padding: "10px 4px" }), marginBottom: 16 }}>
+    <div style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <input style={{ ...inp, fontSize: 16, fontWeight: 700, color: T.primary, flex: 1, minWidth: 0, marginRight: 8 }}
           value={data.title || ""} placeholder="Trip name..." onChange={e => h("title", e.target.value)} />
