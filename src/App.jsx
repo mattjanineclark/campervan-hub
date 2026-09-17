@@ -403,10 +403,10 @@ function ConfirmDialog({ message, detail, onConfirm, onCancel, confirmLabel = "D
   );
 }
 
-function Modal({ title, onClose, children, width = 480, pad = 18 }) {
+function Modal({ title, onClose, children, width = 480, pad = 18, edge = false }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(26,46,26,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 800, padding: "16px 12px", overflowY: "auto" }} onClick={onClose}>
-      <div style={{ ...card({ padding: pad }), width, maxWidth: "97vw", maxHeight: "none", overflowY: "visible", overflowX: "hidden", boxShadow: T.shadowLg, marginTop: 8, marginBottom: 16 }} onClick={e => e.stopPropagation()}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(26,46,26,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 800, padding: edge ? "12px 2px" : "16px 12px", overflowY: "auto" }} onClick={onClose}>
+      <div style={{ ...card({ padding: pad }), width, maxWidth: edge ? "100%" : "97vw", maxHeight: "none", overflowY: "visible", overflowX: "hidden", boxShadow: T.shadowLg, marginTop: 8, marginBottom: 16 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <h3 style={{ margin: 0, color: T.text, fontSize: 17, fontWeight: 700 }}>{title}</h3>
           <button onClick={onClose} style={{ background: T.bg, border: `1px solid ${T.border}`, color: T.textMuted, fontSize: 18, cursor: "pointer", lineHeight: 1, borderRadius: T.radiusSm, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.61
+          Adventure Hub · v1.62
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2106,7 +2106,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
     </div>
   );
   return (
-    <div style={{ ...card({ padding: 10 }), marginBottom: 16 }}>
+    <div style={{ ...card({ padding: "10px 4px" }), marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <input style={{ ...inp, fontSize: 16, fontWeight: 700, color: T.primary, flex: 1, minWidth: 0, marginRight: 8 }}
           value={data.title || ""} placeholder="Trip name..." onChange={e => h("title", e.target.value)} />
@@ -2173,7 +2173,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
       {(data.days || []).map((day, di) => {
         const d = new Date(day.date);
         return (
-          <div key={day.date} style={{ background: T.bg, borderRadius: T.radiusSm, padding: "10px 6px", marginTop: 10, border: `1px solid ${T.border}` }}>
+          <div key={day.date} style={{ background: T.bg, borderRadius: T.radiusSm, padding: "8px 3px", marginTop: 10, border: `1px solid ${T.border}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ fontWeight: 700, color: T.primary, fontSize: 13 }}>{DAY_NAMES[d.getDay()]} <span style={{ color: T.textMuted, fontWeight: 500 }}>{day.date}</span></span>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -2184,7 +2184,7 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
             {(day.activities || []).map((act, ai) => {
               const isStay = act.type === "stay";
               return (
-              <div key={act.id} style={{ ...card({ padding: "10px 8px", marginBottom: 8 }), marginLeft: -2, marginRight: -2, border: `1px solid ${isStay ? (T.sky || "#3b82f6") + "50" : T.border}`, borderLeft: `3px solid ${isStay ? (T.sky || "#3b82f6") : T.primary}` }}>
+              <div key={act.id} style={{ ...card({ padding: "9px 6px", marginBottom: 8 }), marginLeft: -1, marginRight: -1, border: `1px solid ${isStay ? (T.sky || "#3b82f6") + "50" : T.border}`, borderLeft: `3px solid ${isStay ? (T.sky || "#3b82f6") : T.primary}` }}>
                 {/* Row 1 */}
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                   {isStay
@@ -2415,7 +2415,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
       {showReport && <TripReport booking={b} places={places} vanName={null} guestName={b.guestName || b.guests || ""} onClose={() => setShowReport(false)} />}
       {/* Full editor modal */}
       {fullEdit && (
-        <Modal title={"Plan: " + b.destination} onClose={() => setFullEdit(false)} pad={8}>
+        <Modal title={"Plan: " + b.destination} onClose={() => setFullEdit(false)} pad={6} edge width={720}>
           <ItineraryEditor
             itin={bookingAsItin}
             dispatch={(action) => {
