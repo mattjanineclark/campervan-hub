@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.64
+          Adventure Hub · v1.65
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2073,40 +2073,76 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
     if (onClose) onClose();
   };
   if (inline) return (
-    <div style={{ padding: "12px 14px" }}>
+    <div style={{ padding: "12px 10px" }}>
       <div style={{ padding: "2px 0 10px" }}>
         <p style={{ ...sectionHead, margin: 0 }}>TRIP PLAN</p>
       </div>
-      {(data.days || []).map((day, di) => (
-        <div key={di} style={{ marginBottom: 12 }}>
-          <div style={{ fontWeight: 700, color: T.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
-            Day {di + 1} · {day.date}
-          </div>
-          {(day.activities || []).map((act, ai) => (
-            <div key={ai} style={{ ...card({ padding: "8px 10px" }), marginBottom: 4, display: "flex", gap: 8, alignItems: "flex-start", borderLeft: act.type === "stay" ? `3px solid ${T.sky || "#3b82f6"}` : undefined }}>
-              {act.type === "stay"
-                ? <span style={{ fontSize: 12, paddingTop: 1 }}>🛏️</span>
-                : act.time ? <span style={{ fontSize: 11, color: T.textDim, minWidth: 36, paddingTop: 1 }}>{act.time}</span> : null}
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 12, color: T.text }}>{act.title}{act.type === "stay" && act.checkIn ? <span style={{ fontWeight: 400, color: T.textDim }}> · check-in {act.checkIn}</span> : ""}</div>
-                {actMapsUrl(act, places) && (
-                  <a href={actMapsUrl(act, places)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                    style={{ fontSize: 11, color: T.primary, fontWeight: 700, textDecoration: "none" }}>🧭 Directions</a>
-                )}
-                {act.place && <div style={{ fontSize: 11, color: T.primary, marginTop: 1 }}>📍 {act.place}</div>}
-                {act.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 1, fontStyle: "italic" }}>{act.notes}</div>}
-              </div>
+      {(data.days || []).map((day, di) => {
+        const dayLabel = day.date ? new Date(day.date + "T12:00:00").toLocaleDateString("en-NZ", { weekday: "long", day: "numeric", month: "long" }) : "";
+        const acts = day.activities || [];
+        return (
+          <div key={di} style={{ marginBottom: 14 }}>
+            {/* Day banner */}
+            <div style={{ background: "linear-gradient(135deg, #1a2e1a, #2d6a4f)", color: "white", borderRadius: 10, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+              <span style={{ fontWeight: 800, fontSize: 13, flexShrink: 0 }}>Day {di + 1}</span>
+              <span style={{ fontSize: 11, opacity: 0.9, textAlign: "right" }}>{dayLabel}</span>
             </div>
-          ))}
-          {(day.activities || []).length === 0 && (
-            <div style={{ color: T.textDim, fontSize: 11, fontStyle: "italic", padding: "4px 0" }}>No activities planned yet</div>
-          )}
-        </div>
-      ))}
+            {acts.length === 0 && (
+              <div style={{ color: T.textDim, fontSize: 11, fontStyle: "italic", padding: "2px 4px 6px" }}>Nothing planned yet</div>
+            )}
+            {acts.map((act, ai) => {
+              const isStay = act.type === "stay";
+              const savedPlace = act.placeId ? places.find(p => p.id === act.placeId) : null;
+              const locLabel = savedPlace ? savedPlace.name : (act.location || act.place || "");
+              const mapU = actMapsUrl(act, places);
+              return (
+                <div key={ai} style={{ display: "flex", marginBottom: 6 }}>
+                  {/* Time / stay column */}
+                  <div style={{ width: 50, flexShrink: 0, paddingTop: 10, textAlign: "center" }}>
+                    {isStay
+                      ? <span style={{ fontSize: 16 }}>🛏️</span>
+                      : <span style={{ fontSize: 11, fontWeight: 800, color: T.primary }}>{act.time || "·"}</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0, ...card({ padding: "9px 10px" }), borderLeft: `3px solid ${isStay ? (T.sky || "#3b82f6") : T.primary}` }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: T.text }}>{act.title || (isStay ? "Overnight stay" : "Activity")}</div>
+                    {isStay && (act.checkIn || act.checkOut) && (
+                      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
+                        {act.checkIn ? "Check-in " + act.checkIn : ""}{act.checkIn && act.checkOut ? " · " : ""}{act.checkOut ? "Check-out " + act.checkOut : ""}
+                      </div>
+                    )}
+                    {(locLabel || mapU) && (
+                      <div style={{ fontSize: 11, marginTop: 3, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                        {locLabel && <span style={{ color: T.primary, fontWeight: 600 }}>📍 {locLabel}</span>}
+                        {mapU && <a href={mapU} target="_blank" rel="noopener noreferrer" style={{ color: T.primary, fontWeight: 700, textDecoration: "none" }}>🧭 Directions</a>}
+                      </div>
+                    )}
+                    {act.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 3, fontStyle: "italic", lineHeight: 1.45 }}>{act.notes}</div>}
+                    {(act.attachments || []).length > 0 && (
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 5 }}>
+                        {(act.attachments || []).map((a, fi) => (
+                          <button key={fi} onClick={() => setViewFile(a.url)} style={{ ...pill(T.primary + "12", T.primary), fontSize: 10, border: "1px solid " + T.primary + "25", cursor: "pointer", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {a.name || "File"}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
       <button onClick={() => onFullEdit && onFullEdit()}
         style={btn(T.primary + "15", T.primary, { width: "100%", marginTop: 8, fontSize: 12 })}>
         ✏️ Edit Full Trip Plan
       </button>
+      {viewFile && (
+        <div onClick={() => setViewFile(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 950, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          {(viewFile.includes(".pdf") || viewFile.startsWith("data:application/pdf"))
+            ? <iframe src={viewFile} title="Attachment" style={{ width: "100%", height: "80%", border: "none", borderRadius: 8, background: "white" }} />
+            : <img src={viewFile} alt="Attachment" style={{ maxWidth: "100%", maxHeight: "82%", borderRadius: 8, objectFit: "contain" }} />}
+          <button onClick={() => setViewFile(null)} style={{ marginTop: 14, background: "white", color: "#333", border: "none", borderRadius: 99, padding: "9px 24px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
+        </div>
+      )}
     </div>
   );
   return (
