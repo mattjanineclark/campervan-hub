@@ -890,7 +890,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.65
+          Adventure Hub · v1.66
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2104,7 +2104,10 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
                       : <span style={{ fontSize: 11, fontWeight: 800, color: T.primary }}>{act.time || "·"}</span>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0, ...card({ padding: "9px 10px" }), borderLeft: `3px solid ${isStay ? (T.sky || "#3b82f6") : T.primary}` }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: T.text }}>{act.title || (isStay ? "Overnight stay" : "Activity")}</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: T.text }}>{act.title || (isStay ? "Overnight stay" : "Activity")}</span>
+                      {parseFloat(act.cost) > 0 && <span style={{ ...pill(T.accent + "15", T.accent), fontSize: 10, flexShrink: 0 }}>${(parseFloat(act.cost)).toFixed(parseFloat(act.cost) % 1 ? 2 : 0)}</span>}
+                    </div>
                     {isStay && (act.checkIn || act.checkOut) && (
                       <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
                         {act.checkIn ? "Check-in " + act.checkIn : ""}{act.checkIn && act.checkOut ? " · " : ""}{act.checkOut ? "Check-out " + act.checkOut : ""}
@@ -2131,6 +2134,15 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
           </div>
         );
       })}
+      {(() => {
+        const tot = (data.days || []).reduce((s, d) => s + (d.activities || []).reduce((s2, a) => s2 + (parseFloat(a.cost) || 0), 0), 0);
+        return tot > 0 ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: T.accent + "0c", border: `1px solid ${T.accent}30`, borderRadius: T.radiusSm, padding: "8px 12px" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>💰 Planned costs</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>${tot.toFixed(2)}</span>
+          </div>
+        ) : null;
+      })()}
       <button onClick={() => onFullEdit && onFullEdit()}
         style={btn(T.primary + "15", T.primary, { width: "100%", marginTop: 8, fontSize: 12 })}>
         ✏️ Edit Full Trip Plan
@@ -2246,6 +2258,11 @@ function ItineraryEditor({ itin, dispatch, places, bookings, families, onClose, 
                     </div>
                   </div>
                 )}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <label style={{ ...lbl, margin: 0, fontSize: 10 }}>Cost $</label>
+                  <input style={{ ...inp, width: 90, padding: "6px 8px", fontSize: 13 }} type="number" step="0.01" placeholder="0" value={act.cost || ""} onChange={e => updAct(di, ai, "cost", e.target.value)} />
+                  <span style={{ fontSize: 10, color: T.textDim }}>(optional — for the trip budget)</span>
+                </div>
                 {/* Location */}
                 {act.placeId ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.primary + "10", borderRadius: T.radiusSm, padding: "8px 10px", border: `1px solid ${T.primary}30`, marginBottom: 8 }}>
@@ -2415,6 +2432,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   const cardRef = useRef(null);
   const [expanded, setExpanded] = useState(openId === b.id);
   const [fullEdit, setFullEdit] = useState(false);
+  const [viewPlanFile, setViewPlanFile] = useState(null);
   const [showOdoForm, setShowOdoForm] = useState(false);
   const [odoForm, setOdoForm] = useState({ startKm: "", endKm: "", tolls: false, tollAmt: "", notes: "" });
   const [confirmWarn, setConfirmWarn] = useState(null);
@@ -2806,33 +2824,78 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
             ) : (
               days.map((day, di) => {
                 const acts = day.activities || [];
-                const d = new Date(day.date + "T12:00:00");
-                const dayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
+                const dayLabel = day.date ? new Date(day.date + "T12:00:00").toLocaleDateString("en-NZ", { weekday: "long", day: "numeric", month: "long" }) : "";
                 return (
-                  <div key={di} style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 4 }}>
-                      {dayName} {day.date}
+                  <div key={di} style={{ marginBottom: 12 }}>
+                    <div style={{ background: "linear-gradient(135deg, #1a2e1a, #2d6a4f)", color: "white", borderRadius: 10, padding: "7px 12px", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
+                      <span style={{ fontWeight: 800, fontSize: 12, flexShrink: 0 }}>Day {di + 1}</span>
+                      <span style={{ fontSize: 11, opacity: 0.9, textAlign: "right" }}>{dayLabel}</span>
                     </div>
                     {acts.length === 0 ? (
-                      <p style={{ fontSize: 11, color: T.textDim, fontStyle: "italic", margin: 0, paddingLeft: 8 }}>Nothing planned</p>
+                      <p style={{ fontSize: 11, color: T.textDim, fontStyle: "italic", margin: "2px 0 4px", paddingLeft: 8 }}>Nothing planned</p>
                     ) : (
-                      acts.map((act, ai) => (
-                        <div key={ai} style={{
-                          display: "flex", gap: 8, padding: "4px 8px", marginBottom: 3,
-                          borderRadius: T.radiusSm, background: T.bg, border: `1px solid ${T.borderLight}`
-                        }}>
-                          {act.time && <span style={{ fontSize: 11, color: T.textDim, minWidth: 36 }}>{act.time}</span>}
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{act.title}</span>
-                            {act.place && <span style={{ fontSize: 11, color: T.primary, marginLeft: 6 }}>📍{act.place}</span>}
-                            {act.notes && <span style={{ fontSize: 11, color: T.textDim, marginLeft: 6, fontStyle: "italic" }}>{act.notes}</span>}
+                      acts.map((act, ai) => {
+                        const isStay = act.type === "stay";
+                        const savedPlace = act.placeId ? places.find(p => p.id === act.placeId) : null;
+                        const locLabel = savedPlace ? savedPlace.name : (act.location || act.place || "");
+                        const mapU = actMapsUrl(act, places);
+                        const cost = parseFloat(act.cost) || 0;
+                        return (
+                          <div key={ai} style={{ display: "flex", marginBottom: 5 }}>
+                            <div style={{ width: 46, flexShrink: 0, paddingTop: 9, textAlign: "center" }}>
+                              {isStay
+                                ? <span style={{ fontSize: 15 }}>🛏️</span>
+                                : <span style={{ fontSize: 11, fontWeight: 800, color: T.primary }}>{act.time || "·"}</span>}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0, background: T.surface, borderRadius: T.radiusSm, border: `1px solid ${T.borderLight}`, borderLeft: `3px solid ${isStay ? (T.sky || "#3b82f6") : T.primary}`, padding: "8px 10px" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{act.title || (isStay ? "Overnight stay" : "Activity")}</span>
+                                {cost > 0 && <span style={{ ...pill(T.accent + "15", T.accent), fontSize: 10, flexShrink: 0 }}>${cost.toFixed(cost % 1 ? 2 : 0)}</span>}
+                              </div>
+                              {isStay && (act.checkIn || act.checkOut) && (
+                                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
+                                  {act.checkIn ? "Check-in " + act.checkIn : ""}{act.checkIn && act.checkOut ? " · " : ""}{act.checkOut ? "Check-out " + act.checkOut : ""}
+                                </div>
+                              )}
+                              {(locLabel || mapU) && (
+                                <div style={{ fontSize: 11, marginTop: 3, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                                  {locLabel && <span style={{ color: T.primary, fontWeight: 600 }}>📍 {locLabel}</span>}
+                                  {mapU && <a href={mapU} target="_blank" rel="noopener noreferrer" style={{ color: T.primary, fontWeight: 700, textDecoration: "none" }}>🧭 Directions</a>}
+                                </div>
+                              )}
+                              {act.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 3, fontStyle: "italic", lineHeight: 1.4 }}>{act.notes}</div>}
+                              {(act.attachments || []).length > 0 && (
+                                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 4 }}>
+                                  {(act.attachments || []).map((a, fi) => (
+                                    <button key={fi} onClick={() => setViewPlanFile(a.url)} style={{ ...pill(T.primary + "12", T.primary), fontSize: 10, border: "1px solid " + T.primary + "25", cursor: "pointer", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {a.name || "File"}</button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 );
               })
+            )}
+            {(() => {
+              const tot = days.reduce((s, d) => s + (d.activities || []).reduce((s2, a) => s2 + (parseFloat(a.cost) || 0), 0), 0);
+              return tot > 0 ? (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: T.accent + "0c", border: `1px solid ${T.accent}30`, borderRadius: T.radiusSm, padding: "8px 12px", marginTop: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>💰 Planned costs</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>${tot.toFixed(2)}</span>
+                </div>
+              ) : null;
+            })()}
+            {viewPlanFile && (
+              <div onClick={() => setViewPlanFile(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 950, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                {(viewPlanFile.includes(".pdf") || viewPlanFile.startsWith("data:application/pdf"))
+                  ? <iframe src={viewPlanFile} title="Attachment" style={{ width: "100%", height: "80%", border: "none", borderRadius: 8, background: "white" }} />
+                  : <img src={viewPlanFile} alt="Attachment" style={{ maxWidth: "100%", maxHeight: "82%", borderRadius: 8, objectFit: "contain" }} />}
+                <button onClick={() => setViewPlanFile(null)} style={{ marginTop: 14, background: "white", color: "#333", border: "none", borderRadius: 99, padding: "9px 24px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
+              </div>
             )}
           </div>
           )} {/* end maintenance check */}
