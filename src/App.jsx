@@ -526,126 +526,145 @@ function GuestPinEntry({ onSuccess }) {
 
 // ─── TRIP REPORT ──────────────────────────────────────────────────────────────
 // Beautiful summary of a trip — accessible to guests and booking family
-function TripReport({ booking, places, vanName, guestName, onClose }) {
+// Kid-friendly adventure itinerary: big icons, day cards, and tappable
+// "adventure done" stars that persist to the trip plan.
+const actEmoji = act => {
+  if (act.type === "stay") return "🛏️";
+  const t = (act.title || "").toLowerCase();
+  const rules = [
+    [/pool|swim|spa|soak|hot ?spring/, "🏊"], [/luge|coaster|kart|ride/, "🎢"],
+    [/gondola|skyline|cable/, "🚠"], [/fall|waterfall/, "💦"],
+    [/walk|trek|track|trail|redwood|forest|hike|tree/, "🥾"], [/geyser|mud|thermal|crater|volcan/, "🌋"],
+    [/beach|sand/, "🏖️"], [/bike|cycle/, "🚲"], [/fish/, "🎣"],
+    [/museum|gallery/, "🏛️"], [/zoo|animal|wildlife|bird|kiwi|aquarium/, "🦁"],
+    [/playground|play/, "🛝"], [/boat|cruise|sail|jet|kayak|raft/, "🛥️"],
+    [/lunch|dinner|breakfast|cafe|coffee|eat|food|ice ?cream|picnic/, "🍽️"],
+    [/drive|road|travel|home/, "🚐"], [/shop|market/, "🛍️"], [/big dog|sheep|photo/, "📸"],
+  ];
+  for (const [re, e] of rules) if (re.test(t)) return e;
+  return "🌟";
+};
+
+function TripReport({ booking, places, vanName, guestName, onClose, dispatch }) {
   const days = booking.days || [];
-  const totalActs = days.reduce((s, d) => s + (d.activities || []).length, 0);
-  const placesVisited = [...new Set(
-    days.flatMap(d => (d.activities || []).map(a => a.placeId).filter(Boolean))
-  )].map(id => places.find(p => p.id === id)).filter(Boolean);
+  const allActs = days.flatMap(d => d.activities || []);
+  const totalActs = allActs.length;
+  const doneActs = allActs.filter(a => a.kidDone).length;
+  const stays = allActs.filter(a => a.type === "stay").length;
+  const pct = totalActs ? Math.round((doneActs / totalActs) * 100) : 0;
 
-  const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-
-  const printReport = () => {
-    window.print();
+  const toggleDone = (di, ai) => {
+    if (!dispatch) return;
+    const newDays = days.map((d, i) => i !== di ? d : ({
+      ...d, activities: (d.activities || []).map((a, j) => j !== ai ? a : ({ ...a, kidDone: !a.kidDone }))
+    }));
+    dispatch({ type: "UPD_BOOKING_DAYS", payload: { id: booking.id, days: newDays, notes: booking.notes } });
   };
 
+  const DAY_COLORS = ["#e07a28", "#2d6a4f", "#4a90c4", "#c9a96e", "#e2619f", "#7c6bd6", "#3aa6a6"];
+
   return (
-    <div style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 900, overflowY: "auto", padding: "16px 12px" }}>
-      <div style={{ maxWidth: 580, margin: "0 auto", background: T.surface, borderRadius: T.radius, boxShadow: T.shadowLg, overflow: "hidden" }}>
+    <div style={{ position: "fixed", inset: 0, background: T.overlay, zIndex: 900, overflowY: "auto", padding: "16px 8px" }}>
+      <div style={{ maxWidth: 580, margin: "0 auto", background: "#fdf9f0", borderRadius: 20, boxShadow: T.shadowLg, overflow: "hidden" }}>
 
         {/* Header */}
-        <div style={{ background: `linear-gradient(135deg, ${T.primary}, #3a8a5f)`, padding: "28px 24px 24px", color: "white", textAlign: "center" }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>🚐</div>
-          <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 800 }}>{vanName || "Adventure Hub"}</h2>
-          <h3 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 600, opacity: 0.9 }}>{booking.destination}</h3>
-          {guestName && <div style={{ fontSize: 14, opacity: 0.85, marginBottom: 6 }}>{guestName}</div>}
-          <div style={{ fontSize: 13, opacity: 0.8 }}>
-            {booking.start} → {booking.end} &middot; {Math.max(0, Math.round((new Date(booking.end) - new Date(booking.start)) / 86400000))} nights
+        <div style={{ background: `linear-gradient(135deg, ${T.primary}, #3a8a5f)`, padding: "26px 20px 20px", color: "white", textAlign: "center" }}>
+          <div style={{ fontSize: 44, marginBottom: 6 }}>🚐</div>
+          <h2 style={{ margin: "0 0 2px", fontSize: 24, fontWeight: 800, letterSpacing: 0.3 }}>{booking.destination} Adventure!</h2>
+          {guestName && <div style={{ fontSize: 14, opacity: 0.9 }}>{guestName}</div>}
+          <div style={{ fontSize: 13, opacity: 0.85, marginTop: 4 }}>
+            {new Date(booking.start + "T12:00:00").toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" })} → {new Date(booking.end + "T12:00:00").toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" })}
           </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 16 }}>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>{days.length}</div>
-              <div style={{ fontSize: 11, opacity: 0.8 }}>Days</div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>{totalActs}</div>
-              <div style={{ fontSize: 11, opacity: 0.8 }}>Activities</div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>{placesVisited.length}</div>
-              <div style={{ fontSize: 11, opacity: 0.8 }}>Places</div>
-            </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+            {[["🗓️", days.length, "days"], ["🌟", totalActs, "adventures"], ["🛏️", stays || Math.max(0, days.length - 1), "sleeps"]].map(([e, n, l]) => (
+              <div key={l} style={{ background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 14, padding: "8px 14px", textAlign: "center", minWidth: 76 }}>
+                <div style={{ fontSize: 18 }}>{e} <b style={{ fontSize: 20 }}>{n}</b></div>
+                <div style={{ fontSize: 10, opacity: 0.85, textTransform: "uppercase", letterSpacing: 1 }}>{l}</div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div style={{ padding: "20px 20px 24px" }}>
-
-          {/* Notes */}
-          {booking.notes && (
-            <div style={{ background: T.primary + "08", borderRadius: T.radiusSm, padding: "12px 14px", marginBottom: 20, borderLeft: `3px solid ${T.primary}` }}>
-              <p style={{ margin: 0, fontSize: 13, color: T.textMuted, fontStyle: "italic", lineHeight: 1.6 }}>"{booking.notes}"</p>
+        {/* Adventure progress */}
+        {totalActs > 0 && (
+          <div style={{ padding: "14px 18px 0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+              <span style={{ fontWeight: 800, fontSize: 14, color: T.text }}>⭐ {doneActs} of {totalActs} adventures done!</span>
+              <span style={{ fontWeight: 800, fontSize: 13, color: pct === 100 ? T.green : T.accent }}>{pct}%</span>
             </div>
-          )}
-
-          {/* Day by day */}
-          {days.length > 0 && (
-            <div style={{ marginBottom: 24 }}>
-              <h4 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 800, color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>📅 Itinerary</h4>
-              {days.map((day, di) => {
-                const d = new Date(day.date + "T12:00:00");
-                const dayName = DAY_NAMES[d.getDay()];
-                const acts = sortActs(day.activities);
-                return (
-                  <div key={di} style={{ marginBottom: 14 }}>
-                    <div style={{ fontWeight: 700, color: T.primary, fontSize: 13, marginBottom: 6, paddingBottom: 4, borderBottom: `1px solid ${T.border}` }}>
-                      Day {di + 1} &middot; {dayName} {day.date}
-                    </div>
-                    {acts.length === 0
-                      ? <p style={{ color: T.textDim, fontSize: 12, margin: "4px 0", fontStyle: "italic" }}>Free day</p>
-                      : acts.map((act, ai) => {
-                        const lp = places.find(p => p.id === act.placeId);
-                        return (
-                          <div key={ai} style={{ display: "flex", gap: 10, padding: "5px 0", borderBottom: ai < acts.length - 1 ? `1px solid ${T.borderLight}` : "none" }}>
-                            {act.time && <span style={{ fontSize: 11, color: T.primary, fontWeight: 700, minWidth: 40, flexShrink: 0 }}>{act.time}</span>}
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{act.title || "Activity"}</div>
-                              {(lp || act.location) && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>📍 {lp ? lp.name : act.location}</div>}
-                              {act.notes && <div style={{ fontSize: 11, color: T.textDim, fontStyle: "italic", marginTop: 1 }}>{act.notes}</div>}
-                            </div>
-                          </div>
-                        );
-                      })
-                    }
-                  </div>
-                );
-              })}
+            <div style={{ background: "#eee5d5", borderRadius: 99, height: 12, overflow: "hidden" }}>
+              <div style={{ width: `${pct}%`, height: "100%", borderRadius: 99, background: pct === 100 ? T.green : "linear-gradient(90deg, #e07a28, #f2b95c)", transition: "width 0.5s" }} />
             </div>
-          )}
+            {pct === 100 && <p style={{ textAlign: "center", margin: "8px 0 0", fontWeight: 800, color: T.green, fontSize: 14 }}>🎉 EVERY adventure complete — legends! 🎉</p>}
+            {dispatch && pct < 100 && <p style={{ textAlign: "center", margin: "6px 0 0", fontSize: 11, color: T.textDim }}>Tap an adventure when you've done it!</p>}
+          </div>
+        )}
 
-          {/* Places visited */}
-          {placesVisited.length > 0 && (
-            <div style={{ marginBottom: 24 }}>
-              <h4 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 800, color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>📍 Places</h4>
-              {placesVisited.map(p => (
-                <div key={p.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${T.borderLight}` }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{p.name}</div>
-                    {p.category && <div style={{ fontSize: 11, color: T.textDim }}>{p.category}</div>}
+        <div style={{ padding: "16px 12px 20px" }}>
+          {days.map((day, di) => {
+            const acts = sortActs(day.activities);
+            const col = DAY_COLORS[di % DAY_COLORS.length];
+            const dayLabel = day.date ? new Date(day.date + "T12:00:00").toLocaleDateString("en-NZ", { weekday: "long" }) : "";
+            const dateLabel = day.date ? new Date(day.date + "T12:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "long" }) : "";
+            return (
+              <div key={di} style={{ marginBottom: 16 }}>
+                {/* Day banner */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <div style={{ width: 46, height: 46, borderRadius: "50%", background: col, color: "white", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 8px rgba(0,0,0,0.18)" }}>
+                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1, opacity: 0.9 }}>DAY</span>
+                    <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1 }}>{di + 1}</span>
                   </div>
-                  {p.overallRating > 0 && <div style={{ fontSize: 13, color: T.accent }}>{"★".repeat(p.overallRating)}</div>}
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 16, color: T.text }}>{dayLabel}</div>
+                    <div style={{ fontSize: 12, color: T.textMuted }}>{dateLabel}</div>
+                  </div>
                 </div>
-              ))}
+                {acts.length === 0 && <p style={{ margin: "0 0 0 56px", fontSize: 12, color: T.textDim, fontStyle: "italic" }}>Free adventure day — anything can happen!</p>}
+                {acts.map((act, ai) => {
+                  const realIdx = (day.activities || []).indexOf(act);
+                  const isStay = act.type === "stay";
+                  const done = !!act.kidDone;
+                  return (
+                    <div key={ai} onClick={() => toggleDone(di, realIdx)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, background: done ? "#eef7ee" : "white", border: `2px solid ${done ? T.green : col + "35"}`, borderRadius: 16, padding: "10px 12px", marginBottom: 7, marginLeft: 14, cursor: dispatch ? "pointer" : "default", boxShadow: "0 2px 6px rgba(0,0,0,0.06)", transition: "all 0.15s" }}>
+                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: done ? T.green + "20" : col + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 21, flexShrink: 0 }}>
+                        {actEmoji(act)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: T.text, lineHeight: 1.25 }}>{act.title || (isStay ? "Sleep spot" : "Adventure")}</div>
+                        <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 1 }}>
+                          {isStay
+                            ? <>🌙 Sleeping here tonight{act.checkIn ? ` · from ${act.checkIn}` : ""}</>
+                            : act.time ? `🕐 ${act.time}` : ""}
+                        </div>
+                        {act.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 2, lineHeight: 1.4 }}>{act.notes}</div>}
+                      </div>
+                      <div style={{ fontSize: 26, flexShrink: 0, width: 32, textAlign: "center" }}>
+                        {done ? "⭐" : <span style={{ opacity: 0.22 }}>☆</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          {booking.notes && (
+            <div style={{ background: "#fff6e8", borderRadius: 14, padding: "12px 14px", border: "2px dashed #e0c9a0", marginTop: 4 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, color: "#a8781f", marginBottom: 3 }}>📝 Trip notes</div>
+              <p style={{ margin: 0, fontSize: 12.5, color: T.textMuted, lineHeight: 1.55 }}>{booking.notes}</p>
             </div>
           )}
 
-          {/* Footer */}
-          <div style={{ textAlign: "center", paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
-            <p style={{ color: T.textDim, fontSize: 11, margin: 0 }}>Generated by Adventure Hub &middot; {fmt(new Date())}</p>
+          <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+            <button onClick={() => window.print()} style={{ ...btn(T.bg, T.textMuted, { flex: 1, border: `1px solid ${T.border}` }) }}>🖨️ Print</button>
+            <button onClick={onClose} style={btn(T.primary, T.surface, { flex: 1 })}>Close</button>
           </div>
-        </div>
-
-        {/* Actions */}
-        <div style={{ display: "flex", gap: 8, padding: "12px 20px 20px", justifyContent: "center" }}>
-          <button onClick={printReport} style={btn(T.primary, T.surface, { fontSize: 13 })}>🖨️ Save / Print</button>
-          <button onClick={onClose} style={{ ...btn("transparent", T.textMuted, { border: `1px solid ${T.border}`, fontSize: 13 }) }}>Close</button>
         </div>
       </div>
     </div>
   );
 }
-
-// ─── GUEST APP ────────────────────────────────────────────────────────────────
-// Restricted view for guests — trip planning, places, kit, guides and rules only
 function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, vanName, dispatch, onSignOut, allFamilies = [] }) {
   const [tab, setTab] = useState("trip");
   const [showReport, setShowReport] = useState(false);
@@ -819,7 +838,7 @@ function GuestApp({ booking, places, equipment, guides, rules, packingByFamily, 
         <div style={{ height: "env(safe-area-inset-bottom)", background: T.surface }} />
       </div>
 
-      {showReport && <TripReport booking={booking} places={places} vanName={vanName} guestName={guestName} onClose={() => setShowReport(false)} />}
+      {showReport && <TripReport dispatch={dispatch} booking={booking} places={places} vanName={vanName} guestName={guestName} onClose={() => setShowReport(false)} />}
     </div>
   );
 }
@@ -891,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.69
+          Adventure Hub · v1.70
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2478,7 +2497,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
 
   return (
     <div ref={cardRef} style={{ ...card({ padding: 0, marginBottom: 16 }), borderLeft: "4px solid " + (fam?.color || T.primary), overflow: "visible" }}>
-      {showReport && <TripReport booking={b} places={places} vanName={null} guestName={b.guestName || b.guests || ""} onClose={() => setShowReport(false)} />}
+      {showReport && <TripReport dispatch={dispatch} booking={b} places={places} vanName={null} guestName={b.guestName || b.guests || ""} onClose={() => setShowReport(false)} />}
       {/* Full editor modal */}
       {fullEdit && (
         <Modal title={"Plan: " + b.destination} onClose={() => setFullEdit(false)} pad={6} edge width={720}>
