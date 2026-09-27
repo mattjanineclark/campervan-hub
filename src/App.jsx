@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.87
+          Adventure Hub · v1.88
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4518,7 +4518,14 @@ async function openBookingInPlanner(b, places, familyId) {
     const prev = existing[0].data || {};
     await supa.update("planner_trips", { title: b.destination, data: { ...prev, title: b.destination, start: b.start, days: daysN }, rev: Date.now() }, { id: uuid });
   } else {
-    const tripData = { title: b.destination, start: b.start, days: daysN, home: null, oneway: false, plan: [], kids: [], rev: Date.now() };
+    // Inherit the kids (names, ages, game settings) from the family's most
+    // recent planner trip so they never need re-entering
+    let kids = [];
+    try {
+      const prev = await supa.get("planner_trips", "select=data&order=updated_at.desc&limit=1");
+      if (prev && prev[0] && Array.isArray(prev[0].data?.kids)) kids = prev[0].data.kids;
+    } catch (e) {}
+    const tripData = { title: b.destination, start: b.start, days: daysN, home: null, oneway: false, plan: [], kids, rev: Date.now() };
     const r = await supa.insert("planner_trips", { booking_id: String(b.id), family_id: familyId || "", title: b.destination, data: tripData, rev: tripData.rev });
     uuid = Array.isArray(r) && r[0] ? r[0].id : null;
     if (!uuid) throw new Error("could not create the planner trip");
