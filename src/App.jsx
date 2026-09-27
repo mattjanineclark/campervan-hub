@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.89
+          Adventure Hub · v1.90
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4531,7 +4531,17 @@ async function openBookingInPlanner(b, places, familyId, families) {
   if (existing && existing[0]) {
     uuid = existing[0].id;
     const prev = existing[0].data || {};
-    await supa.update("planner_trips", { title: b.destination, data: { ...prev, title: b.destination, start: b.start, days: daysN }, rev: Date.now() }, { id: uuid });
+    // Refresh kids from the family roster, keeping each kid's per-trip game
+    // choices (matched by name)
+    let kidsUpd = prev.kids || [];
+    const famR = (families || []).find(f => f.id === familyId);
+    if (famR && Array.isArray(famR.kids) && famR.kids.length) {
+      kidsUpd = famR.kids.map(rk => {
+        const old = (prev.kids || []).find(k => (k.name || "").trim().toLowerCase() === (rk.name || "").trim().toLowerCase());
+        return { name: rk.name, age: parseInt(rk.age) || 8, games: old ? old.games : null, diff: old ? (old.diff || {}) : {} };
+      });
+    }
+    await supa.update("planner_trips", { title: b.destination, data: { ...prev, title: b.destination, start: b.start, days: daysN, kids: kidsUpd }, rev: Date.now() }, { id: uuid });
   } else {
     // Kids come from THIS family's roster (hub Settings). Games and difficulty
     // are chosen per trip in the planner. Falls back to the latest trip's kids
