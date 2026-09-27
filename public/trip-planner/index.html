@@ -1,0 +1,57 @@
+<!doctype html><html lang="en-NZ"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Road Trip Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="./manifest.webmanifest"><meta name="theme-color" content="#FFC73A"><link rel="icon" href="./icon-192.png"><link rel="apple-touch-icon" href="./icon-192.png">  <script type="module" crossorigin src="./assets/index-9zg7omI4.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CJfClmnO.css">
+</head><body>
+<nav class="bar"><div class="ttl"><button id="tt" class="ttbtn" aria-label="All trips">Road Trip Planner</button><span id="sync"></span></div><div class="tabs" role="tablist"><button role="tab" aria-selected="true" data-v="plan">Plan</button><button role="tab" aria-selected="false" data-v="book">Booklets</button></div><button class="icon" id="gear" aria-label="Trip settings">⚙︎</button></nav>
+<main>
+<section id="v-auth" class="view"><div class="card-c"><h2>Road Trip Planner</h2><p>Plan New Zealand road trips with the family, and print a map booklet for each kid.</p>
+ <label class="f">Email<input type="email" id="aemail" autocomplete="email" placeholder="you@example.com"></label>
+ <button class="btn pri" id="asend">Email me a sign-in link</button><p class="note" id="amsg" aria-live="polite"></p>
+ <hr><p class="note">Signing in keeps your trips safe and lets family edit them from their own phones.</p><button class="btn" id="alocal">Use on this device only</button></div></section>
+<section id="v-trips" class="view"><div class="card-c wide"><div class="acct" id="acct"></div><h2>Your trips</h2><div id="triplist"></div>
+ <div class="srow"><button class="btn pri" id="newtrip">Start a new trip</button><label class="btn">Import a trip file<input type="file" id="importtrip" accept="application/json,.json" hidden></label></div></div></section>
+<section id="v-plan" class="view on">
+ <div class="mapwrap"><div class="stage" id="stage"><svg id="live" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Trip map"></svg></div>
+  <div class="mapbtns"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="zfit" aria-label="Fit to stops">⤢</button><button id="zclose" hidden aria-label="Zoom in on close stops">🔍</button></div>
+  <div id="zlabel" hidden></div>
+  <div id="pickbar" hidden><span>Tap the map where the stop is</span><button id="pickcancel">Cancel</button></div></div>
+ <div class="panel"><div class="chips" id="chips"></div><div id="list"></div><button class="fab" id="add">Add a stop</button></div>
+</section>
+<section id="v-book" class="view">
+ <aside class="bside" id="bside"><div class="bookbar"><div class="chips" id="kidchips"></div><div class="acts"><button class="btn pri" id="pdf">Download PDF</button><button class="btn" id="print">Print</button><button class="btn" id="gtoggle" aria-expanded="true" aria-controls="gamesel">Hide games</button></div><p id="bmsg"></p></div>
+ <div id="gamesel"></div></aside>
+ <div class="bmain" id="bmain"><div id="preview"></div></div>
+</section>
+</main>
+<dialog id="dlg-add"><div class="dl"><header><h2 id="stitle">Add a stop</h2><button class="x" data-close aria-label="Close">×</button></header>
+ <div class="body"><input type="search" id="sq" placeholder="Search for a place, town or attraction" autocomplete="off" enterkeyhint="search" aria-label="Search places">
+ <div class="srow"><button class="btn pri" id="sask" hidden>Search everywhere</button><button class="btn" id="addtap">Tap a spot on the map</button></div>
+ <p class="note" id="smsg" aria-live="polite"></p><div class="presets" id="sres2"></div>
+ <h3 id="shead">Popular spots</h3><div class="presets" id="sres"></div></div></div></dialog>
+<dialog id="dlg-day"><div class="dl"><header><h2 id="dtitle">Day</h2><button class="x" data-close aria-label="Close">×</button></header><div class="body" id="dbody"></div><footer><button class="btn pri" data-close>Done</button></footer></div></dialog>
+<dialog id="dlg-edit"><div class="dl"><header><h2 id="etitle">Stop</h2><button class="x" data-close aria-label="Close">×</button></header>
+ <form id="fedit" class="body" onsubmit="return false">
+  <label class="f">Name<input type="text" name="name" autocomplete="off"></label>
+  <div class="row"><label class="f">Day<select name="day"></select></label><label class="f">Time<input type="time" name="time"></label></div>
+  <div class="kinds" id="kinds"><button type="button" data-k="activity"><span class="e">⭐</span>Activity</button><button type="button" data-k="stay"><span class="e">🛏️</span>Place to stay</button><button type="button" data-k="food"><span class="e">🍦</span>Food</button><button type="button" data-k="stop"><span class="e">📍</span>Quick stop</button></div>
+  <label class="f">For the kids<span class="h">Goes in their booklets: what to look out for, or a fun fact.</span><textarea name="kids"></textarea></label>
+  <label class="f">Notes for us<span class="h">Bookings, address, cost. Not printed in the booklets.</span><textarea name="note"></textarea></label>
+  <div class="f"><b>Photo</b><div class="photo"><span id="ephoto"></span><label class="btn">Choose photo<input type="file" id="efile" accept="image/*" hidden></label><button type="button" class="btn" id="rmphoto">Remove</button></div></div>
+  <p class="note" id="emsg" aria-live="polite" style="color:var(--red)"></p>
+  <div class="loc"><span id="eloc"></span><button type="button" class="btn" id="emove">Move on map</button></div>
+ </form>
+ <footer><button class="btn danger" id="edel">Delete</button><button class="btn" data-close>Cancel</button><button class="btn pri" id="esave">Save stop</button></footer></div></dialog>
+<dialog id="dlg-set"><div class="dl"><header><h2>Trip settings</h2><button class="x" data-close aria-label="Close">×</button></header>
+ <form id="fset" class="body" onsubmit="return false">
+  <label class="f">Trip name<input type="text" name="title"></label>
+  <div class="row"><label class="f">First day<span class="h">Optional</span><input type="date" name="start"></label><label class="f">Number of days<span class="h">&nbsp;</span><input type="number" name="days" min="1" max="14"></label></div>
+  <div class="f"><b>Home</b><span class="h">Where trips start and finish.</span><div class="loc"><span id="shome">Not set</span><span><button type="button" class="btn sm" id="shomeset">Change</button> <button type="button" class="btn sm" id="shomeclr">Clear</button></span></div>
+   <label class="chk"><input type="checkbox" name="oneway"> Finish back home on the last day</label></div>
+  <div class="f"><b>Kids</b><span class="h">Each gets their own booklet, pitched at their age.</span><div id="kids" style="display:flex;flex-direction:column;gap:8px"></div><button type="button" class="btn" id="addkid" style="align-self:flex-start">Add a kid</button></div>
+  <div class="f"><b>Share this trip</b><div id="sharebox"></div></div>
+ </form>
+ <footer><button class="btn" data-close>Cancel</button><button class="btn pri" id="ssave">Save</button></footer></div></dialog>
+<div id="printhost"></div>
+</body></html>

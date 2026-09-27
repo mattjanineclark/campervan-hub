@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.70
+          Adventure Hub · v1.71
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2959,6 +2959,16 @@ function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odo
 
   return (
     <div>
+      {/* NZ Road Trip Planner — embedded companion app at /trip-planner/ */}
+      <a href="trip-planner/" target="_blank" rel="noopener noreferrer"
+        style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", background: "linear-gradient(135deg, #1a2e1a, #2d6a4f)", borderRadius: T.radius, padding: "12px 14px", marginBottom: 14, boxShadow: T.shadow }}>
+        <span style={{ fontSize: 28, flexShrink: 0 }}>🗺️</span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", color: "white", fontWeight: 800, fontSize: 14 }}>NZ Road Trip Planner</span>
+          <span style={{ display: "block", color: "rgba(255,255,255,0.85)", fontSize: 11.5, marginTop: 1 }}>Plan routes on a map & print kids' adventure booklets</span>
+        </span>
+        <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 18, flexShrink: 0 }}>›</span>
+      </a>
       {myMaintTasks.length > 0 && (
         <div style={{ marginBottom: 14 }}>
           <p style={{ ...sectionHead, margin: "0 0 8px" }}>🔧 Your maintenance tasks</p>
