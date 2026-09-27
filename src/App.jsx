@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.90
+          Adventure Hub · v1.91
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3874,7 +3874,7 @@ function FamilyManager({ families, dispatch, currentFamilyId }) {
   const save = () => {
     if (!form.name.trim()) return;
     const pinToSave = form.pinInput.length === 4 ? form.pinInput : form.pin;
-    const saved = { ...form, pin: pinToSave, kids: (form.kids || []).filter(k => (k.name || "").trim()).map(k => ({ name: k.name.trim(), age: parseInt(k.age) || 8 })) };
+    const saved = { ...form, pin: pinToSave, kids: (form.kids || []).filter(k => (k.name || "").trim()).map(k => ({ name: k.name.trim(), dob: k.dob || "", age: k.dob ? undefined : (parseInt(k.age) || 8) })) };
     delete saved.pinInput;
     if (editing === "new") dispatch({ type: "ADD_FAMILY", payload: saved });
     else dispatch({ type: "UPDATE_FAMILY", payload: saved });
@@ -3966,13 +3966,14 @@ function FamilyManager({ families, dispatch, currentFamilyId }) {
             <div key={ki} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
               <input style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="Name" value={k.name || ""}
                 onChange={e => setForm(f => ({ ...f, kids: f.kids.map((x, j) => j === ki ? { ...x, name: e.target.value } : x) }))} />
-              <input style={{ ...inp, width: 70, flexShrink: 0 }} type="number" min="1" max="17" placeholder="Age" value={k.age || ""}
-                onChange={e => setForm(f => ({ ...f, kids: f.kids.map((x, j) => j === ki ? { ...x, age: e.target.value } : x) }))} />
+              <input style={{ ...dateInp, width: 130, flexShrink: 0 }} type="date" value={k.dob || ""}
+                onChange={e => setForm(f => ({ ...f, kids: f.kids.map((x, j) => j === ki ? { ...x, dob: e.target.value } : x) }))} />
+              {k.dob && <span style={{ fontSize: 11, color: T.textDim, flexShrink: 0 }}>{kidAge(k.dob)}</span>}
               <button onClick={() => setForm(f => ({ ...f, kids: f.kids.filter((_, j) => j !== ki) }))}
                 style={{ background: "none", border: "none", color: T.red, fontSize: 18, cursor: "pointer", flexShrink: 0 }}>&times;</button>
             </div>
           ))}
-          <button onClick={() => setForm(f => ({ ...f, kids: [...(f.kids || []), { name: "", age: "" }] }))}
+          <button onClick={() => setForm(f => ({ ...f, kids: [...(f.kids || []), { name: "", dob: "" }] }))}
             style={{ ...btn(T.bg, T.textMuted, { fontSize: 12, border: `1px solid ${T.border}`, marginBottom: 10 }) }}>+ Add child</button>
 
           {/* Colour picker */}
@@ -4524,6 +4525,16 @@ function actMapsUrl(act, places) {
 // Finds or creates the linked planner trip (seeding any already-pinned stops on
 // first link), refreshes title/dates, then navigates to it. Planner is the
 // planning surface; the hub keeps the booking itself.
+// Age on a given date (defaults to today) from a YYYY-MM-DD birthdate
+function kidAge(dob, onDate) {
+  if (!dob) return null;
+  const d = new Date(dob + "T12:00:00"), o = onDate ? new Date(onDate + "T12:00:00") : new Date();
+  let a = o.getFullYear() - d.getFullYear();
+  const m = o.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && o.getDate() < d.getDate())) a--;
+  return Math.max(1, a);
+}
+
 async function openBookingInPlanner(b, places, familyId, families) {
   const daysN = Math.max(1, (b.days || []).length || 1);
   const existing = await supa.get("planner_trips", "select=id,data&booking_id=eq." + encodeURIComponent(b.id));
@@ -4538,7 +4549,7 @@ async function openBookingInPlanner(b, places, familyId, families) {
     if (famR && Array.isArray(famR.kids) && famR.kids.length) {
       kidsUpd = famR.kids.map(rk => {
         const old = (prev.kids || []).find(k => (k.name || "").trim().toLowerCase() === (rk.name || "").trim().toLowerCase());
-        return { name: rk.name, age: parseInt(rk.age) || 8, games: old ? old.games : null, diff: old ? (old.diff || {}) : {} };
+        return { name: rk.name, age: rk.dob ? kidAge(rk.dob, b.start) : (parseInt(rk.age) || 8), games: old ? old.games : null, diff: old ? (old.diff || {}) : {} };
       });
     }
     await supa.update("planner_trips", { title: b.destination, data: { ...prev, title: b.destination, start: b.start, days: daysN, kids: kidsUpd }, rev: Date.now() }, { id: uuid });
@@ -4549,7 +4560,7 @@ async function openBookingInPlanner(b, places, familyId, families) {
     let kids = [];
     const fam = (families || []).find(f => f.id === familyId);
     if (fam && Array.isArray(fam.kids) && fam.kids.length) {
-      kids = fam.kids.map(k => ({ name: k.name, age: parseInt(k.age) || 8, games: null, diff: {} }));
+      kids = fam.kids.map(k => ({ name: k.name, age: k.dob ? kidAge(k.dob, b.start) : (parseInt(k.age) || 8), games: null, diff: {} }));
     } else {
       try {
         const prev = await supa.get("planner_trips", "select=data&order=updated_at.desc&limit=1");
