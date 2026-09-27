@@ -1,7 +1,7 @@
 <!doctype html><html lang="en-NZ"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Road Trip Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
-<link rel="manifest" href="./manifest.webmanifest"><meta name="theme-color" content="#FFC73A"><link rel="icon" href="./icon-192.png"><link rel="apple-touch-icon" href="./icon-192.png">  <script type="module" crossorigin src="./assets/index-B7uLuwUP.js"></script>
+<link rel="manifest" href="./manifest.webmanifest"><meta name="theme-color" content="#FFC73A"><link rel="icon" href="./icon-192.png"><link rel="apple-touch-icon" href="./icon-192.png">  <script type="module" crossorigin src="./assets/index-DpcExxie.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-CJfClmnO.css">
 </head><body>
 <nav class="bar"><a href="../" style="display:flex;align-items:center;gap:4px;text-decoration:none;background:rgba(255,255,255,0.85);border:1.5px solid rgba(0,0,0,0.12);border-radius:99px;padding:5px 11px 5px 8px;font:700 12px/1 'Baloo 2',sans-serif;color:#1a2e1a;flex-shrink:0;margin-right:6px;white-space:nowrap;">‹ 🚐 Hub</a><div class="ttl"><button id="tt" class="ttbtn" aria-label="All trips">Road Trip Planner</button><span id="sync"></span></div><div class="tabs" role="tablist"><button role="tab" aria-selected="true" data-v="plan">Plan</button><button role="tab" aria-selected="false" data-v="book">Booklets</button></div><button class="icon" id="gear" aria-label="Trip settings">⚙︎</button></nav>
@@ -36,10 +36,12 @@
  <form id="fedit" class="body" onsubmit="return false">
   <label class="f">Name<input type="text" name="name" autocomplete="off"></label>
   <div class="row"><label class="f">Day<select name="day"></select></label><label class="f">Time<input type="time" name="time"></label></div>
+  <div class="row"><label class="f">Cost $<input type="number" step="0.01" inputmode="decimal" name="cost" placeholder="0"></label><label class="f">Check-out<span class="h">For overnight stays.</span><input type="time" name="checkout"></label></div>
   <div class="kinds" id="kinds"><button type="button" data-k="activity"><span class="e">⭐</span>Activity</button><button type="button" data-k="stay"><span class="e">🛏️</span>Place to stay</button><button type="button" data-k="food"><span class="e">🍦</span>Food</button><button type="button" data-k="stop"><span class="e">📍</span>Quick stop</button></div>
   <label class="f">For the kids<span class="h">Goes in their booklets: what to look out for, or a fun fact.</span><textarea name="kids"></textarea></label>
   <label class="f">Notes for us<span class="h">Bookings, address, cost. Not printed in the booklets.</span><textarea name="note"></textarea></label>
   <div class="f"><b>Photo</b><div class="photo"><span id="ephoto"></span><label class="btn">Choose photo<input type="file" id="efile" accept="image/*" hidden></label><button type="button" class="btn" id="rmphoto">Remove</button></div></div>
+  <div class="f"><b>Attachments</b><span class="h">Reservations, confirmations — photos or PDFs.</span><div id="eatt"></div><label class="btn" id="eattaddwrap">Add file<input type="file" id="eattadd" accept="image/*,.pdf" multiple hidden></label></div>
   <p class="note" id="emsg" aria-live="polite" style="color:var(--red)"></p>
   <div class="loc"><span id="eloc"></span><button type="button" class="btn" id="emove">Move on map</button></div>
  </form>

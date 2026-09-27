@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.75
+          Adventure Hub · v1.76
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2456,6 +2456,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   const [viewPlanFile, setViewPlanFile] = useState(null);
   const [plannerSend, setPlannerSend] = useState("");
   const [plannerPull, setPlannerPull] = useState("");
+  const [plannerChoices, setPlannerChoices] = useState(null);
   // Planner → hub: brings map-side changes back into the booking's plan.
   // Matches on stable ids; planner-added stops become new pinned activities.
   // Hub-only fields (costs, attachments, kid stars, check-out) are preserved.
@@ -2944,7 +2945,14 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
           <div style={{ padding: "10px 14px", borderTop: `1px solid ${T.borderLight}` }}>
             <button disabled={plannerSend === "sending"} onClick={async () => {
               setPlannerSend("sending");
-              try { await openBookingInPlanner(b, places, currentFamilyId); }
+              try {
+                const linked = await supa.get("planner_trips", "select=id&booking_id=eq." + encodeURIComponent(b.id));
+                if (!linked || !linked[0]) {
+                  const unlinked = await supa.get("planner_trips", "select=id,title&booking_id=is.null&order=updated_at.desc");
+                  if (unlinked && unlinked.length) { setPlannerChoices(unlinked); setPlannerSend(""); return; }
+                }
+                await openBookingInPlanner(b, places, currentFamilyId);
+              }
               catch (err) { console.error(err); setPlannerSend(""); alert("Couldn't open the planner — " + (err.message || "error") + ". Check the planner tables SQL has been run."); }
             }}
               style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", cursor: "pointer", background: "linear-gradient(135deg, #1a2e1a, #2d6a4f)", border: "none", borderRadius: T.radiusSm, padding: "12px 14px", boxShadow: T.shadow }}>
@@ -2955,6 +2963,31 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
               </span>
               <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 17, flexShrink: 0 }}>›</span>
             </button>
+            {plannerChoices && (
+              <div style={{ marginTop: 8, background: T.bg, border: `1px solid ${T.border}`, borderRadius: T.radiusSm, padding: "10px 12px" }}>
+                <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: T.text }}>Link an existing planner trip, or start fresh?</p>
+                {plannerChoices.map(t => (
+                  <button key={t.id} onClick={async () => {
+                    setPlannerChoices(null); setPlannerSend("sending");
+                    try {
+                      await supa.update("planner_trips", { booking_id: String(b.id) }, { id: t.id });
+                      await openBookingInPlanner(b, places, currentFamilyId);
+                    } catch (err) { setPlannerSend(""); alert("Couldn't link — " + (err.message || "error")); }
+                  }}
+                    style={{ ...btn(T.surface, T.primary, { width: "100%", textAlign: "left", fontSize: 12, marginBottom: 6, border: `1px solid ${T.primary}30` }) }}>
+                    🔗 Link "{t.title}"
+                  </button>
+                ))}
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={async () => {
+                    setPlannerChoices(null); setPlannerSend("sending");
+                    try { await openBookingInPlanner(b, places, currentFamilyId); }
+                    catch (err) { setPlannerSend(""); alert("Couldn't open — " + (err.message || "error")); }
+                  }} style={{ ...btn(T.primary, T.surface, { flex: 1, fontSize: 12 }) }}>➕ Start a fresh plan</button>
+                  <button onClick={() => setPlannerChoices(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` }) }}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
           )}
 
@@ -4499,14 +4532,26 @@ async function openBookingInPlanner(b, places, familyId) {
     const r = await supa.insert("planner_trips", { booking_id: String(b.id), family_id: familyId || "", title: b.destination, data: tripData, rev: tripData.rev });
     uuid = Array.isArray(r) && r[0] ? r[0].id : null;
     if (!uuid) throw new Error("could not create the planner trip");
+    // Migrate everything: unpinned entries default to Pukekohe (home base) so
+    // they appear on the map and can simply be dragged to the right spot.
+    const PUKEKOHE = { lat: -37.2018, lon: 174.901 };
     let order = 0;
     for (let di = 0; di < (b.days || []).length; di++) {
       for (const act of sortActs(b.days[di].activities)) {
         const pl = act.placeId ? (places || []).find(p => p.id === act.placeId) : null;
-        const lat = act.lat ?? (pl && pl.lat), lon = act.lng ?? (pl && pl.lng);
-        if (lat == null || lon == null) continue;
+        const lat = act.lat ?? (pl && pl.lat) ?? PUKEKOHE.lat;
+        const lon = act.lng ?? (pl && pl.lng) ?? PUKEKOHE.lon;
+        const pinned = (act.lat ?? (pl && pl.lat)) != null;
         order += 1;
-        await supa.insert("planner_stops", { id: "hub" + String(act.id), trip_id: uuid, data: { name: act.title || "Stop", lat: +lat, lon: +lon, day: di + 1, order, kind: act.type === "stay" ? "stay" : "stop", time: (act.type === "stay" ? act.checkIn : act.time) || "", kids: "", note: act.notes || "", img: "", thumb: "", rev: Date.now() }, rev: Date.now() });
+        await supa.insert("planner_stops", { id: "hub" + String(act.id), trip_id: uuid, data: {
+          name: act.title || "Stop", lat: +lat, lon: +lon, day: di + 1, order,
+          kind: act.type === "stay" ? "stay" : "stop",
+          time: (act.type === "stay" ? act.checkIn : act.time) || "",
+          kids: "", note: (pinned ? "" : "📍 Location not set — drag me to the right spot! ") + (act.notes || ""),
+          cost: act.cost || "", checkout: act.checkOut || "",
+          att: (act.attachments || []).map(a => ({ name: a.name || "File", url: a.url })),
+          img: "", thumb: "", rev: Date.now(),
+        }, rev: Date.now() });
       }
     }
   }
