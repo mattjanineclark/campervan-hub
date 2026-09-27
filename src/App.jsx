@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.77
+          Adventure Hub · v1.78
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4545,7 +4545,9 @@ async function openBookingInPlanner(b, places, familyId) {
       }
     }
   }
-  window.location.href = "trip-planner/#trip=" + uuid;
+  let famPart = "";
+  try { const f = localStorage.getItem("ah-family"); if (f) famPart = "&fam=" + encodeURIComponent(f); } catch (e) {}
+  window.location.href = "trip-planner/#trip=" + uuid + famPart;
 }
 
 // ─── ACTIVITY SORTING ─────────────────────────────────────────────────────────
@@ -5891,6 +5893,13 @@ function AppInner() {
     sbDispatch({ type: "UPD_BOOKING_DAYS", payload: { id: bookingId, days } });
   };
 
+
+  // Device-level family session shared with the Road Trip Planner
+  useEffect(() => {
+    if (!currentFamily || currentFamily === "__guest__") return;
+    const f = state.families.find(x => x.id === currentFamily);
+    if (f) { try { localStorage.setItem("ah-family", JSON.stringify({ id: f.id, name: f.name, emoji: f.emoji })); } catch (e) {} }
+  }, [currentFamily, state.families]);
 
   useEffect(() => {
     try { sessionStorage.setItem("showBookingForm", showBook ? "1" : "0"); } catch (e) { }
