@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.78
+          Adventure Hub · v1.79
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -5524,16 +5524,6 @@ function AppInner() {
         sessionStorage.removeItem("currentFamily");
         sessionStorage.removeItem("lastActive");
         return null;
-      }
-      if (!fam) {
-        // Fall back to the device-level session shared with the Road Trip
-        // Planner — keeps you signed in when hopping between the two.
-        const shared = JSON.parse(localStorage.getItem("ah-family") || "null");
-        if (shared && shared.id) {
-          sessionStorage.setItem("currentFamily", shared.id);
-          sessionStorage.setItem("lastActive", String(Date.now()));
-          return shared.id;
-        }
       }
       return fam || null;
     } catch (e) { return null; }
