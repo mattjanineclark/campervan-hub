@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.73
+          Adventure Hub · v1.74
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -3083,7 +3083,7 @@ function TripsPanel({ bookings, dispatch, places, families, currentFamilyId, odo
   return (
     <div>
       {/* NZ Road Trip Planner — embedded companion app at /trip-planner/ */}
-      <a href="trip-planner/" target="_blank" rel="noopener noreferrer"
+      <a href="trip-planner/"
         style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", background: "linear-gradient(135deg, #1a2e1a, #2d6a4f)", borderRadius: T.radius, padding: "12px 14px", marginBottom: 14, boxShadow: T.shadow }}>
         <span style={{ fontSize: 28, flexShrink: 0 }}>🗺️</span>
         <span style={{ flex: 1, minWidth: 0 }}>
@@ -5542,6 +5542,16 @@ function AppInner() {
         sessionStorage.removeItem("currentFamily");
         sessionStorage.removeItem("lastActive");
         return null;
+      }
+      if (!fam) {
+        // Fall back to the device-level session shared with the Road Trip
+        // Planner — keeps you signed in when hopping between the two.
+        const shared = JSON.parse(localStorage.getItem("ah-family") || "null");
+        if (shared && shared.id) {
+          sessionStorage.setItem("currentFamily", shared.id);
+          sessionStorage.setItem("lastActive", String(Date.now()));
+          return shared.id;
+        }
       }
       return fam || null;
     } catch (e) { return null; }
