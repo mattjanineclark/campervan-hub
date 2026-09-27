@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.74
+          Adventure Hub · v1.75
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2939,110 +2939,24 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
             )}
           </div>
 
-          {/* ── Trip Plan (days) — not shown for maintenance ── */}
+          {/* ── Planner (all planning happens in the Road Trip Planner) ── */}
           {b.familyId !== "maintenance" && (
           <div style={{ padding: "10px 14px", borderTop: `1px solid ${T.borderLight}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>🗺️ Trip Plan</span>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => setShowReport(true)}
-                  style={btn(T.accent + "10", T.accent, { fontSize: 10, padding: "3px 8px", border: `1px solid ${T.accent}20` })}>
-                  📄 Report
-                </button>
-                <button onClick={() => setFullEdit(true)}
-                  style={btn(T.primary + "10", T.primary, { fontSize: 10, padding: "3px 8px", border: `1px solid ${T.primary}20` })}>
-                  ✏️ Edit Plan
-                </button>
-                <button disabled={plannerSend === "sending"} onClick={sendToPlanner}
-                  style={btn("#1a2e1a" + "10", "#2d6a4f", { fontSize: 10, padding: "3px 8px", border: "1px solid #2d6a4f30" })}>
-                  {plannerSend === "sending" ? "…" : plannerSend === "done" ? "✓ Sent" : "🗺️ To Map"}
-                </button>
-                <button disabled={plannerPull === "sending"} onClick={pullFromPlanner}
-                  style={btn("#1a2e1a" + "10", "#2d6a4f", { fontSize: 10, padding: "3px 8px", border: "1px solid #2d6a4f30" })}>
-                  {plannerPull === "sending" ? "…" : plannerPull === "done" ? "✓ Pulled" : "⬇ From Map"}
-                </button>
-              </div>
-            </div>
-            {days.length === 0 ? (
-              <p style={{ fontSize: 11, color: T.textDim, fontStyle: "italic", margin: 0 }}>No plan yet — tap Edit Plan to add activities.</p>
-            ) : (
-              days.map((day, di) => {
-                const acts = sortActs(day.activities);
-                const dayLabel = day.date ? new Date(day.date + "T12:00:00").toLocaleDateString("en-NZ", { weekday: "long", day: "numeric", month: "long" }) : "";
-                return (
-                  <div key={di} style={{ marginBottom: 12 }}>
-                    <div style={{ background: "linear-gradient(135deg, #1a2e1a, #2d6a4f)", color: "white", borderRadius: 10, padding: "7px 12px", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
-                      <span style={{ fontWeight: 800, fontSize: 12, flexShrink: 0 }}>Day {di + 1}</span>
-                      <span style={{ fontSize: 11, opacity: 0.9, textAlign: "right" }}>{dayLabel}</span>
-                    </div>
-                    {acts.length === 0 ? (
-                      <p style={{ fontSize: 11, color: T.textDim, fontStyle: "italic", margin: "2px 0 4px", paddingLeft: 8 }}>Nothing planned</p>
-                    ) : (
-                      acts.map((act, ai) => {
-                        const isStay = act.type === "stay";
-                        const savedPlace = act.placeId ? places.find(p => p.id === act.placeId) : null;
-                        const locLabel = savedPlace ? savedPlace.name : (act.location || act.place || "");
-                        const mapU = actMapsUrl(act, places);
-                        const cost = parseFloat(act.cost) || 0;
-                        return (
-                          <div key={ai} style={{ display: "flex", marginBottom: 5 }}>
-                            <div style={{ width: 46, flexShrink: 0, paddingTop: 9, textAlign: "center" }}>
-                              {isStay
-                                ? <span style={{ fontSize: 15 }}>🛏️</span>
-                                : <span style={{ fontSize: 11, fontWeight: 800, color: T.primary }}>{act.time || "·"}</span>}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0, background: T.surface, borderRadius: T.radiusSm, border: `1px solid ${T.borderLight}`, borderLeft: `3px solid ${isStay ? (T.sky || "#3b82f6") : T.primary}`, padding: "8px 10px" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{act.title || (isStay ? "Overnight stay" : "Activity")}</span>
-                                {cost > 0 && <span style={{ ...pill(T.accent + "15", T.accent), fontSize: 10, flexShrink: 0 }}>${cost.toFixed(cost % 1 ? 2 : 0)}</span>}
-                              </div>
-                              {isStay && (act.checkIn || act.checkOut) && (
-                                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
-                                  {act.checkIn ? "Check-in " + act.checkIn : ""}{act.checkIn && act.checkOut ? " · " : ""}{act.checkOut ? "Check-out " + act.checkOut : ""}
-                                </div>
-                              )}
-                              {(locLabel || mapU) && (
-                                <div style={{ fontSize: 11, marginTop: 3, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                                  {locLabel && <span style={{ color: T.primary, fontWeight: 600 }}>📍 {locLabel}</span>}
-                                  {mapU && <a href={mapU} target="_blank" rel="noopener noreferrer" style={{ color: T.primary, fontWeight: 700, textDecoration: "none" }}>🧭 Directions</a>}
-                                </div>
-                              )}
-                              {act.notes && <div style={{ fontSize: 11, color: T.textDim, marginTop: 3, fontStyle: "italic", lineHeight: 1.4 }}>{act.notes}</div>}
-                              {(act.attachments || []).length > 0 && (
-                                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 4 }}>
-                                  {(act.attachments || []).map((a, fi) => (
-                                    <button key={fi} onClick={() => setViewPlanFile(a.url)} style={{ ...pill(T.primary + "12", T.primary), fontSize: 10, border: "1px solid " + T.primary + "25", cursor: "pointer", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {a.name || "File"}</button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                );
-              })
-            )}
-            {(() => {
-              const tot = days.reduce((s, d) => s + (d.activities || []).reduce((s2, a) => s2 + (parseFloat(a.cost) || 0), 0), 0);
-              return tot > 0 ? (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: T.accent + "0c", border: `1px solid ${T.accent}30`, borderRadius: T.radiusSm, padding: "8px 12px", marginTop: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>💰 Planned costs</span>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>${tot.toFixed(2)}</span>
-                </div>
-              ) : null;
-            })()}
-            {viewPlanFile && (
-              <div onClick={() => setViewPlanFile(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 950, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}>
-                {(viewPlanFile.includes(".pdf") || viewPlanFile.startsWith("data:application/pdf"))
-                  ? <iframe src={viewPlanFile} title="Attachment" style={{ width: "100%", height: "80%", border: "none", borderRadius: 8, background: "white" }} />
-                  : <img src={viewPlanFile} alt="Attachment" style={{ maxWidth: "100%", maxHeight: "82%", borderRadius: 8, objectFit: "contain" }} />}
-                <button onClick={() => setViewPlanFile(null)} style={{ marginTop: 14, background: "white", color: "#333", border: "none", borderRadius: 99, padding: "9px 24px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
-              </div>
-            )}
+            <button disabled={plannerSend === "sending"} onClick={async () => {
+              setPlannerSend("sending");
+              try { await openBookingInPlanner(b, places, currentFamilyId); }
+              catch (err) { console.error(err); setPlannerSend(""); alert("Couldn't open the planner — " + (err.message || "error") + ". Check the planner tables SQL has been run."); }
+            }}
+              style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", cursor: "pointer", background: "linear-gradient(135deg, #1a2e1a, #2d6a4f)", border: "none", borderRadius: T.radiusSm, padding: "12px 14px", boxShadow: T.shadow }}>
+              <span style={{ fontSize: 24, flexShrink: 0 }}>🗺️</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", color: "white", fontWeight: 800, fontSize: 13 }}>{plannerSend === "sending" ? "Opening…" : "Open Trip Planner"}</span>
+                <span style={{ display: "block", color: "rgba(255,255,255,0.85)", fontSize: 11 }}>Map, days, stops & kids' booklets</span>
+              </span>
+              <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 17, flexShrink: 0 }}>›</span>
+            </button>
           </div>
-          )} {/* end maintenance check */}
+          )}
 
         </div>
       )}
@@ -4566,6 +4480,37 @@ function actMapsUrl(act, places) {
   const q = (act.location || act.title || "").trim();
   if (!q) return null;
   return isIOS ? `https://maps.apple.com/?q=${encodeURIComponent(q)}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+}
+
+// ─── OPEN A BOOKING IN THE ROAD TRIP PLANNER ─────────────────────────────────
+// Finds or creates the linked planner trip (seeding any already-pinned stops on
+// first link), refreshes title/dates, then navigates to it. Planner is the
+// planning surface; the hub keeps the booking itself.
+async function openBookingInPlanner(b, places, familyId) {
+  const daysN = Math.max(1, (b.days || []).length || 1);
+  const existing = await supa.get("planner_trips", "select=id,data&booking_id=eq." + encodeURIComponent(b.id));
+  let uuid;
+  if (existing && existing[0]) {
+    uuid = existing[0].id;
+    const prev = existing[0].data || {};
+    await supa.update("planner_trips", { title: b.destination, data: { ...prev, title: b.destination, start: b.start, days: daysN }, rev: Date.now() }, { id: uuid });
+  } else {
+    const tripData = { title: b.destination, start: b.start, days: daysN, home: null, oneway: false, plan: [], kids: [], rev: Date.now() };
+    const r = await supa.insert("planner_trips", { booking_id: String(b.id), family_id: familyId || "", title: b.destination, data: tripData, rev: tripData.rev });
+    uuid = Array.isArray(r) && r[0] ? r[0].id : null;
+    if (!uuid) throw new Error("could not create the planner trip");
+    let order = 0;
+    for (let di = 0; di < (b.days || []).length; di++) {
+      for (const act of sortActs(b.days[di].activities)) {
+        const pl = act.placeId ? (places || []).find(p => p.id === act.placeId) : null;
+        const lat = act.lat ?? (pl && pl.lat), lon = act.lng ?? (pl && pl.lng);
+        if (lat == null || lon == null) continue;
+        order += 1;
+        await supa.insert("planner_stops", { id: "hub" + String(act.id), trip_id: uuid, data: { name: act.title || "Stop", lat: +lat, lon: +lon, day: di + 1, order, kind: act.type === "stay" ? "stay" : "stop", time: (act.type === "stay" ? act.checkIn : act.time) || "", kids: "", note: act.notes || "", img: "", thumb: "", rev: Date.now() }, rev: Date.now() });
+      }
+    }
+  }
+  window.location.href = "trip-planner/#trip=" + uuid;
 }
 
 // ─── ACTIVITY SORTING ─────────────────────────────────────────────────────────
@@ -6168,7 +6113,7 @@ function AppInner() {
                 ...(todayStr === myNext.start ? [{ label: "🚦 Pick Up List", onTap: () => goKit("pickup") }] : []),
                 { label: "✅ Set Up List", onTap: () => goKit("setup") },
                 { label: "🚐 Pack Down List", onTap: () => goKit("packdown") },
-                { label: "🗺️ Trip Plan", onTap: openTrip },
+                { label: "🗺️ Planner", onTap: () => openBookingInPlanner(myNext, state.places, currentFamily).catch(() => setTab("trips")) },
               ]} extra={<PlannedToday acts={todayActs} />} />;
             if (d <= 7) return <Hero tag="⏳ Almost here!" title={myNext.destination} sub={`${myNext.start} → ${myNext.end} · in ${d} day${d === 1 ? "" : "s"}`} onTap={openTrip}
               buttons={[
@@ -6182,7 +6127,7 @@ function AppInner() {
           const justBack = state.bookings.filter(b => b.familyId === currentFamily && b.end < todayStr && b.end >= cutoff).sort((a, b) => b.end.localeCompare(a.end))[0];
           if (justBack) return <Hero tag="👋 Welcome back!" title={justBack.destination} sub="Hope it was a great trip" onTap={() => { setTab("trips"); setOpenItinId(justBack.id); }}
             buttons={[
-              { label: "📄 Trip Report", onTap: () => { setTab("trips"); setOpenItinId(justBack.id); } },
+              { label: "🗺️ Planner", onTap: () => openBookingInPlanner(justBack, state.places, currentFamily).catch(() => setTab("trips")) },
               { label: "🔢 Log Odometer", onTap: goOdo },
               { label: "🔑 Return Van List", onTap: () => goKit("return") },
             ]} />;
