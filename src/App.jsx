@@ -122,7 +122,7 @@ const fromDB = {
   place: p => p ? ({ id: p.id, name: p.name, familyId: p.family_id, category: p.category, lat: p.lat, lng: p.lng, overallRating: p.overall_rating || 0, reviews: [], notes: p.notes || "", guestName: p.guest_name || "" }) : null,
   review: r => r ? ({ familyId: r.family_id, rating: r.rating, text: r.review_text, date: r.review_date }) : null,
   itin: i => i ? ({ id: i.id, title: i.title, familyId: i.family_id, start: i.start_date || "", end: i.end_date || "", destination: i.destination || "", notes: i.notes || "", bookingId: i.booking_id || "", visibility: "private", days: i.days || [] }) : null,
-  family: f => f ? ({ id: f.id, name: f.name, color: f.color, emoji: f.emoji, pin: f.pin, photo: f.photo || null }) : null,
+  family: f => f ? ({ id: f.id, name: f.name, color: f.color, emoji: f.emoji, pin: f.pin, photo: f.photo || null, kids: f.kids || [] }) : null,
   equip: e => e ? ({ id: e.id, category: e.category, item: e.item, status: e.status || "invan" }) : null,
   packing: p => p ? ({ id: p.id, category: p.category, item: p.item, status: p.status || "tobring" }) : null,
   guide: g => g ? ({ id: g.id, title: g.title, icon: g.icon, content: g.content || "", links: g.links || [], attachments: g.attachments || [] }) : null,
@@ -139,7 +139,7 @@ const toDB = {
   place: p => ({ id: p.id, name: p.name, family_id: p.familyId, category: p.category, lat: p.lat, lng: p.lng, overall_rating: p.overallRating || 0, notes: p.notes || "", guest_name: p.guestName || "" }),
   review: (placeId, r) => ({ place_id: placeId, family_id: r.familyId, rating: r.rating, review_text: r.text, review_date: r.date }),
   itin: i => ({ id: i.id, title: i.title, family_id: i.familyId, start_date: i.start || null, end_date: i.end || null, destination: i.destination || "", notes: i.notes || "", booking_id: i.bookingId || null, visibility: i.visibility || "private", days: i.days || [] }),
-  family: f => ({ id: f.id, name: f.name, color: f.color, emoji: f.emoji, pin: f.pin, photo: f.photo || null }),
+  family: f => ({ id: f.id, name: f.name, color: f.color, emoji: f.emoji, pin: f.pin, photo: f.photo || null , kids: Array.isArray(f.kids) ? f.kids : [] }),
   equip: e => ({ id: e.id, category: e.category, item: e.item, status: e.status }),
   packing: (familyId, p) => ({ id: p.id, family_id: familyId, category: p.category, item: p.item, status: p.status }),
   guide: g => ({ id: g.id, title: g.title, icon: g.icon, content: g.content || "", links: g.links || [], attachments: g.attachments || [] }),
@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.88
+          Adventure Hub · v1.89
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2951,7 +2951,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                   const unlinked = await supa.get("planner_trips", "select=id,title&booking_id=is.null&order=updated_at.desc");
                   if (unlinked && unlinked.length) { setPlannerChoices(unlinked); setPlannerSend(""); return; }
                 }
-                await openBookingInPlanner(b, places, currentFamilyId);
+                await openBookingInPlanner(b, places, currentFamilyId, families);
               }
               catch (err) { console.error(err); setPlannerSend(""); alert("Couldn't open the planner — " + (err.message || "error") + ". Check the planner tables SQL has been run."); }
             }}
@@ -2971,7 +2971,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                     setPlannerChoices(null); setPlannerSend("sending");
                     try {
                       await supa.update("planner_trips", { booking_id: String(b.id) }, { id: t.id });
-                      await openBookingInPlanner(b, places, currentFamilyId);
+                      await openBookingInPlanner(b, places, currentFamilyId, families);
                     } catch (err) { setPlannerSend(""); alert("Couldn't link — " + (err.message || "error")); }
                   }}
                     style={{ ...btn(T.surface, T.primary, { width: "100%", textAlign: "left", fontSize: 12, marginBottom: 6, border: `1px solid ${T.primary}30` }) }}>
@@ -2981,7 +2981,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                 <div style={{ display: "flex", gap: 6 }}>
                   <button onClick={async () => {
                     setPlannerChoices(null); setPlannerSend("sending");
-                    try { await openBookingInPlanner(b, places, currentFamilyId); }
+                    try { await openBookingInPlanner(b, places, currentFamilyId, families); }
                     catch (err) { setPlannerSend(""); alert("Couldn't open — " + (err.message || "error")); }
                   }} style={{ ...btn(T.primary, T.surface, { flex: 1, fontSize: 12 }) }}>➕ Start a fresh plan</button>
                   <button onClick={() => setPlannerChoices(null)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` }) }}>Cancel</button>
@@ -3874,7 +3874,7 @@ function FamilyManager({ families, dispatch, currentFamilyId }) {
   const save = () => {
     if (!form.name.trim()) return;
     const pinToSave = form.pinInput.length === 4 ? form.pinInput : form.pin;
-    const saved = { ...form, pin: pinToSave };
+    const saved = { ...form, pin: pinToSave, kids: (form.kids || []).filter(k => (k.name || "").trim()).map(k => ({ name: k.name.trim(), age: parseInt(k.age) || 8 })) };
     delete saved.pinInput;
     if (editing === "new") dispatch({ type: "ADD_FAMILY", payload: saved });
     else dispatch({ type: "UPDATE_FAMILY", payload: saved });
@@ -3959,6 +3959,21 @@ function FamilyManager({ families, dispatch, currentFamilyId }) {
               </button>
             ))}
           </div>
+
+          {/* Kids roster — used by the Road Trip Planner booklets */}
+          <label style={lbl}>Kids (for trip booklets)</label>
+          {(form.kids || []).map((k, ki) => (
+            <div key={ki} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+              <input style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="Name" value={k.name || ""}
+                onChange={e => setForm(f => ({ ...f, kids: f.kids.map((x, j) => j === ki ? { ...x, name: e.target.value } : x) }))} />
+              <input style={{ ...inp, width: 70, flexShrink: 0 }} type="number" min="1" max="17" placeholder="Age" value={k.age || ""}
+                onChange={e => setForm(f => ({ ...f, kids: f.kids.map((x, j) => j === ki ? { ...x, age: e.target.value } : x) }))} />
+              <button onClick={() => setForm(f => ({ ...f, kids: f.kids.filter((_, j) => j !== ki) }))}
+                style={{ background: "none", border: "none", color: T.red, fontSize: 18, cursor: "pointer", flexShrink: 0 }}>&times;</button>
+            </div>
+          ))}
+          <button onClick={() => setForm(f => ({ ...f, kids: [...(f.kids || []), { name: "", age: "" }] }))}
+            style={{ ...btn(T.bg, T.textMuted, { fontSize: 12, border: `1px solid ${T.border}`, marginBottom: 10 }) }}>+ Add child</button>
 
           {/* Colour picker */}
           <label style={lbl}>Colour</label>
@@ -4509,7 +4524,7 @@ function actMapsUrl(act, places) {
 // Finds or creates the linked planner trip (seeding any already-pinned stops on
 // first link), refreshes title/dates, then navigates to it. Planner is the
 // planning surface; the hub keeps the booking itself.
-async function openBookingInPlanner(b, places, familyId) {
+async function openBookingInPlanner(b, places, familyId, families) {
   const daysN = Math.max(1, (b.days || []).length || 1);
   const existing = await supa.get("planner_trips", "select=id,data&booking_id=eq." + encodeURIComponent(b.id));
   let uuid;
@@ -4518,13 +4533,19 @@ async function openBookingInPlanner(b, places, familyId) {
     const prev = existing[0].data || {};
     await supa.update("planner_trips", { title: b.destination, data: { ...prev, title: b.destination, start: b.start, days: daysN }, rev: Date.now() }, { id: uuid });
   } else {
-    // Inherit the kids (names, ages, game settings) from the family's most
-    // recent planner trip so they never need re-entering
+    // Kids come from THIS family's roster (hub Settings). Games and difficulty
+    // are chosen per trip in the planner. Falls back to the latest trip's kids
+    // if the roster hasn't been filled in yet.
     let kids = [];
-    try {
-      const prev = await supa.get("planner_trips", "select=data&order=updated_at.desc&limit=1");
-      if (prev && prev[0] && Array.isArray(prev[0].data?.kids)) kids = prev[0].data.kids;
-    } catch (e) {}
+    const fam = (families || []).find(f => f.id === familyId);
+    if (fam && Array.isArray(fam.kids) && fam.kids.length) {
+      kids = fam.kids.map(k => ({ name: k.name, age: parseInt(k.age) || 8, games: null, diff: {} }));
+    } else {
+      try {
+        const prev = await supa.get("planner_trips", "select=data&order=updated_at.desc&limit=1");
+        if (prev && prev[0] && Array.isArray(prev[0].data?.kids)) kids = prev[0].data.kids;
+      } catch (e) {}
+    }
     const tripData = { title: b.destination, start: b.start, days: daysN, home: null, oneway: false, plan: [], kids, rev: Date.now() };
     const r = await supa.insert("planner_trips", { booking_id: String(b.id), family_id: familyId || "", title: b.destination, data: tripData, rev: tripData.rev });
     uuid = Array.isArray(r) && r[0] ? r[0].id : null;
@@ -6160,7 +6181,7 @@ function AppInner() {
                 ...(todayStr === myNext.start ? [{ label: "🚦 Pick Up List", onTap: () => goKit("pickup") }] : []),
                 { label: "✅ Set Up List", onTap: () => goKit("setup") },
                 { label: "🚐 Pack Down List", onTap: () => goKit("packdown") },
-                { label: "🗺️ Planner", onTap: () => openBookingInPlanner(myNext, state.places, currentFamily).catch(() => setTab("trips")) },
+                { label: "🗺️ Planner", onTap: () => openBookingInPlanner(myNext, state.places, currentFamily, state.families).catch(() => setTab("trips")) },
               ]} extra={<PlannedToday acts={todayActs} />} />;
             if (d <= 7) return <Hero tag="⏳ Almost here!" title={myNext.destination} sub={`${myNext.start} → ${myNext.end} · in ${d} day${d === 1 ? "" : "s"}`} onTap={openTrip}
               buttons={[
@@ -6174,7 +6195,7 @@ function AppInner() {
           const justBack = state.bookings.filter(b => b.familyId === currentFamily && b.end < todayStr && b.end >= cutoff).sort((a, b) => b.end.localeCompare(a.end))[0];
           if (justBack) return <Hero tag="👋 Welcome back!" title={justBack.destination} sub="Hope it was a great trip" onTap={() => { setTab("trips"); setOpenItinId(justBack.id); }}
             buttons={[
-              { label: "🗺️ Planner", onTap: () => openBookingInPlanner(justBack, state.places, currentFamily).catch(() => setTab("trips")) },
+              { label: "🗺️ Planner", onTap: () => openBookingInPlanner(justBack, state.places, currentFamily, state.families).catch(() => setTab("trips")) },
               { label: "🔢 Log Odometer", onTap: goOdo },
               { label: "🔑 Return Van List", onTap: () => goKit("return") },
             ]} />;
