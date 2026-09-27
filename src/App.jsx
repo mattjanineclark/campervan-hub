@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.72
+          Adventure Hub · v1.73
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2455,6 +2455,58 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   const [fullEdit, setFullEdit] = useState(false);
   const [viewPlanFile, setViewPlanFile] = useState(null);
   const [plannerSend, setPlannerSend] = useState("");
+  const [plannerPull, setPlannerPull] = useState("");
+  // Planner → hub: brings map-side changes back into the booking's plan.
+  // Matches on stable ids; planner-added stops become new pinned activities.
+  // Hub-only fields (costs, attachments, kid stars, check-out) are preserved.
+  const pullFromPlanner = async () => {
+    if (plannerPull === "sending") return;
+    setPlannerPull("sending");
+    try {
+      const t = await supa.get("planner_trips", "select=id&booking_id=eq." + encodeURIComponent(b.id));
+      if (!t || !t[0]) { alert("No planner trip is linked to this booking yet — tap 🗺️ To Map first."); setPlannerPull(""); return; }
+      const stops = (await supa.get("planner_stops", "select=id,data&trip_id=eq." + t[0].id)) || [];
+      const days = (b.days || []).map(d => ({ ...d, activities: [...(d.activities || [])] }));
+      if (!days.length) { alert("This booking has no days set up yet."); setPlannerPull(""); return; }
+      let added = 0, updated = 0;
+      stops.forEach(s => {
+        const d = s.data || {};
+        const di = Math.min(days.length - 1, Math.max(0, (parseInt(d.day) || 1) - 1));
+        const actId = String(s.id).startsWith("hub") ? String(s.id).slice(3) : null;
+        let tdi = -1, tai = -1;
+        if (actId) days.forEach((dd, i) => (dd.activities || []).forEach((a, j) => { if (String(a.id) === actId) { tdi = i; tai = j; } }));
+        if (tdi >= 0) {
+          const target = days[tdi].activities[tai];
+          const upd = { ...target, title: d.name || target.title, lat: d.lat, lng: d.lon };
+          if (target.type === "stay") { if (d.time) upd.checkIn = d.time; } else if (d.time) upd.time = d.time;
+          if (d.note && !target.notes) upd.notes = d.note;
+          if (tdi !== di) { days[tdi].activities.splice(tai, 1); days[di].activities.push(upd); }
+          else days[tdi].activities[tai] = upd;
+          updated += 1;
+        } else {
+          days[di].activities.push({
+            id: "a" + Date.now() + Math.floor(Math.random() * 10000),
+            type: d.kind === "stay" ? "stay" : "activity",
+            title: d.name || "Stop",
+            time: d.kind === "stay" ? "" : (d.time || ""),
+            checkIn: d.kind === "stay" ? (d.time || "") : "", checkOut: "",
+            placeId: "", location: d.name || "", lat: d.lat, lng: d.lon,
+            notes: d.note || "", attachments: [], cost: "",
+          });
+          added += 1;
+        }
+      });
+      days.forEach(dd => { dd.activities = sortActs(dd.activities); });
+      dispatch({ type: "UPD_BOOKING_DAYS", payload: { id: b.id, days, notes: b.notes } });
+      setPlannerPull("done");
+      setTimeout(() => setPlannerPull(""), 4000);
+      if (!added && !updated) alert("Nothing to pull yet — add pinned stops in the planner first.");
+    } catch (err) {
+      console.error("Planner pull failed:", err);
+      setPlannerPull("");
+      alert("Couldn't pull from the planner — " + (err.message || "error"));
+    }
+  };
   // Hub → Road Trip Planner sync: upserts this booking's plan as a planner trip
   // (stops from pinned locations). Hub is the master; re-sending replaces stops.
   const sendToPlanner = async () => {
@@ -2467,16 +2519,19 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
         home: null, oneway: false, plan: [], kids: [], rev: Date.now(),
       };
       const existing = await supa.get("planner_trips", "select=id&booking_id=eq." + encodeURIComponent(b.id));
-      let tripUuid;
+      let tripUuid, prevStops = [];
       if (existing && existing[0]) {
         tripUuid = existing[0].id;
         await supa.update("planner_trips", { title: tripData.title, data: tripData, rev: tripData.rev }, { id: tripUuid });
-        await supa.delete("planner_stops", { trip_id: tripUuid });
+        prevStops = (await supa.get("planner_stops", "select=id,data&trip_id=eq." + tripUuid)) || [];
       } else {
         const r = await supa.insert("planner_trips", { booking_id: String(b.id), family_id: currentFamilyId || "", title: tripData.title, data: tripData, rev: tripData.rev });
         tripUuid = Array.isArray(r) && r[0] ? r[0].id : null;
         if (!tripUuid) throw new Error("planner trip insert returned no id");
       }
+      // Planner-side extras to preserve across re-sends (kid notes, photos)
+      const keep = {};
+      prevStops.forEach(s => { keep[s.id] = { kids: s.data?.kids || "", img: s.data?.img || "", thumb: s.data?.thumb || "" }; });
       let order = 0; const rows = [];
       (b.days || []).forEach((day, di) => {
         sortActs(day.activities).forEach(act => {
@@ -2484,21 +2539,27 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
           const lat = act.lat ?? (pl && pl.lat), lon = act.lng ?? (pl && pl.lng);
           if (lat == null || lon == null) return; // planner is map-based; skip unpinned
           order += 1;
+          const sid = "hub" + String(act.id); // stable id — the return path matches on this
           rows.push({
-            id: "s" + b.id + "x" + order + Date.now().toString(36),
-            trip_id: tripUuid,
+            id: sid, trip_id: tripUuid,
             data: {
               name: act.title || (act.type === "stay" ? "Overnight stay" : "Stop"),
               lat: +lat, lon: +lon, day: di + 1, order,
               kind: act.type === "stay" ? "stay" : "stop",
-              time: act.time || act.checkIn || "", kids: "", note: act.notes || "",
-              img: "", thumb: "", rev: Date.now(),
+              time: (act.type === "stay" ? act.checkIn : act.time) || "",
+              kids: keep[sid]?.kids || "", note: act.notes || "",
+              img: keep[sid]?.img || "", thumb: keep[sid]?.thumb || "", rev: Date.now(),
             },
             rev: Date.now(),
           });
         });
       });
-      for (let i = 0; i < rows.length; i += 100) await supa.insert("planner_stops", rows.slice(i, i + 100));
+      for (const row of rows) await supa.upsert("planner_stops", row);
+      // Remove hub-sent stops whose activity was deleted or unpinned (planner-added stops untouched)
+      const sentIds = new Set(rows.map(r => r.id));
+      for (const s of prevStops) {
+        if (String(s.id).startsWith("hub") && !sentIds.has(s.id)) await supa.delete("planner_stops", { id: s.id });
+      }
       setPlannerSend("done");
       if (order === 0) alert("Sent — but no stops had pinned locations yet. Use the 🔍 location search in the trip plan so stops appear on the planner's map.");
       setTimeout(() => setPlannerSend(""), 4000);
@@ -2894,7 +2955,11 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                 </button>
                 <button disabled={plannerSend === "sending"} onClick={sendToPlanner}
                   style={btn("#1a2e1a" + "10", "#2d6a4f", { fontSize: 10, padding: "3px 8px", border: "1px solid #2d6a4f30" })}>
-                  {plannerSend === "sending" ? "…" : plannerSend === "done" ? "✓ Sent" : "🗺️ To Planner"}
+                  {plannerSend === "sending" ? "…" : plannerSend === "done" ? "✓ Sent" : "🗺️ To Map"}
+                </button>
+                <button disabled={plannerPull === "sending"} onClick={pullFromPlanner}
+                  style={btn("#1a2e1a" + "10", "#2d6a4f", { fontSize: 10, padding: "3px 8px", border: "1px solid #2d6a4f30" })}>
+                  {plannerPull === "sending" ? "…" : plannerPull === "done" ? "✓ Pulled" : "⬇ From Map"}
                 </button>
               </div>
             </div>
