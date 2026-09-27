@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.71
+          Adventure Hub · v1.72
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2454,6 +2454,60 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   const [expanded, setExpanded] = useState(openId === b.id);
   const [fullEdit, setFullEdit] = useState(false);
   const [viewPlanFile, setViewPlanFile] = useState(null);
+  const [plannerSend, setPlannerSend] = useState("");
+  // Hub → Road Trip Planner sync: upserts this booking's plan as a planner trip
+  // (stops from pinned locations). Hub is the master; re-sending replaces stops.
+  const sendToPlanner = async () => {
+    if (plannerSend === "sending") return;
+    setPlannerSend("sending");
+    try {
+      const tripData = {
+        title: b.destination, start: b.start,
+        days: Math.max(1, (b.days || []).length || 1),
+        home: null, oneway: false, plan: [], kids: [], rev: Date.now(),
+      };
+      const existing = await supa.get("planner_trips", "select=id&booking_id=eq." + encodeURIComponent(b.id));
+      let tripUuid;
+      if (existing && existing[0]) {
+        tripUuid = existing[0].id;
+        await supa.update("planner_trips", { title: tripData.title, data: tripData, rev: tripData.rev }, { id: tripUuid });
+        await supa.delete("planner_stops", { trip_id: tripUuid });
+      } else {
+        const r = await supa.insert("planner_trips", { booking_id: String(b.id), family_id: currentFamilyId || "", title: tripData.title, data: tripData, rev: tripData.rev });
+        tripUuid = Array.isArray(r) && r[0] ? r[0].id : null;
+        if (!tripUuid) throw new Error("planner trip insert returned no id");
+      }
+      let order = 0; const rows = [];
+      (b.days || []).forEach((day, di) => {
+        sortActs(day.activities).forEach(act => {
+          const pl = act.placeId ? (places || []).find(p => p.id === act.placeId) : null;
+          const lat = act.lat ?? (pl && pl.lat), lon = act.lng ?? (pl && pl.lng);
+          if (lat == null || lon == null) return; // planner is map-based; skip unpinned
+          order += 1;
+          rows.push({
+            id: "s" + b.id + "x" + order + Date.now().toString(36),
+            trip_id: tripUuid,
+            data: {
+              name: act.title || (act.type === "stay" ? "Overnight stay" : "Stop"),
+              lat: +lat, lon: +lon, day: di + 1, order,
+              kind: act.type === "stay" ? "stay" : "stop",
+              time: act.time || act.checkIn || "", kids: "", note: act.notes || "",
+              img: "", thumb: "", rev: Date.now(),
+            },
+            rev: Date.now(),
+          });
+        });
+      });
+      for (let i = 0; i < rows.length; i += 100) await supa.insert("planner_stops", rows.slice(i, i + 100));
+      setPlannerSend("done");
+      if (order === 0) alert("Sent — but no stops had pinned locations yet. Use the 🔍 location search in the trip plan so stops appear on the planner's map.");
+      setTimeout(() => setPlannerSend(""), 4000);
+    } catch (err) {
+      console.error("Planner sync failed:", err);
+      setPlannerSend("");
+      alert("Couldn't send to the planner — " + (err.message || "error") + ". Check the planner tables SQL has been run.");
+    }
+  };
   const [showOdoForm, setShowOdoForm] = useState(false);
   const [odoForm, setOdoForm] = useState({ startKm: "", endKm: "", tolls: false, tollAmt: "", notes: "" });
   const [confirmWarn, setConfirmWarn] = useState(null);
@@ -2837,6 +2891,10 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                 <button onClick={() => setFullEdit(true)}
                   style={btn(T.primary + "10", T.primary, { fontSize: 10, padding: "3px 8px", border: `1px solid ${T.primary}20` })}>
                   ✏️ Edit Plan
+                </button>
+                <button disabled={plannerSend === "sending"} onClick={sendToPlanner}
+                  style={btn("#1a2e1a" + "10", "#2d6a4f", { fontSize: 10, padding: "3px 8px", border: "1px solid #2d6a4f30" })}>
+                  {plannerSend === "sending" ? "…" : plannerSend === "done" ? "✓ Sent" : "🗺️ To Planner"}
                 </button>
               </div>
             </div>
@@ -5405,6 +5463,8 @@ function AppInner() {
     setTab("trips");
     setCurrentFamily(familyId);
     try { sessionStorage.setItem("currentFamily", familyId); sessionStorage.setItem("lastActive", String(Date.now())); } catch (e) {}
+    // Hand the family session to the embedded Road Trip Planner (same origin)
+    try { localStorage.setItem("ah-family", JSON.stringify({ id: fam.id, name: fam.name, emoji: fam.emoji })); } catch (e) {}
   };
   const [showBook, setShowBook] = useState(() => {
     try { return sessionStorage.getItem("showBookingForm") === "1"; } catch (e) { return false; }
@@ -5871,7 +5931,7 @@ function AppInner() {
       vanName={state.vanName}
       dispatch={sbDispatch}
       allFamilies={state.families}
-      onSignOut={() => { setCurrentFamily(null); setGuestBooking(null); try { sessionStorage.removeItem("currentFamily"); } catch(e){} }}
+      onSignOut={() => { setCurrentFamily(null); setGuestBooking(null); try { localStorage.removeItem("ah-family"); } catch (e) {} try { sessionStorage.removeItem("currentFamily"); } catch(e){} }}
     />
   );
   // If families reloaded from DB and signed-in family not found, sign out
