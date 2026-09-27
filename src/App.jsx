@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.91
+          Adventure Hub · v1.92
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2457,6 +2457,8 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   const [plannerSend, setPlannerSend] = useState("");
   const [plannerPull, setPlannerPull] = useState("");
   const [plannerChoices, setPlannerChoices] = useState(null);
+  const [editDates, setEditDates] = useState(false);
+  const [dateDraft, setDateDraft] = useState({ start: "", end: "" });
   // Planner → hub: brings map-side changes back into the booking's plan.
   // Matches on stable ids; planner-added stops become new pinned activities.
   // Hub-only fields (costs, attachments, kid stars, check-out) are preserved.
@@ -2705,6 +2707,57 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                 detail={`${b.start} to ${b.end}`}
                 onConfirm={() => dispatch({ type: "DEL_BOOKING", id: b.id })}
                 style={{ fontSize: 12 }} />
+            </div>
+          )}
+
+          {/* ── Booking dates (flow through to the planner) ── */}
+          {isOwner && b.familyId !== "maintenance" && (
+            <div style={{ padding: "10px 14px", borderTop: `1px solid ${T.borderLight}` }}>
+              <p style={{ ...sectionHead, margin: "0 0 8px" }}>📅 DATES</p>
+              {!editDates ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontWeight: 700, color: T.text, fontSize: 13, flex: 1 }}>
+                    {b.start} → {b.end}<span style={{ color: T.textDim, fontWeight: 500 }}> · {nights(b.start, b.end)} nights</span>
+                  </span>
+                  <button onClick={() => { setDateDraft({ start: b.start, end: b.end }); setEditDates(true); }}
+                    style={{ ...btn(T.bg, T.textMuted, { fontSize: 11, border: `1px solid ${T.border}`, padding: "5px 10px", flexShrink: 0 }) }}>✏️ Change</button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8, marginBottom: 8 }}>
+                    <div>
+                      <label style={lbl}>Start</label>
+                      <input style={dateInp} type="date" value={dateDraft.start} onChange={e => setDateDraft(d => ({ ...d, start: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={lbl}>End</label>
+                      <input style={dateInp} type="date" value={dateDraft.end} onChange={e => setDateDraft(d => ({ ...d, end: e.target.value }))} />
+                    </div>
+                  </div>
+                  {(() => {
+                    if (!dateDraft.start || !dateDraft.end || dateDraft.end < dateDraft.start) return <p style={{ fontSize: 11, color: T.red, margin: "0 0 8px" }}>End date must be on or after the start date.</p>;
+                    const clash = bookings.find(x => x.id !== b.id && x.familyId !== "maintenance" && x.status === "confirmed" && x.start <= dateDraft.end && x.end >= dateDraft.start);
+                    return clash ? <p style={{ fontSize: 11, color: T.accent, fontWeight: 600, margin: "0 0 8px" }}>⚠️ Overlaps {clash.destination} ({clash.start} → {clash.end}) — you can still save.</p> : null;
+                  })()}
+                  <p style={{ fontSize: 11, color: T.textDim, margin: "0 0 8px" }}>Day plans keep their order (day 1 stays day 1). The planner picks the new dates up automatically.</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button disabled={!dateDraft.start || !dateDraft.end || dateDraft.end < dateDraft.start}
+                      onClick={() => {
+                        const count = nights(dateDraft.start, dateDraft.end) + 1;
+                        const oldDays = b.days || [];
+                        const newDays = Array.from({ length: count }, (_, i) => {
+                          const dt = new Date(dateDraft.start + "T12:00:00"); dt.setDate(dt.getDate() + i);
+                          return { date: fmt(dt), activities: (oldDays[i] && oldDays[i].activities) || [] };
+                        });
+                        dispatch({ type: "UPD_BOOKING", payload: { id: b.id, start: dateDraft.start, end: dateDraft.end } });
+                        dispatch({ type: "UPD_BOOKING_DAYS", payload: { id: b.id, days: newDays, notes: b.notes } });
+                        setEditDates(false);
+                      }}
+                      style={btn(T.primary, T.surface, { fontSize: 12 })}>✓ Save dates</button>
+                    <button onClick={() => setEditDates(false)} style={{ ...btn("transparent", T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` }) }}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -4552,7 +4605,7 @@ async function openBookingInPlanner(b, places, familyId, families) {
         return { name: rk.name, age: rk.dob ? kidAge(rk.dob, b.start) : (parseInt(rk.age) || 8), games: old ? old.games : null, diff: old ? (old.diff || {}) : {} };
       });
     }
-    await supa.update("planner_trips", { title: b.destination, data: { ...prev, title: b.destination, start: b.start, days: daysN, kids: kidsUpd }, rev: Date.now() }, { id: uuid });
+    await supa.update("planner_trips", { title: b.destination, data: { ...prev, title: b.destination, start: b.start, days: daysN, kids: kidsUpd, bookingId: String(b.id) }, rev: Date.now() }, { id: uuid });
   } else {
     // Kids come from THIS family's roster (hub Settings). Games and difficulty
     // are chosen per trip in the planner. Falls back to the latest trip's kids
@@ -4567,7 +4620,7 @@ async function openBookingInPlanner(b, places, familyId, families) {
         if (prev && prev[0] && Array.isArray(prev[0].data?.kids)) kids = prev[0].data.kids;
       } catch (e) {}
     }
-    const tripData = { title: b.destination, start: b.start, days: daysN, home: null, oneway: false, plan: [], kids, rev: Date.now() };
+    const tripData = { title: b.destination, start: b.start, days: daysN, home: null, oneway: false, plan: [], kids, rev: Date.now(), bookingId: String(b.id) };
     const r = await supa.insert("planner_trips", { booking_id: String(b.id), family_id: familyId || "", title: b.destination, data: tripData, rev: tripData.rev });
     uuid = Array.isArray(r) && r[0] ? r[0].id : null;
     if (!uuid) throw new Error("could not create the planner trip");
