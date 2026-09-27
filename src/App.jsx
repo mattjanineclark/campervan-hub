@@ -910,7 +910,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.82
+          Adventure Hub · v1.83
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -4547,7 +4547,7 @@ async function openBookingInPlanner(b, places, familyId) {
   }
   let famPart = "";
   try { const f = localStorage.getItem("ah-family"); if (f) famPart = "&fam=" + encodeURIComponent(f); } catch (e) {}
-  window.location.href = "trip-planner/#trip=" + uuid + famPart;
+  window.location.href = "trip-planner/index.html?v=183#trip=" + uuid + famPart;
 }
 
 // ─── ACTIVITY SORTING ─────────────────────────────────────────────────────────

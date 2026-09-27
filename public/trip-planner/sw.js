@@ -1,6 +1,6 @@
 // Keeps the app working with no signal: app files are cached on first visit.
 // Trip data comes from Supabase (or this device) and is not cached here.
-const CACHE = 'rtp-v1';
+const CACHE = 'rtp-v2';
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', './index.html', './manifest.webmanifest']))); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
