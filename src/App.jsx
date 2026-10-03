@@ -327,6 +327,7 @@ function reducer(state, { type, payload, id }) {
     case "RESET_GUIDES": return { ...state, guides: payload };
     case "RESET_RULES": return { ...state, rules: payload };
     case "ADD_ODO": return { ...state, odoLog: [...state.odoLog, payload] };
+    case "UPD_ODO": return { ...state, odoLog: state.odoLog.map(e => e.id === payload.id ? { ...e, ...payload } : e) };
     case "DEL_ODO": return { ...state, odoLog: state.odoLog.filter(e => e.id !== id) };
     case "MARK_ODO_PAID": return { ...state, odoLog: state.odoLog.map(e => e.id === id ? { ...e, paid: !e.paid } : e) };
     case "RESET_ODO": return { ...state, odoLog: payload };
@@ -910,7 +911,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.92
+          Adventure Hub · v1.93
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2574,6 +2575,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   };
   const [showOdoForm, setShowOdoForm] = useState(false);
   const [odoForm, setOdoForm] = useState({ startKm: "", endKm: "", tolls: false, tollAmt: "", notes: "" });
+  const [odoFinishId, setOdoFinishId] = useState(null);
   const [confirmWarn, setConfirmWarn] = useState(null);
   const [showReport, setShowReport] = useState(false);
   const [showLend, setShowLend] = useState(false);
@@ -2921,27 +2923,44 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
               )}
             </div>
             {odo.map((e, i) => {
-              const km = e.endKm - e.startKm;
+              const isOpenE = e.endKm == null;
+              const km = isOpenE ? 0 : e.endKm - e.startKm;
               const cost = km * (odoRate || 0.30) + (e.tolls || 0);
               return (
                 <div key={i} style={{
                   display: "flex", alignItems: "center", gap: 8, marginBottom: 4,
                   padding: "6px 10px", borderRadius: T.radiusSm,
-                  background: e.paid ? T.green + "10" : T.accent + "08",
-                  border: `1px solid ${e.paid ? T.green + "30" : T.accent + "20"}`
+                  background: isOpenE ? T.sky + "0c" : e.paid ? T.green + "10" : T.accent + "08",
+                  border: `1px solid ${isOpenE ? (T.sky || "#3b82f6") + "30" : e.paid ? T.green + "30" : T.accent + "20"}`
                 }}>
                   <div style={{ flex: 1, fontSize: 12 }}>
-                    <span style={{ fontWeight: 700, color: T.primary }}>{km.toLocaleString()} km</span>
-                    <span style={{ color: T.textDim, marginLeft: 6, fontSize: 11 }}>{e.startKm.toLocaleString()} → {e.endKm.toLocaleString()}</span>
-                    <span style={{ fontWeight: 700, color: e.paid ? T.green : T.accent, marginLeft: 6 }}>${cost.toFixed(2)}</span>
-                    {(e.tolls || 0) > 0 && <span style={{ color: T.textDim, fontSize: 11, marginLeft: 4 }}>(+${Number(e.tolls).toFixed(2)} tolls)</span>}
+                    {isOpenE ? (
+                      <>
+                        <span style={{ fontWeight: 700, color: T.sky || "#3b82f6" }}>🚐 Trip started</span>
+                        <span style={{ color: T.textDim, marginLeft: 6, fontSize: 11 }}>at {e.startKm.toLocaleString()} km</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontWeight: 700, color: T.primary }}>{km.toLocaleString()} km</span>
+                        <span style={{ color: T.textDim, marginLeft: 6, fontSize: 11 }}>{e.startKm.toLocaleString()} → {e.endKm.toLocaleString()}</span>
+                        <span style={{ fontWeight: 700, color: e.paid ? T.green : T.accent, marginLeft: 6 }}>${cost.toFixed(2)}</span>
+                        {(e.tolls || 0) > 0 && <span style={{ color: T.textDim, fontSize: 11, marginLeft: 4 }}>(+${Number(e.tolls).toFixed(2)} tolls)</span>}
+                      </>
+                    )}
                     {e.notes && <span style={{ color: T.textDim, fontSize: 11, marginLeft: 6, fontStyle: "italic" }}>{e.notes}</span>}
                   </div>
-                  <button onClick={() => onAddOdo && onAddOdo({ _action: "MARK_PAID", id: e.id })}
-                    style={btn(e.paid ? T.green + "20" : T.accent + "15", e.paid ? T.green : T.accent,
-                      { fontSize: 10, padding: "3px 8px", border: `1px solid ${e.paid ? T.green + "40" : T.accent + "30"}` })}>
-                    {e.paid ? "✓ Paid" : "To Pay"}
-                  </button>
+                  {isOpenE ? (
+                    isOwner && <button onClick={() => { setOdoFinishId(e.id); setOdoForm({ startKm: String(e.startKm), endKm: "", tolls: (e.tolls || 0) > 0, tollAmt: e.tolls ? String(e.tolls) : "", notes: e.notes || "" }); setShowOdoForm(true); }}
+                      style={btn((T.sky || "#3b82f6") + "15", T.sky || "#3b82f6", { fontSize: 10, padding: "3px 8px", border: `1px solid ${(T.sky || "#3b82f6")}30` })}>
+                      🏁 Finish
+                    </button>
+                  ) : (
+                    <button onClick={() => onAddOdo && onAddOdo({ _action: "MARK_PAID", id: e.id })}
+                      style={btn(e.paid ? T.green + "20" : T.accent + "15", e.paid ? T.green : T.accent,
+                        { fontSize: 10, padding: "3px 8px", border: `1px solid ${e.paid ? T.green + "40" : T.accent + "30"}` })}>
+                      {e.paid ? "✓ Paid" : "To Pay"}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -2952,7 +2971,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                   <div><label style={{ ...lbl, marginTop: 0 }}>Start km</label>
                     <input style={inp} type="number" placeholder="45230" value={odoForm.startKm} onChange={ev => setOdoForm(f => ({ ...f, startKm: ev.target.value }))} /></div>
                   <div><label style={{ ...lbl, marginTop: 0 }}>End km</label>
-                    <input style={inp} type="number" placeholder="45480" value={odoForm.endKm} onChange={ev => setOdoForm(f => ({ ...f, endKm: ev.target.value }))} /></div>
+                    <input style={inp} type="number" placeholder={odoFinishId ? "45480" : "Blank until back"} value={odoForm.endKm} onChange={ev => setOdoForm(f => ({ ...f, endKm: ev.target.value }))} /></div>
                 </div>
                 {odoForm.startKm && odoForm.endKm && parseFloat(odoForm.endKm) > parseFloat(odoForm.startKm) && (
                   <p style={{ fontSize: 11, color: T.primary, fontWeight: 700, margin: "0 0 6px" }}>
@@ -2971,22 +2990,26 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => {
                     const sk = parseFloat(odoForm.startKm);
-                    const ek = parseFloat(odoForm.endKm);
-                    if (!odoForm.startKm || !odoForm.endKm || isNaN(sk) || isNaN(ek)) {
-                      alert("Please enter both start and end km."); return;
+                    const hasEnd = odoForm.endKm !== "";
+                    const ek = hasEnd ? parseFloat(odoForm.endKm) : null;
+                    if (!odoForm.startKm || isNaN(sk)) { alert("Please enter the start km."); return; }
+                    if (hasEnd && (isNaN(ek) || ek <= sk)) { alert("End km must be greater than start km."); return; }
+                    if (odoFinishId && !hasEnd) { alert("Enter the end-of-trip reading to finish this entry."); return; }
+                    const tolls = odoForm.tolls ? parseFloat(odoForm.tollAmt || 0) : 0;
+                    if (odoFinishId) {
+                      dispatch({ type: "UPD_ODO", payload: { id: odoFinishId, startKm: sk, endKm: ek, tolls, notes: odoForm.notes } });
+                    } else {
+                      const entry = {
+                        id: "odo" + Date.now(), familyId: b.familyId,
+                        date: b.start, startKm: sk, endKm: ek,
+                        tolls, paid: false, notes: odoForm.notes, bookingId: b.id
+                      };
+                      if (onAddOdo) { onAddOdo(entry); }
+                      else { dispatch({ type: "ADD_ODO", payload: entry }); }
                     }
-                    if (ek <= sk) { alert("End km must be greater than start km."); return; }
-                    const entry = {
-                      id: "odo" + Date.now(), familyId: b.familyId,
-                      date: b.start, startKm: sk, endKm: ek,
-                      tolls: odoForm.tolls ? parseFloat(odoForm.tollAmt || 0) : 0,
-                      paid: false, notes: odoForm.notes, bookingId: b.id
-                    };
-                    if (onAddOdo) { onAddOdo(entry); }
-                    else { dispatch({ type: "ADD_ODO", payload: entry }); }
-                    setOdoForm({ startKm: "", endKm: "", tolls: false, tollAmt: "", notes: "" }); setShowOdoForm(false);
-                  }} style={btn(T.primary, T.surface, { fontSize: 12, flex: 1 })}>Save</button>
-                  <button onClick={() => setShowOdoForm(false)}
+                    setOdoForm({ startKm: "", endKm: "", tolls: false, tollAmt: "", notes: "" }); setShowOdoForm(false); setOdoFinishId(null);
+                  }} style={btn(T.primary, T.surface, { fontSize: 12, flex: 1 })}>{odoFinishId ? "🏁 Finish trip" : "Save"}</button>
+                  <button onClick={() => { setShowOdoForm(false); setOdoFinishId(null); }}
                     style={btn("transparent", T.textMuted, { fontSize: 12, border: `1px solid ${T.border}` })}>Cancel</button>
                 </div>
               </div>
@@ -4856,7 +4879,7 @@ function VanPanel({ dueDates, maintLog, odoLog, odoRate, dispatch, families, boo
   const [nextDue, setNextDue] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [viewReceipt, setViewReceipt] = useState(null);
-  const latestKm = odoLog.length > 0 ? Math.max(...odoLog.map(e => e.endKm)) : 0;
+  const latestKm = odoLog.length > 0 ? Math.max(...odoLog.map(e => e.endKm ?? e.startKm ?? 0)) : 0;
   const myFamilyName = (families || []).find(f => f.id === currentFamilyId)?.name || "";
   const emptyMForm = { workStatus: "planned", date: fmt(new Date()), dateEnd: "", description: "", linkedId: "", cost: "", arrangedBy: myFamilyName, notes: "", currentKm: String(latestKm || ""), receipt: "", attachments: [], company: "", location: "", blockDates: true };
   const [mForm, setMForm] = useState(emptyMForm);
@@ -5264,14 +5287,14 @@ function OdometerPanel({ odoLog, odoRate, dispatch, families, bookings, currentF
   const familyStats = families.filter(f => f.id !== "maintenance").map(f => {
     const entries = odoLog.filter(e => e.familyId === f.id);
     const thisYearEntries = entries.filter(e => e.date && e.date.startsWith(String(thisYear)));
-    const totalKm = entries.reduce((s, e) => s + (e.endKm - e.startKm), 0);
-    const yearKm = thisYearEntries.reduce((s, e) => s + (e.endKm - e.startKm), 0);
+    const totalKm = entries.reduce((s, e) => s + (e.endKm != null ? e.endKm - e.startKm : 0), 0);
+    const yearKm = thisYearEntries.reduce((s, e) => s + (e.endKm != null ? e.endKm - e.startKm : 0), 0);
     const yearTolls = thisYearEntries.reduce((s, e) => s + (e.tolls || 0), 0);
     return { ...f, totalKm, yearKm, yearTolls, trips: entries.length };
   });
 
-  const grandTotal = odoLog.reduce((s, e) => s + (e.endKm - e.startKm), 0);
-  const yearTotal = odoLog.filter(e => e.date?.startsWith(String(thisYear))).reduce((s, e) => s + (e.endKm - e.startKm), 0);
+  const grandTotal = odoLog.reduce((s, e) => s + (e.endKm != null ? e.endKm - e.startKm : 0), 0);
+  const yearTotal = odoLog.filter(e => e.date?.startsWith(String(thisYear))).reduce((s, e) => s + (e.endKm != null ? e.endKm - e.startKm : 0), 0);
 
   // Latest odometer reading
   const latestReading = odoLog.length > 0 ? Math.max(...odoLog.map(e => e.endKm)) : null;
@@ -5357,7 +5380,8 @@ function OdometerPanel({ odoLog, odoRate, dispatch, families, bookings, currentF
         <p style={{ ...sectionHead, marginBottom: 10 }}>Trip Log</p>
         {odoLog.length === 0 && <p style={{ color: T.textDim, fontSize: 13 }}>No entries logged yet.</p>}
         {odoLog.map(e => {
-          const km = e.endKm - e.startKm;
+          const isOpen = e.endKm == null;
+          const km = isOpen ? 0 : e.endKm - e.startKm;
           const cost = km * (odoRate || 0.30);
           const fam = families.find(f => f.id === e.familyId);
           const isPaid = e.paid;
@@ -5377,7 +5401,7 @@ function OdometerPanel({ odoLog, odoRate, dispatch, families, bookings, currentF
                   </div>
                 </div>
                 <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
-                  {e.startKm.toLocaleString()} → {e.endKm.toLocaleString()} km
+                  {e.startKm.toLocaleString()} → {e.endKm != null ? e.endKm.toLocaleString() + " km" : "in progress 🚐"}
                   {(e.tolls || 0) > 0 && <span style={{ color: T.accent }}> &middot; tolls ${e.tolls?.toFixed(2)}</span>}
                   {e.notes && <span style={{ fontStyle: "italic" }}> &middot; {e.notes}</span>}
                 </div>
@@ -5853,7 +5877,16 @@ function AppInner() {
             tolls: payload.tolls || 0, paid: payload.paid || false,
             notes: payload.notes || "", booking_id: payload.bookingId || null
           });
-          await logActivity("Logged odometer", `${payload.startKm} → ${payload.endKm} km (${payload.endKm - payload.startKm} km)`);
+          await logActivity("Logged odometer", payload.endKm != null
+            ? `${payload.startKm} → ${payload.endKm} km (${payload.endKm - payload.startKm} km)`
+            : `Trip started at ${payload.startKm} km`);
+          break;
+        case "UPD_ODO":
+          await supa.update("odometer_log", {
+            start_km: payload.startKm, end_km: payload.endKm,
+            tolls: payload.tolls || 0, notes: payload.notes || ""
+          }, { id: payload.id });
+          if (payload.endKm != null) await logActivity("Logged odometer", `${payload.startKm} → ${payload.endKm} km (${payload.endKm - payload.startKm} km)`);
           break;
         case "DEL_ODO":
           await supa.delete("odometer_log", { id });
