@@ -911,7 +911,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.93
+          Adventure Hub · v1.94
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
@@ -2576,6 +2576,7 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
   const [showOdoForm, setShowOdoForm] = useState(false);
   const [odoForm, setOdoForm] = useState({ startKm: "", endKm: "", tolls: false, tollAmt: "", notes: "" });
   const [odoFinishId, setOdoFinishId] = useState(null);
+  const [odoDelId, setOdoDelId] = useState(null);
   const [confirmWarn, setConfirmWarn] = useState(null);
   const [showReport, setShowReport] = useState(false);
   const [showLend, setShowLend] = useState(false);
@@ -2960,6 +2961,19 @@ function BookingTripCard({ b, fam, today, odoLog, odoRate, onAddOdo, dispatch, p
                         { fontSize: 10, padding: "3px 8px", border: `1px solid ${e.paid ? T.green + "40" : T.accent + "30"}` })}>
                       {e.paid ? "✓ Paid" : "To Pay"}
                     </button>
+                  )}
+                  {isOwner && (
+                    odoDelId === e.id ? (
+                      <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                        <button onClick={() => { dispatch({ type: "DEL_ODO", id: e.id }); setOdoDelId(null); }}
+                          style={btn(T.red, "white", { fontSize: 10, padding: "3px 8px" })}>Delete</button>
+                        <button onClick={() => setOdoDelId(null)}
+                          style={btn("transparent", T.textMuted, { fontSize: 10, padding: "3px 6px", border: `1px solid ${T.border}` })}>✕</button>
+                      </span>
+                    ) : (
+                      <button onClick={() => setOdoDelId(e.id)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 13, padding: "0 2px", flexShrink: 0 }}>🗑</button>
+                    )
                   )}
                 </div>
               );
