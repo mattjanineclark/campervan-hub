@@ -63,7 +63,12 @@ const supa = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" },
       body: JSON.stringify(data)
     });
-    if (!res.ok) { const t = await res.text(); console.error("Supabase UPSERT " + table + " failed:", res.status, t); throw new Error("save failed (" + res.status + ")"); }
+    if (!res.ok) {
+      const t = await res.text(); console.error("Supabase UPSERT " + table + " failed:", res.status, t);
+      let msg = "save failed (" + res.status + ")";
+      try { const j = JSON.parse(t); msg = j.message || j.hint || msg; } catch (e) {}
+      throw new Error(msg);
+    }
     return res.json().catch(() => null);
   },
   delete: async (table, match) => {
@@ -911,7 +916,7 @@ function LoginScreen({ families, vanPhoto, vanName, onLogin }) {
         )}
 
         <p style={{ textAlign: "center", color: T.textMuted, fontSize: 12, marginTop: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-          Adventure Hub · v1.94
+          Adventure Hub · v1.95
         </p>
       </div>
       <style>{"@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}"}</style>
